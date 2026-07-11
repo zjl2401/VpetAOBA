@@ -6,6 +6,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -77,7 +78,7 @@ def _deploy_tree(src_dir: Path, dst_dir: Path) -> None:
     shutil.copytree(src_dir, dst_dir)
 
 
-def _publish_release(build_dir: Path, data_src: Path) -> tuple[Path, Path]:
+def _publish_release(build_dir: Path, data_src: Path) -> tuple[Path, Path, str]:
     release_root = ROOT / "release"
     release_root.mkdir(parents=True, exist_ok=True)
     app_name = EXE_NAME.removesuffix(".exe")
@@ -91,15 +92,18 @@ def _publish_release(build_dir: Path, data_src: Path) -> tuple[Path, Path]:
     else:
         data_dst.mkdir(parents=True, exist_ok=True)
 
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    (staging / "BUILD_STAMP.txt").write_text(stamp, encoding="utf-8")
+
     if _try_clear_dir(primary):
         try:
             staging.rename(primary)
-            return primary, primary / EXE_NAME
+            return primary, primary / EXE_NAME, stamp
         except OSError:
             pass
 
     print(_RELEASE_LOCK_HINT)
-    return staging, staging / EXE_NAME
+    return staging, staging / EXE_NAME, stamp
 
 
 def _create_shortcut(exe_path: Path) -> None:
@@ -176,13 +180,15 @@ def main() -> None:
     if not exe_path.exists():
         raise SystemExit(f"未找到输出文件：{DIST / EXE_NAME}")
 
-    release_dir, release_exe = _publish_release(exe_path.parent, ROOT / "data")
+    release_dir, release_exe, stamp = _publish_release(exe_path.parent, ROOT / "data")
 
     _create_shortcut(release_exe)
     print(f"\n打包完成：{release_exe}")
     print(f"发布目录：{release_dir}")
+    print(f"构建版本：{stamp}")
     print(f"桌面快捷方式：{DESKTOP / 'Vpet 桌宠.lnk'}")
     print("双击快捷方式 → 托盘出现图标 → 左键点击即可生成桌宠")
+    print("若更新后改动未生效：请先托盘右键「退出启动器」，再重新打开快捷方式。")
 
 
 if __name__ == "__main__":

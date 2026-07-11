@@ -10,9 +10,5 @@
     "game_mode": true,
     "music_mode": true
   },
-  "work_mode": {
-    "show_props": true,
-    "show_stack": true
-  },
   "work_box_total": 5
 }
