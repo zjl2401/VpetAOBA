@@ -1,6 +1,46 @@
 {
   "entries": [
     {
+      "id": "a3cc8fee-b21d-4b65-be34-9aeb14ddfb87",
+      "date": "2026-07-12",
+      "time": "01:48",
+      "text": "背单词正确：companion",
+      "mood": 85,
+      "auto": true
+    },
+    {
+      "id": "6b2a49cf-c3e0-41f9-8da4-5570ba6b000e",
+      "date": "2026-07-12",
+      "time": "01:48",
+      "text": "背单词正确：star",
+      "mood": 82,
+      "auto": true
+    },
+    {
+      "id": "f5158645-169c-4f0c-8ddb-7dca000bf394",
+      "date": "2026-07-12",
+      "time": "01:48",
+      "text": "背单词正确：happy",
+      "mood": 79,
+      "auto": true
+    },
+    {
+      "id": "b1660b19-9133-4f7b-9d48-2ac3fe1c0587",
+      "date": "2026-07-12",
+      "time": "01:48",
+      "text": "背单词正确：catch",
+      "mood": 76,
+      "auto": true
+    },
+    {
+      "id": "6afa3457-552a-479f-8e91-136ac908e3c7",
+      "date": "2026-07-12",
+      "time": "01:48",
+      "text": "背单词正确：sleep",
+      "mood": 73,
+      "auto": true
+    },
+    {
       "id": "c3726fb3-91e7-4911-bf1f-dc4c1837df4e",
       "date": "2026-07-11",
       "time": "14:11",

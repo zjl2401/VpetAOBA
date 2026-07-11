@@ -111,6 +111,53 @@
       }
     ],
     "vocab_daily_date": "2026-07-11",
-    "vocab_daily_count": 3
+    "vocab_daily_count": 3,
+    "vocab": [
+      {
+        "ts": "2026-07-12 01:48:20",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "sleep",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 01:48:22",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "catch",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 01:48:25",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "happy",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 01:48:27",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "star",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 01:48:32",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "companion",
+        "correct": true,
+        "streak_clear": 5,
+        "difficulty": "中"
+      }
+    ]
   }
 }

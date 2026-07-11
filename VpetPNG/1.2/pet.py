@@ -211,6 +211,9 @@ TOAST_DURATION_MS = 2500
 PANEL_AUTO_CLOSE_MS = 5000
 POPUP_EDGE_MARGIN = 20
 POPUP_PET_GAP = 10
+PET_MENU_GAP_Y = 4
+PET_SUBMENU_GAP_Y = 6
+PET_SPEECH_GAP = 6
 PANEL_BAR_W = 168
 PANEL_BAR_H = 18
 PANEL_STAT_ICON = 22
@@ -1198,9 +1201,27 @@ def _add_sticker(canvas: Image.Image, kind: str) -> Image.Image:
     return out
 
 
-def _draw_size_loading_frame(canvas: tk.Canvas, size: int, phase: int, *, label: str = "") -> None:
+def _draw_size_loading_frame(
+    canvas: tk.Canvas, size: int, phase: int, *, label: str = "", simple: bool = False
+) -> None:
     canvas.delete("all")
     px = max(4, size // 12)
+
+    if simple:
+        canvas.create_rectangle(0, 0, size, size, fill="#161d2a", outline="")
+        bar_px = max(3, size // 16)
+        bar_w = size - bar_px * 8
+        bar_x = (size - bar_w) // 2
+        bar_y = size * 2 // 5
+        canvas.create_rectangle(bar_x, bar_y, bar_x + bar_w, bar_y + bar_px, fill="#253246", outline="")
+        seg_w = max(bar_px * 3, bar_w // 4)
+        span = max(1, bar_w - seg_w)
+        offset = int((phase % 20) / 19 * span)
+        canvas.create_rectangle(
+            bar_x + offset, bar_y, bar_x + offset + seg_w, bar_y + bar_px, fill="#5a8ec8", outline=""
+        )
+        return
+
     cols = max(4, size // px)
     rows = max(4, size // px)
     total = cols * rows
@@ -2931,7 +2952,7 @@ class DesktopPet:
             highlightthickness=0,
         )
         self._startup_canvas.place(x=0, y=0, width=self.display_size, height=self.display_size)
-        _draw_size_loading_frame(self._startup_canvas, self.display_size, 0)
+        _draw_size_loading_frame(self._startup_canvas, self.display_size, 0, simple=True)
         self.sprites: SpriteSet | None = None
         self.root.update_idletasks()
         self.root.update()
@@ -3504,7 +3525,9 @@ class DesktopPet:
         if not self._startup_loading_active or self._closing:
             return
         if self._startup_canvas and self._startup_canvas.winfo_exists():
-            _draw_size_loading_frame(self._startup_canvas, self.display_size, self._startup_loading_phase)
+            _draw_size_loading_frame(
+                self._startup_canvas, self.display_size, self._startup_loading_phase, simple=True
+            )
         self._startup_loading_phase += 1
         self._place_wait_hint()
         self._startup_anim_job = self.root.after(STARTUP_ANIM_MS, self._animate_startup_loading)
@@ -3924,20 +3947,79 @@ class DesktopPet:
         max_y = max(margin, sh - height - margin)
         return max(margin, min(x, max_x)), max(margin, min(y, max_y))
 
+    @staticmethod
+    def _rects_overlap(
+        x1: int, y1: int, w1: int, h1: int, x2: int, y2: int, w2: int, h2: int
+    ) -> bool:
+        return x1 < x2 + w2 and x2 < x1 + w1 and y1 < y2 + h2 and y2 < y1 + h1
+
+    def _window_avoid_rect(self, win: tk.Toplevel | None, *, pad: int = 4) -> tuple[int, int, int, int] | None:
+        if not win or not win.winfo_exists():
+            return None
+        try:
+            win.update_idletasks()
+            x, y = win.winfo_rootx(), win.winfo_rooty()
+            w = max(win.winfo_width(), win.winfo_reqwidth(), 1)
+            h = max(win.winfo_height(), win.winfo_reqheight(), 1)
+            return x - pad, y - pad, w + pad * 2, h + pad * 2
+        except Exception:
+            return None
+
+    def _popup_avoid_rects(self, *, skip: tk.Toplevel | None = None) -> list[tuple[int, int, int, int]]:
+        rects: list[tuple[int, int, int, int]] = []
+        for win in (self.menu_bar, self.sub_menu):
+            if win is skip:
+                continue
+            rect = self._window_avoid_rect(win)
+            if rect:
+                rects.append(rect)
+        return rects
+
+    def _main_menu_bottom_y(self) -> int | None:
+        if not self.menu_bar or not self.menu_bar.winfo_exists():
+            return None
+        try:
+            self.menu_bar.update_idletasks()
+        except Exception:
+            pass
+        menu_y = self.y + self.display_size + PET_MENU_GAP_Y
+        menu_h = max(self.menu_bar.winfo_reqheight(), self.menu_bar.winfo_height(), 28)
+        return menu_y + menu_h + PET_SUBMENU_GAP_Y
+
     def _popup_edge_clearance(self, x: int, y: int, width: int, height: int) -> int:
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         margin = POPUP_EDGE_MARGIN
         return min(x - margin, y - margin, sw - margin - x - width, sh - margin - y - height)
 
+    def _popup_placement_score(
+        self,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        *,
+        avoid_rects: list[tuple[int, int, int, int]] | None = None,
+    ) -> int:
+        score = self._popup_edge_clearance(x, y, width, height)
+        for ax, ay, aw, ah in avoid_rects or ():
+            if self._rects_overlap(x, y, width, height, ax, ay, aw, ah):
+                score -= 1_000_000
+        return score
+
     def _best_popup_pos(
-        self, candidates: list[tuple[int, int]], width: int, height: int
+        self,
+        candidates: list[tuple[int, int]],
+        width: int,
+        height: int,
+        *,
+        avoid_rects: list[tuple[int, int, int, int]] | None = None,
     ) -> tuple[int, int]:
         best: tuple[int, int] | None = None
         best_score = -10**9
         for px, py in candidates:
             cx, cy = self._clamp_popup_rect(px, py, width, height)
-            score = self._popup_edge_clearance(cx, cy, width, height)
+            score = self._popup_placement_score(cx, cy, width, height, avoid_rects=avoid_rects)
             if score > best_score:
                 best_score = score
                 best = (cx, cy)
@@ -3977,7 +4059,10 @@ class DesktopPet:
         return self._clamp_popup_rect(pref_x, pref_y, width, height)
 
     def _panel_popup_pos(self, panel_w: int, panel_h: int) -> tuple[int, int]:
-        return self._best_popup_pos(self._panel_popup_candidates(panel_w, panel_h), panel_w, panel_h)
+        avoid_rects = self._popup_avoid_rects()
+        return self._best_popup_pos(
+            self._panel_popup_candidates(panel_w, panel_h), panel_w, panel_h, avoid_rects=avoid_rects
+        )
 
     def _place_popup(self, win: tk.Toplevel | None, pref_x: int, pref_y: int) -> None:
         if not win or not win.winfo_exists():
@@ -4006,6 +4091,49 @@ class DesktopPet:
         ph = max(win.winfo_reqheight(), 80)
         px, py = self._panel_popup_pos(pw, ph)
         win.geometry(f"+{px}+{py}")
+
+    def _place_pet_attached_popup(self, win: tk.Toplevel | None, pref_x: int, pref_y: int) -> None:
+        if not win or not win.winfo_exists():
+            return
+        w = max(win.winfo_reqwidth(), 1)
+        h = max(win.winfo_reqheight(), 1)
+        gap = POPUP_PET_GAP
+        avoid_rects = self._popup_avoid_rects(skip=win)
+        menu_bottom_y = self._main_menu_bottom_y()
+        candidates: list[tuple[int, int]] = []
+        if menu_bottom_y is not None and win is not self.menu_bar:
+            candidates.append((pref_x, menu_bottom_y))
+        candidates.extend(
+            [
+                (pref_x, pref_y),
+                (self.x + self.display_size + gap, self.y),
+                (self.x - w - gap, self.y),
+                (self.x, self.y + self.display_size + gap),
+                (self.x + self.display_size // 2 - w // 2, self.y - h - gap),
+            ]
+        )
+        if menu_bottom_y is not None and win is not self.menu_bar:
+            candidates.append((self.x + self.display_size + gap, menu_bottom_y))
+            candidates.append((self.x - w - gap, menu_bottom_y))
+        x, y = self._best_popup_pos(candidates, w, h, avoid_rects=avoid_rects)
+        win.geometry(f"+{x}+{y}")
+
+    def _sub_menu_pref_y(self) -> int:
+        return self._main_menu_bottom_y() or (self.y + self.display_size + PET_SUBMENU_GAP_Y + 28)
+
+    def _reposition_pet_attached_popups(self) -> None:
+        menu_y = self.y + self.display_size + PET_MENU_GAP_Y
+        if self.menu_bar and self.menu_bar.winfo_exists():
+            self._place_pet_attached_popup(self.menu_bar, self.x, menu_y)
+        if self.sub_menu and self.sub_menu.winfo_exists():
+            offset_x = getattr(self, "_sub_menu_offset_x", 0)
+            self._place_pet_attached_popup(self.sub_menu, self.x + offset_x, self._sub_menu_pref_y())
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            self._place_pet_attached_popup(
+                self.speech_dialog,
+                self.x + self.display_size + PET_SPEECH_GAP,
+                self.y,
+            )
 
     def _persist_food_inventory(self) -> None:
         _save_food_inventory(self.food_inventory)
@@ -4238,6 +4366,7 @@ class DesktopPet:
     def _place_window(self, *, light: bool = False) -> None:
         display_y = self.y + self.click_bounce_offset
         self.root.geometry(f"{self.display_size}x{self.display_size}+{self.x}+{display_y}")
+        self._reposition_pet_attached_popups()
         if light:
             self._reposition_panel()
             return
@@ -4314,7 +4443,8 @@ class DesktopPet:
             btn = self._menu_btn(frame, label, handler)
             btn.pack(fill=tk.X, pady=1)
 
-        self._place_popup(self.sub_menu, self.x + offset_x, self.y + self.display_size + 36)
+        self._sub_menu_offset_x = offset_x
+        self._place_pet_attached_popup(self.sub_menu, self.x + offset_x, self._sub_menu_pref_y())
 
     def _toggle_main_menu(self, event: tk.Event) -> None:
         if self._startup_busy():
@@ -4341,7 +4471,11 @@ class DesktopPet:
             btn = self._menu_btn(frame, label, cmd)
             btn.pack(side=tk.LEFT, padx=1)
 
-        self._place_popup(self.menu_bar, self.x, self.y + self.display_size)
+        self._place_pet_attached_popup(
+            self.menu_bar,
+            self.x,
+            self.y + self.display_size + PET_MENU_GAP_Y,
+        )
 
     def _supports_walk_idle(self) -> bool:
         return self.mode in ("free", "stroll")
@@ -5076,7 +5210,8 @@ class DesktopPet:
             if not enabled:
                 btn.config(state=tk.DISABLED, fg="#666666")
             btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self._place_popup(self.sub_menu, self.x + offset_x, self.y + self.display_size + 36)
+        self._sub_menu_offset_x = offset_x
+        self._place_pet_attached_popup(self.sub_menu, self.x + offset_x, self._sub_menu_pref_y())
 
     def _cancel_food_drag(self) -> None:
         self.food_drag_active = False
@@ -9375,7 +9510,11 @@ class DesktopPet:
         self.speech_type_idx = 0
         self.speech_type_ms = typewriter_ms if typewriter_ms is not None else TYPEWRITER_MS
         self.speech_on_complete = on_complete
-        self._place_panel_popup(self.speech_dialog)
+        self._place_pet_attached_popup(
+            self.speech_dialog,
+            self.x + self.display_size + PET_SPEECH_GAP,
+            self.y,
+        )
         self._speech_type_next(auto_hide_ms)
 
     def _speech_type_next(self, auto_hide_ms: int | None) -> None:
@@ -9391,7 +9530,11 @@ class DesktopPet:
         char = self.speech_full_text[self.speech_type_idx]
         self.speech_label.config(text=self.speech_full_text[: self.speech_type_idx + 1])
         if char == "\n" or self.speech_type_idx % 12 == 0:
-            self._place_panel_popup(self.speech_dialog)
+            self._place_pet_attached_popup(
+                self.speech_dialog,
+                self.x + self.display_size + PET_SPEECH_GAP,
+                self.y,
+            )
         if char not in (" ", "\n") and self.action_name != "call":
             self._play_type_sound()
         self.speech_type_idx += 1
@@ -10354,7 +10497,7 @@ class DesktopPet:
     def _start_work_free(self) -> None:
         self._hide_main_menu()
         total = random.randint(WORK_TOTAL_MIN, WORK_TOTAL_MAX)
-        self._start_work_impl(total, flag_movable=False)
+        self._start_work_impl(total, flag_movable=True)
 
     def _start_work_impl(self, total: int, *, flag_movable: bool, continuous: bool = False) -> None:
         if self.dragging or self.state in ("work", "sleep"):
