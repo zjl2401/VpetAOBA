@@ -21,6 +21,23 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageTk
 
 ASSET_DIR = Path(__file__).parent
+GALLERY_DIR = ASSET_DIR / "gallery"
+GALLERY_MANIFEST_FILE = GALLERY_DIR / "gallery.json"
+GALLERY_THUMB_MAX = 96
+GALLERY_VIEW_MAX = 360
+GALLERY_COLS = 3
+GALLERY_SAMPLE_SOURCES: tuple[tuple[str, str], ...] = (
+    ("stand.jpg", "站立"),
+    ("happy.jpg", "开心"),
+    ("hi1.jpg", "打招呼"),
+    ("wink.jpg", "Wink"),
+    ("like.jpg", "点赞"),
+    ("squat.jpg", "下蹲"),
+    ("kick.jpg", "侧踢"),
+    ("sad1.jpg", "伤心"),
+    ("eat1.jpg", "吃东西"),
+    ("sleep1.jpg", "睡眠"),
+)
 CALL_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\call.mp3.mp4")
 CALL_AUDIO_WAV = ASSET_DIR / "call_cache.wav"
 TYPE_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\type.mp4")
@@ -6079,21 +6096,11 @@ class DesktopPet:
         pad = FOOD_FX_PAD
         size = self.display_size + pad * 2
         px = max(4, self.display_size // FOOD_FX_PIXEL_DIV)
-        base_y = size // 2 + px
-
-        if elapsed_ms < FOOD_APPEAR_MS:
-            progress = elapsed_ms / FOOD_APPEAR_MS
-        elif elapsed_ms < FOOD_APPEAR_MS + FOOD_HOLD_MS:
-            progress = 1.0
-        else:
-            vanish = elapsed_ms - FOOD_APPEAR_MS - FOOD_HOLD_MS
-            progress = 1.0 - vanish / FOOD_VANISH_MS
-
-        scale = max(3, int(px * (0.6 + 0.4 * progress) * FOOD_FX_SIZE_MULT))
+        scale = max(3, int(px * FOOD_FX_SIZE_MULT))
         food_extent = scale * 5
         base_x = max(pad // 2, size - food_extent - pad // 4)
-        offset_y = int((1.0 - progress) * scale * 2)
-        _draw_pixel_food(canvas, self.food_fx_id, base_x, base_y - offset_y, px=scale)
+        base_y = size // 2 + scale
+        _draw_pixel_food(canvas, self.food_fx_id, base_x, base_y, px=scale)
         self._place_food_fx()
         tok = self.interaction_token
         self.food_fx_job = self.root.after(
