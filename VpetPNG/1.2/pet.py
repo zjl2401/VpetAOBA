@@ -3973,6 +3973,7 @@ class DesktopPet:
 
         entry.bind("<KeyRelease>", on_type)
         entry.focus_set()
+        update_grade_ui()
         refresh_kb()
         tick_timer()
 
