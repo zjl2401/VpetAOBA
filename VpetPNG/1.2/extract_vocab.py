@@ -9,11 +9,10 @@ from pathlib import Path
 
 ASSET_DIR = Path(__file__).parent
 VOCAB_SOURCES = ASSET_DIR / "vocab_sources"
-VOCAB_FILE = ASSET_DIR / "vocab.json"
 
 # 复用 pet.py 中的默认词与解析逻辑
 sys.path.insert(0, str(ASSET_DIR))
-from pet import DEFAULT_VOCAB_WORDS, _merge_vocab_from_sources, _save_vocab  # noqa: E402
+from pet import DEFAULT_VOCAB_WORDS, VOCAB_FILE, _merge_vocab_from_sources, _save_vocab  # noqa: E402
 
 
 def main() -> None:

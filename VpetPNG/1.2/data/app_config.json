@@ -1,0 +1,14 @@
+{
+  "font_size": 12,
+  "display_size": 128,
+  "display_preset": "中",
+  "difficulty": "中",
+  "seen_hints": {
+    "operation_guide": true,
+    "rhyme_invite": true,
+    "companion_bar": true,
+    "game_mode": true,
+    "music_mode": true
+  },
+  "work_box_total": 5
+}
