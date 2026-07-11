@@ -91,9 +91,40 @@ TYPE_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\type.mp4")
 TYPE_AUDIO_WAV = DATA_AUDIO_DIR / "type_cache.wav"
 MUSIC_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\aicatch.mp4")
 MUSIC_AUDIO_WAV = DATA_AUDIO_DIR / "music_aicatch_cache.wav"
+MUSIC_CRYSTALLINE_SRC = Path(r"C:\Users\36255\Desktop\Crystalline.mp4")
+MUSIC_CRYSTALLINE_WAV = DATA_AUDIO_DIR / "music_crystalline_cache.wav"
+MUSIC_YOUR_REPLY_SRC = Path(r"C:\Users\36255\Desktop\your reply.mp4")
+MUSIC_YOUR_REPLY_WAV = DATA_AUDIO_DIR / "music_your_reply_cache.wav"
 MUSIC_CONFIG_FILE = DATA_DIR / "music_config.json"
 PHONOGRAPH_FILE = DATA_DIR / "phonograph.json"
 PHONOGRAPH_USER_DIR = DATA_DIR / "phonograph"
+
+# 普通模式 / 音游可选曲目（src 可为 mp4，首次启动提取 wav）
+MUSIC_TRACKS: dict[str, dict] = {
+    "aicatch": {
+        "id": "aicatch",
+        "title": "AI Catch",
+        "src": MUSIC_AUDIO_SRC,
+        "cache": MUSIC_AUDIO_WAV,
+        "phonograph": "音乐·AI Catch",
+    },
+    "crystalline": {
+        "id": "crystalline",
+        "title": "Crystalline",
+        "src": MUSIC_CRYSTALLINE_SRC,
+        "cache": MUSIC_CRYSTALLINE_WAV,
+        "phonograph": "音乐·Crystalline",
+    },
+    "your_reply": {
+        "id": "your_reply",
+        "title": "your reply",
+        "src": MUSIC_YOUR_REPLY_SRC,
+        "cache": MUSIC_YOUR_REPLY_WAV,
+        "phonograph": "音乐·your reply",
+    },
+}
+MUSIC_TRACK_ORDER: tuple[str, ...] = ("aicatch", "crystalline", "your_reply")
+DEFAULT_MUSIC_TRACK = "aicatch"
 
 
 def _ensure_data_dirs() -> None:
@@ -127,7 +158,13 @@ def _migrate_legacy_layout() -> None:
         src, dst = root / name, DATA_DIR / name
         if src.is_file() and not dst.exists():
             shutil.copy2(src, dst)
-    for name in ("call_cache.wav", "type_cache.wav", "music_aicatch_cache.wav"):
+    for name in (
+        "call_cache.wav",
+        "type_cache.wav",
+        "music_aicatch_cache.wav",
+        "music_crystalline_cache.wav",
+        "music_your_reply_cache.wav",
+    ):
         src, dst = root / name, DATA_AUDIO_DIR / name
         if src.is_file() and not dst.exists():
             shutil.copy2(src, dst)
@@ -208,9 +245,9 @@ HUNGER_REMINDER_COOLDOWN_MS = 45000
 MOOD_HAPPY_THRESHOLD = 95
 MOOD_AFTER_HAPPY = 85
 TOAST_DURATION_MS = 2500
-PANEL_AUTO_CLOSE_MS = 5000
+PANEL_AUTO_CLOSE_MS = 8000
 PANEL_REPOSITION_MIN_MS = 2800
-MAIN_MENU_AUTO_CLOSE_MS = 3000
+MAIN_MENU_AUTO_CLOSE_MS = 8000
 POPUP_EDGE_MARGIN = 20
 POPUP_PET_GAP = 10
 PET_MENU_GAP_Y = 4
@@ -458,7 +495,10 @@ EXPOSE_POINTER_SPEED = 4.5
 EXPOSE_SPEED_STREAK_MULT = 0.12
 EXPOSE_SPEED_TICK_BOOST = 0.015
 EXPOSE_POINTER_MAX_SPEED = 15.0
-GAME_COUNTDOWN_STEP_MS = 900
+GAME_COUNTDOWN_STEP_MS = 650
+GAME_COUNTDOWN_W = 120
+GAME_COUNTDOWN_H = 120
+COUNTDOWN_FONT = ("Courier New", 42, "bold")
 MUSIC_WAVE_MS = 60
 FOOD_INVENTORY_FILE = DATA_DIR / "food_inventory.json"
 ADULT_CONTENT_TEXT = "我只是像素哦，更多精彩内容请在正版游戏《戏剧性谋杀》中解锁"
@@ -485,12 +525,56 @@ GAME_RANK_TITLES: dict[str, str] = {
     "typing": "打字",
     "vocab": "背单词",
     "rhyme": "莱姆对战",
+    "music": "音乐",
+}
+RHYTHM_LANES = 4
+RHYTHM_KEYS = ("d", "f", "j", "k")
+RHYTHM_KEY_LABELS = ("D", "F", "J", "K")
+RHYTHM_LANE_COLORS = ("#66ccff", "#88ffaa", "#ffcc66", "#ff88cc")
+RHYTHM_W = 420
+RHYTHM_H = 600
+RHYTHM_TRAVEL_MS = 1400
+RHYTHM_HIT_PERFECT_MS = 55
+RHYTHM_HIT_GREAT_MS = 110
+RHYTHM_HIT_GOOD_MS = 170
+RHYTHM_BPM = 120  # 仅作音频分析失败时的回退
+RHYTHM_CHART_CACHE_VER = 4
+RHYTHM_ANALYZE_MAX_SEC = 75.0  # 用前 N 秒估 BPM/相位，再铺满全曲
+RHYTHM_TICK_MS = 33  # ~30fps，减轻卡顿
+RHYTHM_PLAY_CAP_MS = 0  # 默认：0 = 不截断；开局可选 90s
+RHYTHM_SHORT_CAP_MS = 90000
+RHYTHM_GRADE_BAR_REFRESH_MS = 200
+RHYTHM_GRADE_BAR_H = 40
+RHYTHM_GRADE_TIERS: tuple[tuple[str, int, str], ...] = (
+    ("D", 0, "#ff6666"),
+    ("C", 50, "#ffaa44"),
+    ("B", 70, "#4488ff"),
+    ("A", 85, "#88dd88"),
+    ("S", 95, "#ff88cc"),
+)
+RHYTHM_GRADE_LABELS: dict[str, str] = {
+    "S": "完美",
+    "A": "优秀",
+    "B": "良好",
+    "C": "及格",
+    "D": "加油",
 }
 FONT_SIZE_PRESETS: dict[str, int] = {"小": 10, "中": 12, "大": 14, "特大": 16}
 ABOUT_DEVELOPER = "翛然而往"
 ABOUT_REPO_URL = "https://github.com/zjl2401/VpetAOBA"
 ABOUT_STEAM_URL = "https://store.steampowered.com/search/?term=DRAMatical+Murder"
 ABOUT_NITROCHIRAL_URL = "https://www.nitrochiral.com/"
+RHYTHM_CARNIVAL_URL = "https://www.nitrochiral.com/game/rhythm-carnival/"
+RHYTHM_CARNIVAL_TITLE = "THE CHiRAL NIGHT rhythm carnival"
+RHYTHM_CARNIVAL_INTRO = (
+    "Nitro+CHiRAL 官方已推出节奏动作游戏《THE CHiRAL NIGHT rhythm carnival》\n"
+    "（ザ・キラルナイト リズムカーニバル）。\n\n"
+    "以 10 周年纪念演唱会「THE CHiRAL NIGHT 10th ANNIVERSARY」为题材，\n"
+    "收录多首历作主题曲（含《DRAMAtical Murder》相关曲目如 AI CATCH），\n"
+    "并附带演唱会影像与剧情演出；还捆绑《咎狗の血 TYPING》打字小游戏。\n\n"
+    "本桌宠里的「音乐」是同人像素小玩法，仅作趣味体验；\n"
+    "想玩完整官方音游，请支持正版："
+)
 ABOUT_CREDITS: tuple[str, ...] = (
     "翛然而往",
 )
@@ -574,40 +658,184 @@ DIFFICULTY_PRESETS: dict[str, dict] = {
     },
 }
 
+OPERATION_GUIDE_INDEX = (
+    "点击下方专题查看详细说明。\n"
+    "也可随时按 F1 打开本手册。\n"
+    "首次进入各小游戏时，也会弹出对应操作指南。"
+)
+
+GUIDE_TOPICS: dict[str, dict] = {
+    "basic": {
+        "title": "基本操作",
+        "body": (
+            "· 右键桌宠：打开四大菜单（模式 / 面板 / 互动 / 系统）\n"
+            "· 左键拖拽蓝色把手区域：移动桌宠\n"
+            "· 左键点脸：弹跳；连点可触发状态对话；双击可害羞等\n"
+            "· Esc：退出当前游戏 / 音乐玩法 / AI 对话 / 多数子窗口，回到自由模式\n"
+            "· F1：随时打开操作说明\n"
+            "· 四大菜单与状态面板：约 8 秒无操作会自动关闭（有点击/悬停会续期）\n"
+            "· 首次启动会弹出总览说明；加载时桌宠下方「请耐心等待」属正常"
+        ),
+    },
+    "modes": {
+        "title": "模式说明",
+        "body": (
+            "· 跟随：桌宠跟上鼠标，过远会喊「等等我」\n"
+            "· 自由：站立/走动，偶尔随机动作与表情\n"
+            "· 漫步：只走路，不触发自由模式那套随机动作\n"
+            "· 睡眠：安静休息，体力低会自动入睡；连点可偷看/唤醒\n"
+            "· 工作 ▶\n"
+            "    - 开始工作：持续运送，终点旗可拖，点「结束」停止\n"
+            "    - 显示目的地 / 显示运送货物：开关旗子与箱子显示\n"
+            "· 游戏 ▶：采集、打字、背单词、音乐、持有者排名\n"
+            "· 音乐（模式菜单）：音乐漫步＝边走边听默认曲（可在声音设置切换），不触发动作\n"
+            "  （与「游戏→音乐」节奏玩法不同）\n\n"
+            "【工作运送细节】\n"
+            "· 互动→自由运送：箱数/起点/终点随机，终点不可拖\n"
+            "· 互动→自定义：可设箱数，终点可拖；已送达箱子钉在原位，不跟旗走\n"
+            "· 模式→工作：持续运送，终点可拖"
+        ),
+    },
+    "games": {
+        "title": "小游戏总览",
+        "body": (
+            "入口：模式 → 游戏 ▶\n\n"
+            "· 采集：约 30 秒接下落食物入库存；另有 +3s / -3s / 晕眩特殊物\n"
+            "· 打字：30 秒限时，中/英（日语视词库）；开始后可直接输入，C~S 评级\n"
+            "· 背单词：英/中选择释义，无次数限制，可随时退出\n"
+            "· 音乐：四轨节奏（D F J K），选曲后可选全曲或 90 秒\n"
+            "· 持有者排名：各游戏按桌宠编号排行（需编号版）\n\n"
+            "各游戏首次进入会显示专属操作指南。"
+        ),
+    },
+    "music_game": {
+        "title": "音乐玩法 · 官方音游",
+        "body": (
+            "【桌宠内 · 音乐】\n"
+            "· 按键 D / F / J / K 对应四条轨道\n"
+            "· 音符落到判定线时按下；Perfect / Great / Good / Miss\n"
+            "· 可选曲：AI Catch / Crystalline / your reply\n"
+            "· 按准确率评级 D~S，界面有进度条\n"
+            "· 整曲或 90 秒可选；谱面按节拍自动生成\n"
+            "· Esc 或关窗可提前结束\n\n"
+            + RHYTHM_CARNIVAL_INTRO
+        ),
+        "links": (
+            (RHYTHM_CARNIVAL_TITLE, RHYTHM_CARNIVAL_URL),
+            ("Nitro+CHiRAL 官网", ABOUT_NITROCHIRAL_URL),
+        ),
+    },
+    "panel": {
+        "title": "面板 · 互动 · 暴露",
+        "body": (
+            "【面板】\n"
+            "· 打开面板：查看体力/心情与食物背包\n"
+            "· 智能伴侣：金目跟随；游戏时会跟紧\n"
+            "· 莱姆 ▶：练习对战（本地）/ 邀请对战（需联机）\n"
+            "· 暴露：QTE 圆环，蓝区按 Enter 判定；连中通关，失败扣体力心情\n\n"
+            "【互动】\n"
+            "· 打招呼 / 下蹲 / 打电话 / 喂食 / 表情 / 工作运送等\n"
+            "· 音乐漫步开启时，互动动作会被抑制，只走路听歌"
+        ),
+    },
+    "system": {
+        "title": "系统 · 快捷键 · 难度",
+        "body": (
+            "【系统菜单】\n"
+            "· 操作说明（本手册）· 回忆（画廊 / 留声）· 我的（日记 / 日程）\n"
+            "· 设置（字体、体型、难度、声音等）· 对话（AI / 普通问答）\n"
+            "· 重置 / 问题反馈 / 关于 / 退出\n\n"
+            "【快捷键 Ctrl+Shift+】\n"
+            "  H 打招呼   E 喂食   T 电话   J 下蹲\n"
+            "  N 睡眠     A AI对话  V 开关菜单\n\n"
+            "【难度 低/中/高】\n"
+            "影响体力心情下降、采集、暴露 QTE、莱姆对战等；\n"
+            "暴露失败会按难度扣当前心情/体力比例。"
+        ),
+    },
+}
+
+FIRST_PLAY_GUIDES: dict[str, dict] = {
+    "gather": {
+        "title": "采集 · 操作指南",
+        "body": (
+            "移动桌宠去接住下落的食物，接到的会进入库存。\n\n"
+            "· 普通食物：接到加分入库存\n"
+            "· +3s / -3s：增减剩余时间\n"
+            "· 晕眩物：接到会短暂眩晕\n"
+            "· Esc：随时退出并结算本局已获食物\n\n"
+            "约 30 秒一局，结束后可在背包查看食物。"
+        ),
+    },
+    "typing": {
+        "title": "打字 · 操作指南",
+        "body": (
+            "限时 30 秒，对照题目输入拼音或英文。\n\n"
+            "· 开始后可直接打字，无需先点输入框\n"
+            "· 虚拟键盘会提示下一个按键\n"
+            "· 正确得分并换词；时间到结算 C~S 评级\n"
+            "· Esc 或关窗退出"
+        ),
+    },
+    "vocab": {
+        "title": "背单词 · 操作指南",
+        "body": (
+            "看单词，从选项中选出正确释义。\n\n"
+            "· 英/中词库可随时练习，无次数限制\n"
+            "· 答对累计连击，计入持有者排名\n"
+            "· 关窗或 Esc 退出"
+        ),
+    },
+    "rhythm_game": {
+        "title": "音乐 · 操作指南",
+        "body": (
+            "四轨节奏玩法：音符下落到判定线时按下对应键。\n\n"
+            "· 按键：D  F  J  K（左→右四轨）\n"
+            "· 判定：Perfect / Great / Good / Miss\n"
+            "· 按准确率评级 D~S，界面有进度条\n"
+            "· 曲子可选 AI Catch / Crystalline / your reply\n"
+            "· 开局可选「全曲」或「90 秒」\n"
+            "· 谱面按歌曲节拍自动生成（首次稍慢，之后有缓存）\n"
+            "· Esc 可随时退出\n\n"
+            + RHYTHM_CARNIVAL_INTRO
+        ),
+        "links": (
+            (RHYTHM_CARNIVAL_TITLE, RHYTHM_CARNIVAL_URL),
+        ),
+    },
+    "expose": {
+        "title": "暴露 · 操作指南",
+        "body": (
+            "屏幕出现故障提示与判定圆环。\n\n"
+            "· 指针转到蓝色区域时按 Enter（或小键盘 Enter）\n"
+            "· 开始后可直接按键，无需先点窗口\n"
+            "· 连续命中即可通关；失败会扣心情/体力（受难度影响）\n"
+            "· Esc 可中断"
+        ),
+    },
+    "rhyme": {
+        "title": "莱姆对战 · 操作指南",
+        "body": (
+            "面板 → 莱姆 → 练习对战：本地回合制切磋。\n\n"
+            "· 攻击 / 防御 / 必杀等按钮进行对战\n"
+            "· 邀请对战需联机服务，暂可先练习\n"
+            "· 胜利会计入持有者排名"
+        ),
+    },
+}
+
 OPERATION_GUIDE_TEXT = (
     "【Vpet 操作说明】\n\n"
-    "▶ 基本\n"
-    "  右键桌宠 → 四大菜单（模式/面板/互动/系统）\n"
-    "  左键拖拽 → 移动桌宠（把手区域）\n"
-    "  Esc → 退出游戏/音乐/AI/子窗口，回自由模式\n"
-    "  加载时桌宠下方会提示「请耐心等待」；鼠标打圈属正常，稍等即可\n"
-    "  F1 → 随时打开本说明\n\n"
-    "▶ 模式\n"
-    "  跟随/自由/漫步/睡眠/工作▶(持续运送货物·显示设置)/游戏▶(采集·打字·背单词)/音乐\n\n"
-    "▶ 系统\n"
-    "  我的 · 设置 · 对话（AI/普通问答）\n"
-    "  回忆 ▶ 画廊 · 留声（音频珍藏与导入）\n\n"
-    "▶ 面板\n"
-    "  智能伴侣 · 莱姆对战 · 暴露 QTE\n\n"
-    "▶ 小游戏\n"
-    "  打字 30s 倒计时 C~S 评级（中/英）· 虚拟键盘闪光\n"
-    "  背单词 英/中 · 随时可玩无次数限制\n"
-    "  模式→游戏→持有者排名：各游戏桌宠编号排行榜\n"
-    "  连点桌宠可触发额外状态对话\n\n"
-    "▶ 莱姆对战\n"
-    "  面板→莱姆：练习对战（本地）· 邀请对战（需联机服务）\n\n"
-    "▶ 快捷键 Ctrl+Shift+\n"
-    "  H 打招呼  E 喂食  T 电话  J 下蹲\n"
-    "  N 睡眠    A 对话(AI)  V 打开/关闭菜单\n\n"
-    "▶ 难度（系统 → 设置）\n"
-    "  低/中/高 影响体力心情下降速度、接食物、暴露 QTE、莱姆对战；暴露失败按难度扣当前心情/体力比例"
+    + OPERATION_GUIDE_INDEX
+    + "\n\n（完整内容见各专题）"
 )
 
 ONCE_HINTS: dict[str, str] = {
     "operation_guide": OPERATION_GUIDE_TEXT,
-    "game_mode": "模式→游戏→采集：30 秒接食物！另有 +3s/-3s/晕眩像素，Esc 可随时退出~",
+    "game_mode": "采集：移动接食物，注意 ±3s 与晕眩物，Esc 可退出~",
+    "rhythm_game": "音乐：D F J K 打节奏 · aicatch · Esc 退出~",
     "companion_bar": "智能伴侣已开启~ 金目会跟在左右两侧；游戏模式会跟紧你哦！",
-    "music_mode": "音乐模式：自由模式下可听歌，桌宠与金目会有律动~",
+    "music_mode": "音乐漫步：边走边听，不会触发动作；再点一次可关闭音乐~",
     "rhyme_invite": "邀请对战需要联机服务器，目前可先「练习对战」体验！",
 }
 DEFAULT_VOCAB_WORDS: list[dict[str, str]] = [
@@ -1599,9 +1827,14 @@ def _build_phonograph_catalog() -> list[dict]:
         _resolve_type_cache_wav(),
         category="sfx",
     )
-    music_wav = _ensure_audio_wav(MUSIC_AUDIO_SRC, MUSIC_AUDIO_WAV)
+    music_wav = _ensure_music_track_wav("aicatch")
     if music_wav is not None:
-        add_file("builtin:music", "音乐·All Catch", music_wav, category="music")
+        add_file("builtin:music", "音乐·AI Catch", music_wav, category="music")
+    for tid in ("crystalline", "your_reply"):
+        track = _music_track(tid)
+        wav = _ensure_music_track_wav(tid)
+        if wav is not None:
+            add_file(f"builtin:music:{tid}", str(track["phonograph"]), wav, category="music")
 
     catalog.extend(
         [
@@ -1919,6 +2152,7 @@ def _schedule_matches_today(item: dict, weekday: int) -> bool:
 def _load_music_config() -> dict:
     default = {
         "mode": "normal",
+        "normal_track": DEFAULT_MUSIC_TRACK,
         "music_volume": 70,
         "volume": 70,
         "sfx_volume": 80,
@@ -1936,6 +2170,10 @@ def _load_music_config() -> dict:
         if "music_volume" not in data and "volume" in data:
             merged["music_volume"] = int(data["volume"])
         merged["volume"] = merged["music_volume"]
+        track = str(merged.get("normal_track", DEFAULT_MUSIC_TRACK))
+        if track not in MUSIC_TRACKS:
+            track = DEFAULT_MUSIC_TRACK
+        merged["normal_track"] = track
         return merged
     except Exception:
         return default
@@ -2070,6 +2308,24 @@ def _draw_music_wave(canvas: tk.Canvas, width: int, height: int, phase: int, *, 
         canvas.create_rectangle(x, height - h - 4, x + bar_w, height - 4, fill=col, outline="")
 
 
+def _music_track(track_id: str | None) -> dict:
+    tid = str(track_id or DEFAULT_MUSIC_TRACK).strip() or DEFAULT_MUSIC_TRACK
+    return MUSIC_TRACKS.get(tid) or MUSIC_TRACKS[DEFAULT_MUSIC_TRACK]
+
+
+def _ensure_music_track_wav(track_id: str | None) -> Path | None:
+    track = _music_track(track_id)
+    return _ensure_audio_wav(Path(track["src"]), Path(track["cache"]))
+
+
+def _ensure_all_music_track_wavs() -> None:
+    for tid in MUSIC_TRACK_ORDER:
+        try:
+            _ensure_music_track_wav(tid)
+        except Exception:
+            pass
+
+
 def _resolve_music_wav(config: dict) -> Path | None:
     mode = config.get("mode", "normal")
     if mode == "custom":
@@ -2081,7 +2337,7 @@ def _resolve_music_wav(config: dict) -> Path | None:
             return None
         cache = DATA_AUDIO_DIR / f"music_custom_{abs(hash(str(src.resolve()))) % 100000}.wav"
         return _ensure_audio_wav(src, cache)
-    return _ensure_audio_wav(MUSIC_AUDIO_SRC, MUSIC_AUDIO_WAV)
+    return _ensure_music_track_wav(str(config.get("normal_track", DEFAULT_MUSIC_TRACK)))
 
 
 def _load_ai_config() -> dict:
@@ -2230,7 +2486,359 @@ def _leaderboard_sort_key(bucket: str, entry: dict) -> tuple:
         return (-int(entry.get("best_streak", 0)), -int(entry.get("total_correct", 0)))
     if base == "rhyme":
         return (-int(entry.get("wins", 0)),)
+    if base == "music":
+        return (
+            (-int(entry.get("best_score", 0)),
+             -_grade_rank(str(entry.get("best_grade", "D"))),
+             -int(entry.get("best_combo", 0))),
+        )
     return (0,)
+
+
+def _load_wav_mono_float(path: Path) -> tuple[object, int]:
+    """读取 wav 为单声道 float32，必要时降到 ~22kHz。"""
+    import wave
+
+    import numpy as np
+
+    with wave.open(str(path), "rb") as wf:
+        sr = int(wf.getframerate())
+        ch = int(wf.getnchannels())
+        sw = int(wf.getsampwidth())
+        raw = wf.readframes(wf.getnframes())
+    if sw == 1:
+        data = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
+    elif sw == 2:
+        data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    elif sw == 4:
+        data = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
+    else:
+        raise ValueError(f"unsupported sample width: {sw}")
+    if ch > 1:
+        data = data.reshape(-1, ch).mean(axis=1)
+    peak = float(np.max(np.abs(data))) + 1e-9
+    data = data / peak
+    if sr > 22050:
+        factor = max(1, int(round(sr / 22050.0)))
+        data = data[::factor]
+        sr = sr // factor
+    return data, sr
+
+
+def _onset_novelty(y, sr: int, *, hop: int = 512, win: int = 2048):
+    import numpy as np
+
+    if len(y) < win:
+        y = np.pad(y, (0, win - len(y)))
+    n_frames = 1 + max(0, (len(y) - win) // hop)
+    frames = np.lib.stride_tricks.as_strided(
+        y,
+        shape=(n_frames, win),
+        strides=(y.strides[0] * hop, y.strides[0]),
+        writeable=False,
+    )
+    env = np.sqrt(np.mean(frames * frames, axis=1) + 1e-12)
+    nov = np.maximum(0.0, np.diff(env, prepend=env[:1]))
+    if len(nov) >= 5:
+        nov = np.convolve(nov, np.ones(5, dtype=np.float32) / 5.0, mode="same")
+    return nov.astype(np.float32), hop
+
+
+def _normalize_dance_bpm(bpm: float) -> float:
+    """把半拍/倍拍折叠到常见 95~160 区间。"""
+    b = float(bpm)
+    while b < 95.0 and b * 2.0 <= 180.0:
+        b *= 2.0
+    while b > 165.0 and b / 2.0 >= 70.0:
+        b /= 2.0
+    return max(70.0, min(180.0, b))
+
+
+def _estimate_bpm_from_novelty(nov, hop_sec: float) -> float:
+    import numpy as np
+
+    x = nov - float(nov.mean())
+    n = len(x)
+    if n < 32:
+        return float(RHYTHM_BPM)
+    nfft = 1 << (n * 2 - 1).bit_length()
+    fx = np.fft.rfft(x, nfft)
+    ac = np.fft.irfft(fx * np.conj(fx), nfft)[:n]
+    min_lag = max(1, int(0.25 / hop_sec))
+    ac[:min_lag] = 0.0
+    best_bpm = float(RHYTHM_BPM)
+    best = -1.0
+    for bpm in range(70, 181):
+        lag = int(round((60.0 / bpm) / hop_sec))
+        if lag < 1 or lag >= len(ac):
+            continue
+        score = float(ac[lag])
+        if lag * 2 < len(ac):
+            score += 0.45 * float(ac[lag * 2])
+        if lag // 2 >= min_lag:
+            score += 0.25 * float(ac[lag // 2])
+        if score > best:
+            best = score
+            best_bpm = float(bpm)
+    return _normalize_dance_bpm(best_bpm)
+
+
+def _beat_phase_frames(nov, period_frames: float) -> float:
+    import numpy as np
+
+    if period_frames <= 1 or len(nov) < 8:
+        return 0.0
+    best_phase = 0.0
+    best = -1.0
+    for phase in np.linspace(0.0, period_frames, 48, endpoint=False):
+        idxs = np.round(np.arange(phase, len(nov), period_frames)).astype(int)
+        idxs = idxs[(idxs >= 0) & (idxs < len(nov))]
+        score = float(nov[idxs].sum()) if len(idxs) else 0.0
+        if score > best:
+            best = score
+            best_phase = float(phase)
+    return best_phase
+
+
+def _snap_times_ms(times: list[int], grid_ms: float, tol_ms: float = 55.0) -> list[int]:
+    if not times or grid_ms <= 1:
+        return times
+    snapped: list[int] = []
+    for t in times:
+        q = int(round(t / grid_ms) * grid_ms)
+        if abs(q - t) <= tol_ms:
+            snapped.append(max(0, q))
+        else:
+            snapped.append(int(t))
+    return snapped
+
+
+def _events_to_rhythm_notes(
+    event_ms: list,
+    *,
+    difficulty: str,
+    duration_ms: int,
+    seed: int,
+) -> list[dict]:
+    dens = {"低": 0.72, "中": 0.82, "高": 0.94}.get(str(difficulty), 0.82)
+    chord_p = {"低": 0.04, "中": 0.09, "高": 0.14}.get(str(difficulty), 0.09)
+    half_keep = {"低": 0.08, "中": 0.55, "高": 0.92}.get(str(difficulty), 0.55)
+    rng = random.Random(seed)
+    end_t = max(4000, int(duration_ms) - 2200)
+    start_t = 1800
+    notes: list[dict] = []
+    lane = rng.randrange(RHYTHM_LANES)
+    last_t = -99999
+
+    normalized: list[tuple[int, str]] = []
+    for item in event_ms:
+        if isinstance(item, tuple):
+            normalized.append((int(item[0]), str(item[1])))
+        else:
+            normalized.append((int(item), "beat"))
+
+    for t, kind in normalized:
+        if t < start_t or t > end_t:
+            continue
+        if t - last_t < 90:
+            continue
+        if kind == "half" and rng.random() > half_keep:
+            continue
+        if rng.random() > dens:
+            continue
+        if rng.random() < chord_p:
+            a, b = rng.sample(range(RHYTHM_LANES), 2)
+            notes.append({"t": int(t), "lane": a, "hit": False, "missed": False})
+            notes.append({"t": int(t), "lane": b, "hit": False, "missed": False})
+        else:
+            step = rng.choice((-1, 1, 1, 2, -2, 0))
+            lane = (lane + step) % RHYTHM_LANES
+            notes.append({"t": int(t), "lane": lane, "hit": False, "missed": False})
+        last_t = t
+    notes.sort(key=lambda n: (int(n["t"]), int(n["lane"])))
+    return notes
+
+
+def _analyze_wav_beat_events(wav_path: Path, duration_ms: int) -> tuple[float, list[tuple[int, str]]]:
+    """从音频估 BPM，并生成 (时刻ms, beat|half) 事件。"""
+    import numpy as np
+
+    y, sr = _load_wav_mono_float(wav_path)
+    y = np.ascontiguousarray(y, dtype=np.float32)
+    hop = 512
+    max_samples = int(min(len(y), RHYTHM_ANALYZE_MAX_SEC * sr))
+    y_head = np.ascontiguousarray(y[:max_samples], dtype=np.float32)
+    nov, hop = _onset_novelty(y_head, sr, hop=hop)
+    hop_sec = hop / float(sr)
+    hop_ms = hop_sec * 1000.0
+    bpm = _estimate_bpm_from_novelty(nov, hop_sec)
+    period_ms = 60000.0 / bpm
+    period_frames = period_ms / hop_ms
+    phase = _beat_phase_frames(nov, period_frames)
+    phase_ms = phase * hop_ms
+
+    events: list[tuple[int, str]] = []
+    t = phase_ms
+    while t < 1200:
+        t += period_ms
+    half = period_ms * 0.5
+    end_t = max(4000, int(duration_ms) - 1800)
+    while t <= end_t:
+        events.append((int(round(t)), "beat"))
+        events.append((int(round(t + half)), "half"))
+        t += period_ms
+
+    thr = float(np.percentile(nov, 78))
+    onset_raw: list[int] = []
+    last = -10_000
+    for i, v in enumerate(nov):
+        if v < thr:
+            continue
+        if i > 0 and i + 1 < len(nov) and not (v >= nov[i - 1] and v >= nov[i + 1]):
+            continue
+        ms = int(i * hop_ms)
+        if ms - last < 110:
+            continue
+        onset_raw.append(ms)
+        last = ms
+    onset_snap = _snap_times_ms(onset_raw, half, tol_ms=70.0)
+    win_ms = max_samples / sr * 1000.0
+    seen = {tt for tt, _k in events}
+    for ms in onset_snap:
+        if ms > win_ms or ms in seen:
+            continue
+        rel = ((ms - phase_ms) / period_ms) % 1.0
+        kind = "beat" if rel < 0.18 or rel > 0.82 else "half"
+        events.append((int(ms), kind))
+        seen.add(int(ms))
+    events.sort(key=lambda x: x[0])
+    return bpm, events
+
+
+def _rhythm_chart_cache_path(track_id: str, difficulty: str) -> Path:
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in f"{track_id}_{difficulty}")
+    return DATA_AUDIO_DIR / f"rhythm_chart_{safe}_v{RHYTHM_CHART_CACHE_VER}.json"
+
+
+def _build_rhythm_chart_random(duration_ms: int, difficulty: str, *, bpm: float | None = None, seed: int | None = None) -> list[dict]:
+    dens = {"低": 0.34, "中": 0.50, "高": 0.66}.get(str(difficulty), 0.50)
+    if duration_ms >= 180000:
+        dens *= 0.82
+    elif duration_ms >= 120000:
+        dens *= 0.90
+    use_bpm = float(bpm) if bpm and bpm > 0 else float(RHYTHM_BPM)
+    beat = 60000.0 / use_bpm
+    rng = random.Random(seed if seed is not None else int(time.time()) % 100000)
+    notes: list[dict] = []
+    t = 2200.0
+    lane = rng.randrange(RHYTHM_LANES)
+    end_t = max(4000, duration_ms - 2500)
+    while t < end_t:
+        if rng.random() < dens:
+            if rng.random() < 0.10:
+                a, b = rng.sample(range(RHYTHM_LANES), 2)
+                notes.append({"t": int(t), "lane": a, "hit": False, "missed": False})
+                notes.append({"t": int(t), "lane": b, "hit": False, "missed": False})
+            else:
+                lane = (lane + rng.choice((-1, 1, 1, 2, -2))) % RHYTHM_LANES
+                notes.append({"t": int(t), "lane": lane, "hit": False, "missed": False})
+        step = beat * (0.5 if rng.random() < 0.22 else 1.0)
+        if rng.random() < 0.08:
+            step = beat * 1.5
+        t += step
+    return notes
+
+
+def _build_rhythm_chart_from_wav(
+    wav_path: Path,
+    duration_ms: int,
+    difficulty: str,
+    *,
+    track_id: str | None = None,
+) -> tuple[list[dict], float, str]:
+    """返回 (notes, bpm, source) source=beat|cache|random。"""
+    tid = track_id or wav_path.stem
+    cache_path = _rhythm_chart_cache_path(str(tid), str(difficulty))
+    try:
+        st = wav_path.stat()
+        wav_sig = f"{int(st.st_mtime)}:{st.st_size}"
+    except Exception:
+        wav_sig = ""
+
+    if cache_path.exists():
+        try:
+            data = json.loads(cache_path.read_text(encoding="utf-8"))
+            if (
+                isinstance(data, dict)
+                and int(data.get("ver", 0)) == RHYTHM_CHART_CACHE_VER
+                and str(data.get("wav_sig", "")) == wav_sig
+                and str(data.get("difficulty", "")) == str(difficulty)
+            ):
+                raw = data.get("notes") or []
+                bpm = float(data.get("bpm", RHYTHM_BPM))
+                end_t = max(4000, int(duration_ms) - 2200)
+                notes = [
+                    {"t": int(n["t"]), "lane": int(n["lane"]), "hit": False, "missed": False}
+                    for n in raw
+                    if isinstance(n, dict) and int(n.get("t", 0)) <= end_t
+                ]
+                if len(notes) >= 8:
+                    return notes, bpm, "cache"
+        except Exception:
+            pass
+
+    try:
+        full_ms = max(duration_ms, _get_wav_duration_ms(wav_path) or duration_ms)
+        bpm, events = _analyze_wav_beat_events(wav_path, full_ms)
+        seed = abs(hash((str(wav_path.resolve()), difficulty, wav_sig))) % (10**9)
+        notes_full = _events_to_rhythm_notes(events, difficulty=difficulty, duration_ms=full_ms, seed=seed)
+        try:
+            payload = {
+                "ver": RHYTHM_CHART_CACHE_VER,
+                "track_id": tid,
+                "difficulty": difficulty,
+                "bpm": bpm,
+                "wav_sig": wav_sig,
+                "notes": [{"t": int(n["t"]), "lane": int(n["lane"])} for n in notes_full],
+            }
+            cache_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+        end_t = max(4000, int(duration_ms) - 2200)
+        notes = [n for n in notes_full if int(n["t"]) <= end_t]
+        if len(notes) >= 8:
+            return notes, bpm, "beat"
+    except Exception:
+        pass
+
+    notes = _build_rhythm_chart_random(duration_ms, difficulty, bpm=None)
+    return notes, float(RHYTHM_BPM), "random"
+
+
+def _build_rhythm_chart(
+    duration_ms: int,
+    difficulty: str,
+    *,
+    wav_path: Path | None = None,
+    track_id: str | None = None,
+) -> list[dict]:
+    if wav_path is not None and Path(wav_path).exists():
+        notes, _bpm, _src = _build_rhythm_chart_from_wav(
+            Path(wav_path), duration_ms, difficulty, track_id=track_id
+        )
+        return notes
+    return _build_rhythm_chart_random(duration_ms, difficulty)
+
+
+def _rhythm_hit_judgment(delta_ms: int) -> tuple[str, int]:
+    ad = abs(delta_ms)
+    if ad <= RHYTHM_HIT_PERFECT_MS:
+        return "Perfect", 300
+    if ad <= RHYTHM_HIT_GREAT_MS:
+        return "Great", 200
+    if ad <= RHYTHM_HIT_GOOD_MS:
+        return "Good", 100
+    return "Miss", 0
 
 
 def _leaderboard_bucket_title(bucket: str) -> str:
@@ -2300,6 +2908,36 @@ def _update_leaderboard(category: str, pet_id: int | None, entry: dict) -> None:
             existing["ts"] = ts
         else:
             rows.append({"pet_id": pet_id, "wins": 1, "ts": ts})
+    elif category == "music":
+        score = int(entry.get("score", 0))
+        combo = int(entry.get("max_combo", 0))
+        grade = str(entry.get("grade", "D"))
+        if existing:
+            existing["attempts"] = int(existing.get("attempts", 0)) + 1
+            old_score = int(existing.get("best_score", 0))
+            old_grade = str(existing.get("best_grade", "D"))
+            if score > old_score or (
+                score == old_score and _grade_rank(grade) > _grade_rank(old_grade)
+            ) or (
+                score == old_score
+                and _grade_rank(grade) == _grade_rank(old_grade)
+                and combo > int(existing.get("best_combo", 0))
+            ):
+                existing["best_score"] = score
+                existing["best_combo"] = combo
+                existing["best_grade"] = grade
+                existing["ts"] = ts
+        else:
+            rows.append(
+                {
+                    "pet_id": pet_id,
+                    "best_score": score,
+                    "best_combo": combo,
+                    "best_grade": grade,
+                    "attempts": 1,
+                    "ts": ts,
+                }
+            )
     else:
         return
 
@@ -2329,6 +2967,9 @@ def _rebuild_leaderboard_from_profile(profile: dict) -> None:
     for item in records.get("rhyme", []):
         if isinstance(item, dict):
             _update_leaderboard("rhyme", pet_id, item)
+    for item in records.get("music", []):
+        if isinstance(item, dict):
+            _update_leaderboard("music", pet_id, item)
 
 
 def _format_leaderboard_line(bucket: str, rank: int, entry: dict, *, current_pet_id: int | None) -> tuple[str, str]:
@@ -2352,43 +2993,78 @@ def _typing_grade(score: int) -> str:
 
 
 def _typing_grade_info(score: int) -> tuple[str, str | None, float]:
-    current = TYPING_GRADE_TIERS[0][0]
-    for grade, threshold, _color in reversed(TYPING_GRADE_TIERS):
-        if score >= threshold:
+    return _grade_info_from_tiers(score, TYPING_GRADE_TIERS)
+
+
+def _rhythm_accuracy_pct(perfect: int, great: int, good: int, miss: int) -> float:
+    total = perfect + great + good + miss
+    if total <= 0:
+        return 0.0
+    return 100.0 * (perfect * 1.0 + great * 0.8 + good * 0.5) / total
+
+
+def _rhythm_grade(perfect: int, great: int, good: int, miss: int) -> str:
+    return _grade_from_tiers(_rhythm_accuracy_pct(perfect, great, good, miss), RHYTHM_GRADE_TIERS)
+
+
+def _grade_from_tiers(value: float, tiers: tuple[tuple[str, int, str], ...]) -> str:
+    current = tiers[0][0]
+    for grade, threshold, _color in reversed(tiers):
+        if value >= threshold:
+            current = grade
+            break
+    return current
+
+
+def _grade_info_from_tiers(
+    value: float, tiers: tuple[tuple[str, int, str], ...]
+) -> tuple[str, str | None, float]:
+    current = tiers[0][0]
+    for grade, threshold, _color in reversed(tiers):
+        if value >= threshold:
             current = grade
             break
     next_grade: str | None = None
     progress = 1.0
-    for i, (grade, threshold, _color) in enumerate(TYPING_GRADE_TIERS):
+    for i, (grade, threshold, _color) in enumerate(tiers):
         if grade != current:
             continue
-        if i + 1 < len(TYPING_GRADE_TIERS):
-            next_grade, next_threshold, _ = TYPING_GRADE_TIERS[i + 1]
+        if i + 1 < len(tiers):
+            next_grade, next_threshold, _ = tiers[i + 1]
             span = max(1, next_threshold - threshold)
-            progress = min(1.0, (score - threshold) / span)
+            progress = min(1.0, (value - threshold) / span)
         break
     return current, next_grade, progress
 
 
-def _draw_typing_grade_bar(canvas: tk.Canvas, width: int, height: int, score: int) -> None:
+def _draw_grade_bar(
+    canvas: tk.Canvas,
+    width: int,
+    height: int,
+    value: float,
+    tiers: tuple[tuple[str, int, str], ...],
+    *,
+    unit: str = "分",
+) -> None:
     canvas.delete("all")
-    grade, next_grade, tier_progress = _typing_grade_info(score)
-    grade_colors = {g: c for g, _t, c in TYPING_GRADE_TIERS}
+    grade, next_grade, tier_progress = _grade_info_from_tiers(value, tiers)
+    grade_colors = {g: c for g, _t, c in tiers}
     bar_top = 16
     bar_h = max(8, height - bar_top - 14)
     canvas.create_rectangle(0, bar_top, width, bar_top + bar_h, fill="#222233", outline="#666688", width=1)
-    tier_count = len(TYPING_GRADE_TIERS)
-    for i, (g, threshold, color) in enumerate(TYPING_GRADE_TIERS):
+    tier_count = len(tiers)
+    max_v = max(1, tiers[-1][1])
+    for i, (g, threshold, color) in enumerate(tiers):
         x = int(width * i / max(1, tier_count - 1))
         canvas.create_line(x, bar_top, x, bar_top + bar_h, fill="#444466")
         canvas.create_text(x, 6, text=g, fill=color, font=("Courier New", 8, "bold"))
-    total_progress = min(1.0, score / TYPING_GRADE_TIERS[-1][1])
+    total_progress = min(1.0, float(value) / max_v)
     fill_w = max(0, int((width - 2) * total_progress))
     if fill_w > 0:
         canvas.create_rectangle(1, bar_top + 1, 1 + fill_w, bar_top + bar_h - 1, fill=grade_colors[grade], outline="")
     if next_grade:
-        need = TYPING_GRADE_TIERS[[t[0] for t in TYPING_GRADE_TIERS].index(next_grade)][1] - score
-        hint = f"评级 {grade}  {int(tier_progress * 100)}% → {next_grade}（还差 {max(0, need)} 分）"
+        need = tiers[[t[0] for t in tiers].index(next_grade)][1] - value
+        hint = f"评级 {grade}  {int(tier_progress * 100)}% → {next_grade}（还差 {max(0, int(need))}{unit}）"
     else:
         hint = f"评级 {grade}  满分！"
     canvas.create_text(
@@ -2399,6 +3075,17 @@ def _draw_typing_grade_bar(canvas: tk.Canvas, width: int, height: int, score: in
         anchor=tk.S,
         font=("Courier New", 8, "bold"),
     )
+
+
+def _draw_typing_grade_bar(canvas: tk.Canvas, width: int, height: int, score: int) -> None:
+    _draw_grade_bar(canvas, width, height, float(score), TYPING_GRADE_TIERS, unit="分")
+
+
+def _draw_rhythm_grade_bar(
+    canvas: tk.Canvas, width: int, height: int, perfect: int, great: int, good: int, miss: int
+) -> None:
+    acc = _rhythm_accuracy_pct(perfect, great, good, miss)
+    _draw_grade_bar(canvas, width, height, acc, RHYTHM_GRADE_TIERS, unit="%")
 
 
 KEYBOARD_ROWS = ("1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM")
@@ -3087,6 +3774,28 @@ class DesktopPet:
         self.work_encourage_job: str | None = None
         self.work_boxes_since_banter = 0
         self.work_banter_last_ms = 0
+        self.work_anchored_box_wins: list[tk.Toplevel] = []
+        self.work_local_stack = 0
+
+        self.rhythm_win: tk.Toplevel | None = None
+        self.rhythm_canvas: tk.Canvas | None = None
+        self.rhythm_job: str | None = None
+        self.rhythm_active = False
+        self.rhythm_resume_music = False
+        self.rhythm_notes: list[dict] = []
+        self.rhythm_start_ms = 0
+        self.rhythm_end_ms = 0
+        self.rhythm_score = 0
+        self.rhythm_combo = 0
+        self.rhythm_max_combo = 0
+        self.rhythm_perfect = 0
+        self.rhythm_great = 0
+        self.rhythm_good = 0
+        self.rhythm_miss = 0
+        self.rhythm_judgment = ""
+        self.rhythm_flash: dict[int, int] = {}
+        self.rhythm_track_id = DEFAULT_MUSIC_TRACK
+        self.rhythm_grade_bar: tk.Canvas | None = None
 
         self.drag_x = 0
         self.drag_y = 0
@@ -3119,6 +3828,8 @@ class DesktopPet:
         self.panel_win: tk.Toplevel | None = None
         self.speech_dialog: tk.Toplevel | None = None
         self.toast_win: tk.Toplevel | None = None
+        self.countdown_win: tk.Toplevel | None = None
+        self.countdown_label: tk.Label | None = None
         self.happy_fx_win: tk.Toplevel | None = None
         self.happy_fx_canvas: tk.Canvas | None = None
         self.food_fx_win: tk.Toplevel | None = None
@@ -3143,6 +3854,8 @@ class DesktopPet:
         self.expose_glitch_message = ""
         self.expose_hit_streak = 0
         self.expose_session_active = False
+        self.expose_enter_armed = False
+        self.expose_enter_was_down = False
         self.expose_pointer_base_speed = EXPOSE_POINTER_SPEED
         self.game_clear_win: tk.Toplevel | None = None
         self.game_clear_canvas: tk.Canvas | None = None
@@ -3162,6 +3875,7 @@ class DesktopPet:
         self.bg_music_playing = False
         self.bg_music_paused_for_call = False
         self.music_config = _load_music_config()
+        self.root.after(200, _ensure_all_music_track_wavs)
         self.music_settings_win: tk.Toplevel | None = None
         self.sound_settings_win: tk.Toplevel | None = None
         self.backpack_icons_frame: tk.Frame | None = None
@@ -3777,7 +4491,7 @@ class DesktopPet:
             if mode == "custom":
                 self._show_toast("请先导入自定义歌曲", "#ff8844")
             else:
-                self._show_toast("找不到音乐文件 aicatch.mp4", "#ff8844")
+                self._show_toast("找不到默认音乐文件", "#ff8844")
             return
         try:
             import pygame
@@ -3805,31 +4519,55 @@ class DesktopPet:
         if self.dragging or self.state == "work":
             return
         self._hide_main_menu()
-        if self.mode != "free":
-            self._request_mode_switch(self._apply_music_toggle)
-            return
-        self._apply_music_toggle()
-
-    def _apply_music_toggle(self) -> None:
         if self.music_sprite_mode:
-            self.music_sprite_mode = False
-            self._stop_bg_music()
-            self._stop_music_wave_fx()
-            self._sync_mini_pet_music_waves()
-            if self.state in ("stand", "walk"):
-                self._set_image(self._current_stand_sprite())
-            self._show_toast("音乐已关闭", PIXEL_COLOR)
+            self._apply_music_off()
             return
-        self.music_sprite_mode = True
-        self._interact_flair("music", banter=True, show_fx=False)
-        self._start_bg_music()
-        self._start_music_wave_fx()
+        if self.mode not in ("free", "stroll"):
+            self._request_mode_switch(self._apply_music_on)
+            return
+        self._apply_music_on()
+
+    def _apply_music_off(self) -> None:
+        self.music_sprite_mode = False
+        self._stop_bg_music()
+        self._stop_music_wave_fx()
         self._sync_mini_pet_music_waves()
         if self.state in ("stand", "walk"):
             self._set_image(self._current_stand_sprite())
+        self._show_toast("音乐已关闭（仍为漫步）", PIXEL_COLOR)
+
+    def _apply_music_on(self) -> None:
+        self._interrupt_for_mode_switch()
+        self._leave_quiet_mode()
+        if self.mode == "work":
+            self._stop_work_mode()
+        if self.mode == "game":
+            self._stop_game_mode()
+        # 音乐模式＝漫步：只走路听歌，不触发动作/台词特效
+        self.mode = "stroll"
+        self.follow_animating = False
+        self.work_animating = False
+        self._wake_from_sleep()
+        self.state = "stand"
+        self.action_name = ""
+        self._clear_all_action_fx()
+        self.music_sprite_mode = True
+        self._start_bg_music()
+        self._start_music_wave_fx()
+        self._sync_mini_pet_music_waves()
+        self._set_image(self._current_stand_sprite())
+        self._place_window()
         mode_label = "普通" if self.music_config.get("mode", "normal") == "normal" else "自定义"
-        self._show_toast(f"音乐模式开启（{mode_label}）\n自由 + music 精灵", "#88ccff")
+        track = _music_track(self.music_config.get("normal_track"))
+        self._show_toast(f"音乐漫步开启（{mode_label} · {track['title']}）", "#88ccff")
         self._show_once_hint("music_mode", duration_ms=3500)
+        self._resume_idle()
+
+    def _apply_music_toggle(self) -> None:
+        if self.music_sprite_mode:
+            self._apply_music_off()
+        else:
+            self._apply_music_on()
 
     def _open_sound_settings(self, *, from_panel: bool = False) -> None:
         if not from_panel:
@@ -3885,6 +4623,7 @@ class DesktopPet:
                 self._stop_bg_music()
                 self._start_bg_music()
             path_label.config(text=self._music_path_label())
+            refresh_track_btns()
 
         tk.Button(
             mode_row, text="普通", command=lambda: set_mode("normal"), font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
@@ -3892,6 +4631,43 @@ class DesktopPet:
         tk.Button(
             mode_row, text="自定义", command=lambda: set_mode("custom"), font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
         ).pack(side=tk.LEFT, padx=4)
+
+        track_row = tk.Frame(frame, bg=MENU_BG)
+        track_row.pack(fill=tk.X, pady=(2, 4))
+        tk.Label(track_row, text="普通曲", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+
+        def set_normal_track(track_id: str) -> None:
+            self.music_config["normal_track"] = track_id
+            self.music_config["mode"] = "normal"
+            mode_var.set("normal")
+            _save_music_config(self.music_config)
+            path_label.config(text=self._music_path_label())
+            refresh_track_btns()
+            if self.bg_music_playing or self.music_sprite_mode:
+                self._stop_bg_music()
+                self._start_bg_music()
+
+        track_btns: dict[str, tk.Button] = {}
+
+        def refresh_track_btns() -> None:
+            cur = str(self.music_config.get("normal_track", DEFAULT_MUSIC_TRACK))
+            for tid, btn in track_btns.items():
+                on = tid == cur and mode_var.get() == "normal"
+                btn.config(bg="#6688aa" if on else MENU_ACTIVE)
+
+        for tid in MUSIC_TRACK_ORDER:
+            track = _music_track(tid)
+            btn = tk.Button(
+                track_row,
+                text=str(track["title"]),
+                command=lambda t=tid: set_normal_track(t),
+                font=PIXEL_FONT,
+                bg=MENU_ACTIVE,
+                fg=MENU_FG,
+            )
+            btn.pack(side=tk.LEFT, padx=2)
+            track_btns[tid] = btn
+        refresh_track_btns()
 
         def add_volume_row(parent, label: str, key: str, on_change=None) -> None:
             row = tk.Frame(parent, bg=MENU_BG)
@@ -3955,6 +4731,7 @@ class DesktopPet:
             mode_var.set("custom")
             _save_music_config(self.music_config)
             path_label.config(text=self._music_path_label())
+            refresh_track_btns()
             if self.bg_music_playing or self.music_sprite_mode:
                 self._stop_bg_music()
                 self._start_bg_music()
@@ -3979,7 +4756,8 @@ class DesktopPet:
         if self.music_config.get("mode", "normal") == "custom":
             p = self.music_config.get("custom_path", "")
             return f"自定义：{Path(p).name if p else '未导入'}"
-        return f"普通：{MUSIC_AUDIO_SRC.name}"
+        track = _music_track(self.music_config.get("normal_track"))
+        return f"普通：{track['title']}"
 
     def _cancel_yesno_overlay(self) -> None:
         if self.yesno_reveal_job:
@@ -4375,6 +5153,10 @@ class DesktopPet:
             return
         self._open_operation_guide(auto=True)
 
+    def _hint_seen(self, key: str) -> bool:
+        hints = self.app_config.get("seen_hints", {})
+        return isinstance(hints, dict) and bool(hints.get(key))
+
     def _open_operation_guide(self, *, auto: bool = False) -> None:
         if not auto:
             self._hide_main_menu()
@@ -4392,22 +5174,188 @@ class DesktopPet:
         tk.Label(frame, text="操作说明", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
         tk.Label(
             frame,
-            text=OPERATION_GUIDE_TEXT,
+            text=OPERATION_GUIDE_INDEX,
             font=PIXEL_FONT,
             fg=MENU_FG,
             bg=MENU_BG,
             justify=tk.LEFT,
-            wraplength=340,
-        ).pack(anchor=tk.W, pady=(8, 0))
+            wraplength=360,
+        ).pack(anchor=tk.W, pady=(8, 6))
+
+        topic_order = ("basic", "modes", "games", "music_game", "panel", "system")
+        for key in topic_order:
+            info = GUIDE_TOPICS.get(key)
+            if not info:
+                continue
+            tk.Button(
+                frame,
+                text=f"▶ {info['title']}",
+                command=lambda k=key: self._open_guide_topic(k),
+                font=PIXEL_FONT,
+                bg=MENU_ACTIVE,
+                fg=MENU_FG,
+                relief=tk.FLAT,
+                anchor=tk.W,
+                cursor="hand2",
+            ).pack(fill=tk.X, pady=2)
+
         tk.Button(
             frame,
             text="知道了",
             command=lambda: self.operation_guide_win.destroy() if self.operation_guide_win else None,
             font=PIXEL_FONT,
-            bg=MENU_ACTIVE,
+            bg="#555555",
             fg=MENU_FG,
         ).pack(anchor=tk.E, pady=(10, 0))
         self._place_panel_popup(self.operation_guide_win)
+
+    def _open_guide_topic(self, key: str) -> None:
+        info = GUIDE_TOPICS.get(key)
+        if not info:
+            return
+        win = tk.Toplevel(self.root)
+        win.title(str(info["title"]))
+        win.attributes("-topmost", True)
+        win.configure(bg=MENU_BG)
+        outer = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
+        outer.pack(fill=tk.BOTH, expand=True)
+        tk.Label(outer, text=str(info["title"]), font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+
+        body_wrap = tk.Frame(outer, bg=MENU_BG)
+        body_wrap.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+        scroll = tk.Scrollbar(body_wrap)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        text = tk.Text(
+            body_wrap,
+            width=46,
+            height=16,
+            font=PIXEL_FONT,
+            fg=MENU_FG,
+            bg="#1e1e28",
+            wrap=tk.WORD,
+            relief=tk.FLAT,
+            yscrollcommand=scroll.set,
+        )
+        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.config(command=text.yview)
+        text.insert("1.0", str(info.get("body", "")))
+        text.config(state=tk.DISABLED)
+
+        for label, url in info.get("links") or ():
+            _pack_web_link(outer, label, url, prefix="链接 · ")
+
+        tk.Button(
+            outer,
+            text="返回",
+            command=win.destroy,
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+        ).pack(anchor=tk.E, pady=(10, 0))
+        self._place_panel_popup(win)
+
+    def _open_rhythm_carnival_info(self) -> None:
+        self._hide_main_menu()
+        win = tk.Toplevel(self.root)
+        win.title("官方音游说明")
+        win.attributes("-topmost", True)
+        win.configure(bg=MENU_BG)
+        frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
+        frame.pack()
+        tk.Label(frame, text="官方音游介绍", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+        tk.Label(
+            frame,
+            text=RHYTHM_CARNIVAL_INTRO,
+            font=PIXEL_FONT,
+            fg=MENU_FG,
+            bg=MENU_BG,
+            justify=tk.LEFT,
+            wraplength=380,
+        ).pack(anchor=tk.W, pady=(8, 6))
+        _pack_web_link(frame, RHYTHM_CARNIVAL_TITLE, RHYTHM_CARNIVAL_URL, prefix="· ")
+        _pack_web_link(frame, "Nitro+CHiRAL 官网", ABOUT_NITROCHIRAL_URL, prefix="· ")
+        tk.Button(
+            frame,
+            text="关闭",
+            command=win.destroy,
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+        ).pack(anchor=tk.E, pady=(10, 0))
+        self._place_panel_popup(win)
+
+    def _ensure_first_play_guide(self, key: str, on_continue) -> None:
+        """首次进入某玩法时弹出操作指南，确认后再继续。"""
+        hint_key = f"first_play:{key}"
+        if self._hint_seen(hint_key):
+            on_continue()
+            return
+        info = FIRST_PLAY_GUIDES.get(key) or GUIDE_TOPICS.get(key)
+        if not info:
+            self._mark_hint_seen(hint_key)
+            on_continue()
+            return
+        self._hide_main_menu()
+        win = tk.Toplevel(self.root)
+        win.title(str(info.get("title", "操作指南")))
+        win.attributes("-topmost", True)
+        win.configure(bg=MENU_BG)
+        frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
+        frame.pack()
+        tk.Label(
+            frame,
+            text=str(info.get("title", "操作指南")),
+            font=PIXEL_FONT,
+            fg=PIXEL_COLOR,
+            bg=MENU_BG,
+        ).pack(anchor=tk.W)
+        tk.Label(
+            frame,
+            text="（首次进入 · 之后可在 系统→操作说明 查阅）",
+            font=("Courier New", 9),
+            fg="#888888",
+            bg=MENU_BG,
+        ).pack(anchor=tk.W, pady=(2, 6))
+        tk.Label(
+            frame,
+            text=str(info.get("body", "")),
+            font=PIXEL_FONT,
+            fg=MENU_FG,
+            bg=MENU_BG,
+            justify=tk.LEFT,
+            wraplength=400,
+        ).pack(anchor=tk.W)
+
+        for label, url in info.get("links") or ():
+            _pack_web_link(frame, label, url, prefix="链接 · ")
+
+        done = {"ok": False}
+
+        def finish() -> None:
+            if done["ok"]:
+                return
+            done["ok"] = True
+            self._mark_hint_seen(hint_key)
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            on_continue()
+
+        win.protocol("WM_DELETE_WINDOW", finish)
+        tk.Button(
+            frame,
+            text="知道了，开始",
+            command=finish,
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+        ).pack(anchor=tk.E, pady=(12, 0))
+        self._place_panel_popup(win)
+        try:
+            win.focus_force()
+        except Exception:
+            pass
 
     def _poll_hotkey(self) -> None:
         if not self.hotkey_ids or not self._alive():
@@ -4670,14 +5618,41 @@ class DesktopPet:
 
     def _open_mode_game_menu(self) -> None:
         gather_label = "采集 ✓" if self.mode == "game" else "采集"
+        rhythm_label = "音乐 ✓" if self.rhythm_active else "音乐 ▶"
         self._show_sub_menu(
             [
                 (gather_label, self._enable_game),
                 ("打字 ▶", self._open_typing_lang_menu),
                 ("背单词 ▶", self._open_vocab_lang_menu),
+                (rhythm_label, self._open_music_game_menu),
                 ("持有者排名", self._open_leaderboard),
             ],
             offset_x=120,
+        )
+
+    def _open_music_game_menu(self) -> None:
+        self._show_sub_menu(
+            [
+                ("选曲开始 ▶", self._open_rhythm_track_menu),
+                ("官方音游说明", self._open_rhythm_carnival_info),
+            ],
+            offset_x=180,
+        )
+
+    def _open_rhythm_track_menu(self) -> None:
+        items: list[tuple[str, callable]] = []
+        for tid in MUSIC_TRACK_ORDER:
+            track = _music_track(tid)
+            items.append((f"{track['title']} ▶", lambda t=tid: self._open_rhythm_length_menu(t)))
+        self._show_sub_menu(items, offset_x=240)
+
+    def _open_rhythm_length_menu(self, track_id: str) -> None:
+        self._show_sub_menu(
+            [
+                ("全曲", lambda: self._start_rhythm_game(track_id=track_id, play_cap_ms=0)),
+                ("90 秒", lambda: self._start_rhythm_game(track_id=track_id, play_cap_ms=RHYTHM_SHORT_CAP_MS)),
+            ],
+            offset_x=300,
         )
 
     def _open_typing_lang_menu(self) -> None:
@@ -4748,6 +5723,7 @@ class DesktopPet:
             "operation_guide_win",
             "work_custom_win",
             "leaderboard_win",
+            "rhythm_win",
         ):
             win = getattr(self, attr, None)
             if win and win.winfo_exists():
@@ -4759,6 +5735,7 @@ class DesktopPet:
         self._close_rhyme_fight(resume=False)
         self._close_typing_game(resume=False)
         self._close_vocab_game(resume=False)
+        self._close_rhythm_game(resume=False)
         self._hide_speech_dialog()
         self._stop_call_audio()
         self._cancel_action_end()
@@ -4848,6 +5825,7 @@ class DesktopPet:
             self.work_encourage_job = None
         self.work_boxes_since_banter = 0
         self.work_banter_last_ms = 0
+        self._clear_work_anchored_boxes()
         self._hide_work_overlay()
         if self.work_start_box_win and self.work_start_box_win.winfo_exists():
             self.work_start_box_win.destroy()
@@ -4941,6 +5919,8 @@ class DesktopPet:
         self._hide_shy_fx()
         if self.mode == "game":
             self._stop_game_mode()
+        if self.rhythm_active:
+            self._close_rhythm_game(resume=False)
 
     def _apply_work_mode(self) -> None:
         self._interrupt_for_mode_switch()
@@ -5086,11 +6066,14 @@ class DesktopPet:
             self._end_game_dizzy_stun()
             self._set_image(self.sprites.stand)
             self._show_game_hud()
-            self._show_once_hint("game_mode", duration_ms=3200)
+            self._mark_hint_seen("game_mode")
             self._game_tick()
             self._game_spawn_box()
 
-        self._request_mode_switch(lambda: self._start_game_countdown(begin))
+        def after_guide() -> None:
+            self._request_mode_switch(lambda: self._start_game_countdown(begin))
+
+        self._ensure_first_play_guide("gather", after_guide)
 
     def _game_time_left_ms(self) -> int:
         elapsed = int(time.time() * 1000) - self.game_start_ms
@@ -6267,7 +7250,11 @@ class DesktopPet:
 
     def _open_rhyme_fight(self) -> None:
         self._hide_main_menu()
-        self._start_game_countdown(self._begin_rhyme_fight)
+
+        def start() -> None:
+            self._start_game_countdown(self._begin_rhyme_fight)
+
+        self._ensure_first_play_guide("rhyme", start)
 
     def _begin_rhyme_fight(self) -> None:
         self._close_rhyme_fight(resume=False)
@@ -6408,6 +7395,413 @@ class DesktopPet:
         self._place_panel_popup(self.rhyme_fight_win)
         self.rhyme_fight_job = self.root.after(1500, enemy_turn)
 
+    def _start_rhythm_game(self, track_id: str | None = None, play_cap_ms: int | None = None) -> None:
+        if self.rhythm_active:
+            return
+        self._hide_main_menu()
+        chosen = str(track_id or self.music_config.get("normal_track") or DEFAULT_MUSIC_TRACK)
+        if chosen not in MUSIC_TRACKS:
+            chosen = DEFAULT_MUSIC_TRACK
+        self.rhythm_track_id = chosen
+        if play_cap_ms is None:
+            self.rhythm_play_cap_ms = int(RHYTHM_PLAY_CAP_MS)
+        else:
+            self.rhythm_play_cap_ms = max(0, int(play_cap_ms))
+
+        def begin() -> None:
+            self._start_game_countdown(self._begin_rhythm_game)
+
+        def after_guide() -> None:
+            self._request_mode_switch(begin)
+
+        self._ensure_first_play_guide("rhythm_game", after_guide)
+
+    def _close_rhythm_game(self, *, resume: bool = True, finished: bool = False) -> None:
+        was_active = self.rhythm_active
+        score = self.rhythm_score
+        max_combo = self.rhythm_max_combo
+        perfect = self.rhythm_perfect
+        great = self.rhythm_great
+        good = self.rhythm_good
+        miss = self.rhythm_miss
+        if self.rhythm_job:
+            try:
+                self.root.after_cancel(self.rhythm_job)
+            except Exception:
+                pass
+            self.rhythm_job = None
+        if self.rhythm_win and self.rhythm_win.winfo_exists():
+            try:
+                self.rhythm_win.unbind("<KeyPress>")
+            except Exception:
+                pass
+            self.rhythm_win.destroy()
+        self.rhythm_win = None
+        self.rhythm_canvas = None
+        self.rhythm_grade_bar = None
+        self.rhythm_active = False
+        self.rhythm_notes = []
+        self.rhythm_flash = {}
+        self.rhythm_judgment = ""
+        self.rhythm_bg_ready = False
+        self.rhythm_scan_i = 0
+        try:
+            import pygame
+
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+        except Exception:
+            pass
+        self.bg_music_playing = False
+        if self.rhythm_resume_music:
+            self.rhythm_resume_music = False
+            self.music_sprite_mode = True
+            self._start_bg_music()
+            self._start_music_wave_fx()
+            self._sync_mini_pet_music_waves()
+        if was_active and finished:
+            grade = _rhythm_grade(perfect, great, good, miss)
+            acc = _rhythm_accuracy_pct(perfect, great, good, miss)
+            track_title = str(_music_track(getattr(self, "rhythm_track_id", DEFAULT_MUSIC_TRACK))["title"])
+            self._save_game_record(
+                "music",
+                {
+                    "score": score,
+                    "max_combo": max_combo,
+                    "perfect": perfect,
+                    "great": great,
+                    "good": good,
+                    "miss": miss,
+                    "grade": grade,
+                    "accuracy": round(acc, 1),
+                    "track": getattr(self, "rhythm_track_id", DEFAULT_MUSIC_TRACK),
+                    "difficulty": self.difficulty,
+                },
+            )
+            mood_bonus = min(6, max_combo // 8)
+            if mood_bonus > 0:
+                self.mood = min(100, self.mood + mood_bonus)
+                self._refresh_panel()
+            grade_colors = {g: c for g, _t, c in RHYTHM_GRADE_TIERS}
+            grade_color = grade_colors.get(grade, "#88ccff")
+            subtitle = (
+                f"{track_title} · 准确率 {acc:.0f}%\n"
+                f"得分 {score}  最大连击 {max_combo}\n"
+                f"P {perfect}  G {great}  Good {good}  Miss {miss}"
+            )
+            self._show_game_clear(
+                title=f"评级 {grade}",
+                subtitle=subtitle,
+                accent=grade_color,
+                hero_grade=grade,
+                hero_color=grade_color,
+                on_done=self._resume_idle_after_activity if resume else None,
+            )
+            return
+        if resume and was_active:
+            self._resume_idle_after_activity()
+
+    def _begin_rhythm_game(self) -> None:
+        track = _music_track(getattr(self, "rhythm_track_id", DEFAULT_MUSIC_TRACK))
+        wav = _ensure_music_track_wav(str(track["id"]))
+        if wav is None or not wav.exists():
+            self._show_toast(f"找不到音乐：{track['title']}", "#ff8844")
+            self._resume_idle_after_activity()
+            return
+        self._close_rhythm_game(resume=False)
+        if self.mode == "game":
+            self._stop_game_mode()
+            self.mode = "free"
+        self.rhythm_resume_music = bool(self.music_sprite_mode or self.bg_music_playing)
+        if self.music_sprite_mode:
+            self.music_sprite_mode = False
+            self._stop_music_wave_fx()
+            self._sync_mini_pet_music_waves()
+        self._stop_bg_music()
+
+        duration_ms = _get_wav_duration_ms(wav) or 60000
+        cap = int(getattr(self, "rhythm_play_cap_ms", RHYTHM_PLAY_CAP_MS) or 0)
+        if cap > 0:
+            duration_ms = min(cap, duration_ms)
+        duration_ms = max(20000, duration_ms)
+        self._show_toast("正在根据音乐生成谱面…", "#88ccff", duration_ms=1600)
+        try:
+            self.root.update_idletasks()
+        except Exception:
+            pass
+        notes, bpm, src = _build_rhythm_chart_from_wav(
+            wav, duration_ms, self.difficulty, track_id=str(track["id"])
+        )
+        self.rhythm_notes = notes
+        self.rhythm_chart_bpm = bpm
+        self.rhythm_chart_source = src
+        if src == "beat":
+            self._show_toast(f"节拍谱 · 约 {bpm:.0f} BPM", "#88ffaa", duration_ms=1400)
+        elif src == "cache":
+            self._show_toast(f"节拍谱（缓存）· 约 {bpm:.0f} BPM", "#88ffaa", duration_ms=1200)
+        else:
+            self._show_toast("音频分析失败，已用随机谱", "#ff8844", duration_ms=1600)
+        self.rhythm_score = 0
+        self.rhythm_combo = 0
+        self.rhythm_max_combo = 0
+        self.rhythm_perfect = 0
+        self.rhythm_great = 0
+        self.rhythm_good = 0
+        self.rhythm_miss = 0
+        self.rhythm_judgment = ""
+        self.rhythm_flash = {}
+        self.rhythm_end_ms = duration_ms
+        self.rhythm_active = True
+        self.rhythm_track_id = str(track["id"])
+        self.rhythm_bg_ready = False
+        self.rhythm_grade_dirty_ms = 0
+        self.rhythm_scan_i = 0
+
+        self.rhythm_win = tk.Toplevel(self.root)
+        self.rhythm_win.title(f"音乐 · {track['title']}")
+        self.rhythm_win.attributes("-topmost", True)
+        self.rhythm_win.configure(bg="#101018")
+        self.rhythm_win.protocol("WM_DELETE_WINDOW", lambda: self._close_rhythm_game(resume=True))
+        self.rhythm_win.geometry(f"{RHYTHM_W}x{RHYTHM_H}")
+
+        top = tk.Frame(self.rhythm_win, bg="#101018")
+        top.pack(fill=tk.X, padx=8, pady=(6, 0))
+        self.rhythm_grade_bar = tk.Canvas(
+            top, width=RHYTHM_W - 16, height=RHYTHM_GRADE_BAR_H, bg="#101018", highlightthickness=0
+        )
+        self.rhythm_grade_bar.pack(fill=tk.X)
+
+        self.rhythm_canvas = tk.Canvas(
+            self.rhythm_win, width=RHYTHM_W, height=RHYTHM_H - RHYTHM_GRADE_BAR_H - 16, bg="#101018", highlightthickness=0
+        )
+        self.rhythm_canvas.pack()
+        self.rhythm_win.bind("<KeyPress>", self._rhythm_on_key)
+        try:
+            self.rhythm_win.focus_force()
+        except Exception:
+            pass
+        self._place_panel_popup(self.rhythm_win)
+        self._refresh_rhythm_grade_bar(force=True)
+
+        try:
+            import pygame
+
+            _init_pygame_mixer()
+            pygame.mixer.music.load(str(wav))
+            self._apply_music_volume()
+            pygame.mixer.music.play(0)
+            self.bg_music_playing = True
+        except Exception:
+            self._show_toast("音乐播放失败", "#ff6666")
+            self._close_rhythm_game(resume=True)
+            return
+
+        self.rhythm_start_ms = int(time.time() * 1000)
+        self._mark_hint_seen("rhythm_game")
+        self._rhythm_tick()
+
+    def _refresh_rhythm_grade_bar(self, *, force: bool = False) -> None:
+        bar = getattr(self, "rhythm_grade_bar", None)
+        if not bar:
+            return
+        try:
+            if not bar.winfo_exists():
+                return
+        except Exception:
+            return
+        now = int(time.time() * 1000)
+        if not force and now - getattr(self, "rhythm_grade_dirty_ms", 0) < RHYTHM_GRADE_BAR_REFRESH_MS:
+            return
+        self.rhythm_grade_dirty_ms = now
+        _draw_rhythm_grade_bar(
+            bar,
+            RHYTHM_W - 16,
+            RHYTHM_GRADE_BAR_H,
+            self.rhythm_perfect,
+            self.rhythm_great,
+            self.rhythm_good,
+            self.rhythm_miss,
+        )
+
+    def _rhythm_now_ms(self) -> int:
+        return int(time.time() * 1000) - self.rhythm_start_ms
+
+    def _rhythm_on_key(self, event: tk.Event) -> None:
+        if not self.rhythm_active:
+            return
+        key = (event.keysym or "").lower()
+        if key not in RHYTHM_KEYS:
+            return
+        lane = RHYTHM_KEYS.index(key)
+        now = self._rhythm_now_ms()
+        best = None
+        best_abs = RHYTHM_HIT_GOOD_MS + 1
+        # 只扫描即将到达/刚过线的音符
+        start = max(0, getattr(self, "rhythm_scan_i", 0) - 8)
+        for note in self.rhythm_notes[start:]:
+            if note["lane"] != lane or note["hit"] or note["missed"]:
+                continue
+            t = int(note["t"])
+            if t > now + RHYTHM_HIT_GOOD_MS + 40:
+                break
+            if t < now - RHYTHM_HIT_GOOD_MS - 40:
+                continue
+            delta = now - t
+            ad = abs(delta)
+            if ad < best_abs:
+                best_abs = ad
+                best = (note, delta)
+        if best is None:
+            return
+        note, delta = best
+        judge, pts = _rhythm_hit_judgment(delta)
+        if judge == "Miss":
+            return
+        note["hit"] = True
+        self.rhythm_flash[lane] = now + 120
+        self.rhythm_judgment = judge
+        self.rhythm_combo += 1
+        self.rhythm_max_combo = max(self.rhythm_max_combo, self.rhythm_combo)
+        bonus = min(50, self.rhythm_combo // 4 * 5)
+        self.rhythm_score += pts + bonus
+        if judge == "Perfect":
+            self.rhythm_perfect += 1
+        elif judge == "Great":
+            self.rhythm_great += 1
+        else:
+            self.rhythm_good += 1
+        self._refresh_rhythm_grade_bar()
+
+    def _rhythm_tick(self) -> None:
+        if not self.rhythm_active or not self.rhythm_canvas or not self.rhythm_win:
+            return
+        if not self.rhythm_win.winfo_exists():
+            self._close_rhythm_game(resume=True)
+            return
+        now = self._rhythm_now_ms()
+        # 顺序扫描漏判，避免每帧扫全表
+        i = getattr(self, "rhythm_scan_i", 0)
+        notes = self.rhythm_notes
+        nlen = len(notes)
+        while i < nlen:
+            note = notes[i]
+            if note["hit"] or note["missed"]:
+                i += 1
+                continue
+            t = int(note["t"])
+            if now - t > RHYTHM_HIT_GOOD_MS:
+                note["missed"] = True
+                self.rhythm_combo = 0
+                self.rhythm_miss += 1
+                self.rhythm_judgment = "Miss"
+                i += 1
+                self._refresh_rhythm_grade_bar()
+                continue
+            break
+        self.rhythm_scan_i = i
+
+        music_done = False
+        try:
+            import pygame
+
+            if pygame.mixer.get_init() and not pygame.mixer.music.get_busy() and now > 800:
+                music_done = True
+        except Exception:
+            music_done = now >= self.rhythm_end_ms + 800
+
+        # 90 秒等截断模式：到时停曲并结束
+        if now >= self.rhythm_end_ms:
+            try:
+                import pygame
+
+                if pygame.mixer.get_init():
+                    pygame.mixer.music.stop()
+            except Exception:
+                pass
+            music_done = True
+
+        all_done = i >= nlen
+        if music_done or (all_done and now >= self.rhythm_end_ms) or now >= self.rhythm_end_ms + 2000:
+            self._close_rhythm_game(resume=True, finished=True)
+            return
+
+        self._draw_rhythm_frame(now)
+        self.rhythm_job = self.root.after(RHYTHM_TICK_MS, self._rhythm_tick)
+
+    def _draw_rhythm_frame(self, now: int) -> None:
+        c = self.rhythm_canvas
+        if not c:
+            return
+        w = RHYTHM_W
+        h = max(320, RHYTHM_H - RHYTHM_GRADE_BAR_H - 16)
+        pad_x = 28
+        top = 48
+        hit_y = int(h * 0.80)
+        lane_w = (w - pad_x * 2) // RHYTHM_LANES
+        track = _music_track(getattr(self, "rhythm_track_id", DEFAULT_MUSIC_TRACK))
+        grade = _rhythm_grade(self.rhythm_perfect, self.rhythm_great, self.rhythm_good, self.rhythm_miss)
+        acc = _rhythm_accuracy_pct(self.rhythm_perfect, self.rhythm_great, self.rhythm_good, self.rhythm_miss)
+
+        if not getattr(self, "rhythm_bg_ready", False):
+            c.delete("all")
+            c.create_rectangle(0, 0, w, h, fill="#101018", outline="", tags=("bg",))
+            for i in range(RHYTHM_LANES):
+                x0 = pad_x + i * lane_w
+                x1 = x0 + lane_w - 6
+                col = RHYTHM_LANE_COLORS[i]
+                c.create_rectangle(x0, top, x1, h - 36, fill="#181828", outline="#333355", tags=("bg",))
+                c.create_rectangle(x0, hit_y - 10, x1, hit_y + 10, fill="#2a2a44", outline=col, width=2, tags=("hitline", f"hit{i}"))
+                c.create_text((x0 + x1) // 2, h - 18, text=RHYTHM_KEY_LABELS[i], fill=col, font=PIXEL_FONT, tags=("bg",))
+            self.rhythm_bg_ready = True
+
+        c.delete("dyn")
+        c.create_text(w // 2, 14, text=f"音乐 · {track['title']}", fill="#88ccff", font=PIXEL_FONT, tags=("dyn",))
+        left_s = max(0, (self.rhythm_end_ms - now) // 1000)
+        mode_tag = "90s" if int(getattr(self, "rhythm_play_cap_ms", 0) or 0) > 0 else "全曲"
+        bpm = getattr(self, "rhythm_chart_bpm", None)
+        bpm_tag = f"  {bpm:.0f}BPM" if bpm else ""
+        c.create_text(
+            w // 2,
+            32,
+            text=f"得分 {self.rhythm_score}  连击 {self.rhythm_combo}  评级 {grade}  {acc:.0f}%  {mode_tag}{bpm_tag} {left_s}s",
+            fill="#dddddd",
+            font=PIXEL_FONT,
+            tags=("dyn",),
+        )
+        for i in range(RHYTHM_LANES):
+            flash_until = self.rhythm_flash.get(i, 0)
+            fill = RHYTHM_LANE_COLORS[i] if now <= flash_until else "#2a2a44"
+            try:
+                c.itemconfigure(f"hit{i}", fill=fill)
+            except Exception:
+                pass
+
+        # 只画窗口内即将落下的音符
+        appear_ahead = RHYTHM_TRAVEL_MS + 80
+        for note in self.rhythm_notes[getattr(self, "rhythm_scan_i", 0) :]:
+            if note["hit"] or note["missed"]:
+                continue
+            t = int(note["t"])
+            if t - now > appear_ahead:
+                break
+            appear = t - RHYTHM_TRAVEL_MS
+            if now < appear or now > t + RHYTHM_HIT_GOOD_MS:
+                continue
+            progress = (now - appear) / RHYTHM_TRAVEL_MS
+            y = top + int((hit_y - top) * min(1.25, max(0.0, progress)))
+            i = int(note["lane"])
+            x0 = pad_x + i * lane_w + 8
+            x1 = x0 + lane_w - 22
+            c.create_rectangle(x0, y - 10, x1, y + 10, fill=RHYTHM_LANE_COLORS[i], outline="#ffffff", tags=("dyn",))
+        if self.rhythm_judgment:
+            jcol = {
+                "Perfect": "#ffee88",
+                "Great": "#88ffaa",
+                "Good": "#88ccff",
+                "Miss": "#ff6688",
+            }.get(self.rhythm_judgment, "#ffffff")
+            c.create_text(w // 2, hit_y - 36, text=self.rhythm_judgment, fill=jcol, font=PIXEL_FONT, tags=("dyn",))
+
     def _close_typing_game(self, *, resume: bool = True) -> None:
         if self.typing_game_job:
             try:
@@ -6444,7 +7838,10 @@ class DesktopPet:
         def start() -> None:
             self._start_game_countdown(lambda: self._begin_typing_game(lang))
 
-        self._request_mode_switch(start)
+        def after_guide() -> None:
+            self._request_mode_switch(start)
+
+        self._ensure_first_play_guide("typing", after_guide)
 
     def _begin_typing_game(self, lang: str) -> None:
         pool = _load_typing_bank(lang)
@@ -6569,10 +7966,47 @@ class DesktopPet:
 
         entry.bind("<KeyPress>", on_keypress)
         entry.bind("<KeyRelease>", on_type)
-        entry.focus_set()
+
+        def focus_entry(_event=None) -> None:
+            if state["done"] or not self.typing_game_win or not self.typing_game_win.winfo_exists():
+                return
+            try:
+                self.typing_game_win.lift()
+                self.typing_game_win.focus_force()
+                entry.focus_force()
+            except Exception:
+                pass
+
+        # 窗口内任意按键也写入输入框，无需先点选
+        def on_win_key(event: tk.Event) -> str | None:
+            if state["done"]:
+                return None
+            if event.widget is entry:
+                return None
+            if event.char and event.char.isprintable():
+                entry.insert(tk.END, event.char)
+                self._play_type_sound()
+                on_type()
+                return "break"
+            if event.keysym in ("BackSpace", "Delete"):
+                if event.keysym == "BackSpace":
+                    cur = entry.get()
+                    if cur:
+                        entry.delete(len(cur) - 1, tk.END)
+                else:
+                    entry.delete(0, tk.END)
+                on_type()
+                return "break"
+            return None
+
+        self.typing_game_win.bind("<KeyPress>", on_win_key)
+        self.typing_game_win.bind("<FocusIn>", focus_entry)
         update_grade_ui()
         refresh_kb()
         self._place_panel_popup(self.typing_game_win)
+        focus_entry()
+        self.root.after(30, focus_entry)
+        self.root.after(120, focus_entry)
         tick_timer()
 
     def _close_vocab_game(self, *, resume: bool = True) -> None:
@@ -6635,7 +8069,10 @@ class DesktopPet:
         def start() -> None:
             self._start_game_countdown(self._vocab_next_word)
 
-        self._request_mode_switch(start)
+        def after_guide() -> None:
+            self._request_mode_switch(start)
+
+        self._ensure_first_play_guide("vocab", after_guide)
 
     def _ensure_vocab_window(self, lang: str) -> None:
         if (
@@ -6785,6 +8222,7 @@ class DesktopPet:
         for lang in ("英语", "中文", "日语"):
             bucket_order.append(f"vocab:{lang}")
         bucket_order.append("rhyme")
+        bucket_order.append("music")
         extra = sorted(k for k in board if k not in bucket_order)
         ordered_buckets = [b for b in bucket_order if board.get(b)] + [b for b in extra if board.get(b)]
 
@@ -6992,6 +8430,7 @@ class DesktopPet:
         _save_diary(self.diary_entries)
         self.music_config = {
             "mode": "normal",
+            "normal_track": DEFAULT_MUSIC_TRACK,
             "music_volume": 70,
             "volume": 70,
             "sfx_volume": 80,
@@ -7258,23 +8697,57 @@ class DesktopPet:
     def _cancel_game_countdown(self) -> None:
         self._countdown_token = getattr(self, "_countdown_token", 0) + 1
         self._countdown_active = False
+        self._hide_countdown_overlay()
+
+    def _hide_countdown_overlay(self) -> None:
+        win = getattr(self, "countdown_win", None)
+        if win and win.winfo_exists():
+            win.destroy()
+        self.countdown_win = None
+        self.countdown_label = None
+
+    def _show_countdown_overlay(self, text: str) -> None:
+        self._hide_countdown_overlay()
+        self.countdown_win = tk.Toplevel(self.root)
+        self.countdown_win.overrideredirect(True)
+        self.countdown_win.attributes("-topmost", True)
+        try:
+            self.countdown_win.attributes("-alpha", 0.92)
+        except Exception:
+            pass
+        self.countdown_win.configure(bg="#101018")
+        border = tk.Frame(self.countdown_win, bg="#88ccff", padx=2, pady=2)
+        border.pack()
+        inner = tk.Frame(border, bg="#101018", width=GAME_COUNTDOWN_W, height=GAME_COUNTDOWN_H)
+        inner.pack()
+        inner.pack_propagate(False)
+        self.countdown_label = tk.Label(
+            inner,
+            text=text,
+            font=COUNTDOWN_FONT,
+            fg="#ffee88",
+            bg="#101018",
+        )
+        self.countdown_label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+        cx = self.x + self.display_size // 2 - GAME_COUNTDOWN_W // 2
+        cy = self.y + self.display_size // 2 - GAME_COUNTDOWN_H // 2
+        self._place_popup(self.countdown_win, max(8, cx), max(8, cy))
 
     def _start_game_countdown(self, on_ready, *, title: str = "") -> None:
         self._cancel_game_countdown()
         self._countdown_active = True
         token = self._countdown_token
-        steps = ("3", "2", "1", "开始!")
+        steps = ("3", "2", "1", "开始")
 
         def step(i: int = 0) -> None:
             if token != self._countdown_token:
                 return
             if i >= len(steps):
                 self._countdown_active = False
+                self._hide_countdown_overlay()
                 on_ready()
                 return
-            label = steps[i]
-            text = f"{title} {label}" if title else label
-            self._show_toast(text, "#ffcc44", duration_ms=GAME_COUNTDOWN_STEP_MS)
+            self._show_countdown_overlay(steps[i])
             self.root.after(GAME_COUNTDOWN_STEP_MS, lambda: step(i + 1))
 
         step()
@@ -7556,6 +9029,8 @@ class DesktopPet:
         self._notify_bg_fx_change()
 
     def _interact_flair(self, action: str, *, banter: bool = True, show_fx: bool = True) -> None:
+        if self.music_sprite_mode:
+            return
         if show_fx and action == "kick":
             self._show_interact_fx(action)
         if not banter or action not in INTERACT_BANTER:
@@ -8112,7 +9587,7 @@ class DesktopPet:
         self._place_window()
 
     def _play_expression_shy(self) -> None:
-        if self.dragging or self.state == "work":
+        if self.dragging or self.state == "work" or self.music_sprite_mode:
             return
         self._interrupt_current_interaction()
         self.state = "action"
@@ -8138,7 +9613,7 @@ class DesktopPet:
         self.shy_last_click_ms = now_ms
 
     def _play_expression_like(self) -> None:
-        if self.dragging or self.state == "work":
+        if self.dragging or self.state == "work" or self.music_sprite_mode:
             return
         self._interrupt_current_interaction()
         self.state = "action"
@@ -8150,7 +9625,7 @@ class DesktopPet:
         self._schedule_action_end(action="like", callback=self._after_simple_expression)
 
     def _play_expression_wink(self, *, restore_free: bool = False) -> None:
-        if self.dragging or self.state == "work":
+        if self.dragging or self.state == "work" or self.music_sprite_mode:
             return
         self._interrupt_current_interaction()
         self.state = "action"
@@ -8193,7 +9668,7 @@ class DesktopPet:
             self._stand_tick()
 
     def _play_expression_sprite(self, name: str, sprite: ImageTk.PhotoImage, *, banter: bool = True) -> None:
-        if self.dragging or self.state == "work":
+        if self.dragging or self.state == "work" or self.music_sprite_mode:
             return
         self._interrupt_current_interaction()
         self.state = "action"
@@ -8204,7 +9679,7 @@ class DesktopPet:
         self._schedule_action_end(action=name, callback=self._after_simple_expression)
 
     def _play_yesno_judge(self) -> None:
-        if self.dragging or self.state == "work":
+        if self.dragging or self.state == "work" or self.music_sprite_mode:
             return
         self._interrupt_current_interaction()
         self._hide_main_menu()
@@ -8286,9 +9761,11 @@ class DesktopPet:
         self.angry_anim_job = self.root.after(ANGRY_FRAME_MS, lambda: self._angry_anim_step(step + 1))
 
     def _cancel_expose_qte(self) -> None:
-        self._cancel_game_countdown()
+        # 不在这里取消倒计时：开局会先 cancel 再 start countdown，否则会误伤刚开的 3-2-1
         self.expose_qte_active = False
         self.expose_session_active = False
+        self.expose_enter_armed = False
+        self.expose_enter_was_down = False
         if self.expose_anim_job:
             self.root.after_cancel(self.expose_anim_job)
             self.expose_anim_job = None
@@ -8303,10 +9780,7 @@ class DesktopPet:
         self.expose_qte_canvas = None
         self.expose_glitch_win = None
         self.expose_glitch_canvas = None
-        try:
-            self.root.unbind_all("<Return>")
-        except Exception:
-            pass
+        # 不用 unbind_all，避免拆掉其它 Return 绑定；靠 expose_enter_armed 开关
 
     def _expose_medium_params(self) -> tuple[float, float]:
         mid = DIFFICULTY_PRESETS["中"]
@@ -8321,12 +9795,31 @@ class DesktopPet:
         combo_w = gw + gap + qte_size
         combo_h = max(gh, qte_size)
         margin = 24
-        max_x = max(margin, sw - combo_w - margin)
-        max_y = max(margin, sh - combo_h - margin)
-        base_x = random.randint(margin, max_x)
-        base_y = random.randint(margin, max_y)
+        # 优先贴近桌宠，避免随机到看不见或 randint 越界
+        prefer_x = max(margin, min(sw - combo_w - margin, self.x + self.display_size // 2 - combo_w // 2))
+        prefer_y = max(margin, min(sh - combo_h - margin, self.y - combo_h - 12))
+        max_x = sw - combo_w - margin
+        max_y = sh - combo_h - margin
+        if max_x < margin or max_y < margin:
+            # 屏幕放不下并排：叠在宠物附近（QTE 在上，提示在下）
+            qte_x = max(margin, min(sw - qte_size - margin, self.x))
+            qte_y = max(margin, min(sh - qte_size - gh - gap - margin, self.y - qte_size - 8))
+            glitch_x = max(margin, min(sw - gw - margin, qte_x))
+            glitch_y = min(sh - gh - margin, qte_y + qte_size + gap)
+            return glitch_x, glitch_y, qte_x, qte_y
+        # 在偏好点附近小范围抖动
+        lo_x = max(margin, prefer_x - 80)
+        hi_x = min(max_x, prefer_x + 80)
+        lo_y = max(margin, prefer_y - 60)
+        hi_y = min(max_y, prefer_y + 60)
+        if lo_x > hi_x:
+            lo_x, hi_x = margin, max_x
+        if lo_y > hi_y:
+            lo_y, hi_y = margin, max_y
+        base_x = random.randint(lo_x, hi_x)
+        base_y = random.randint(lo_y, hi_y)
         qte_left = random.choice([True, False])
-        if qte_left and base_x >= qte_size + gap + margin:
+        if qte_left:
             qte_x = base_x
             glitch_x = base_x + qte_size + gap
         else:
@@ -8394,12 +9887,62 @@ class DesktopPet:
             self.expose_qte_win, width=qte_size, height=qte_size, bg="magenta", highlightthickness=0
         )
         self.expose_qte_canvas.pack()
-        self.expose_qte_win.geometry(f"+{qx}+{qy}")
+        try:
+            self.expose_qte_win.update_idletasks()
+        except Exception:
+            pass
+        self.expose_qte_win.geometry(f"{qte_size}x{qte_size}+{qx}+{qy}")
         self.expose_qte_active = True
         self.expose_qte_done = False
+        self.expose_enter_armed = True
+        # 若仍按着 Enter，等松开再判，避免连发误触
+        self.expose_enter_was_down = self._expose_enter_key_down()
+        for seq in ("<Return>", "<KP_Enter>", "<KeyPress-Return>", "<KeyPress-KP_Enter>"):
+            self.expose_qte_win.bind(seq, self._expose_qte_enter)
+            if self.expose_glitch_win and self.expose_glitch_win.winfo_exists():
+                self.expose_glitch_win.bind(seq, self._expose_qte_enter)
+        try:
+            self.expose_glitch_win.lift()
+            self.expose_qte_win.lift()
+            self.expose_qte_win.focus_force()
+        except Exception:
+            pass
+        self.root.after(30, self._focus_expose_qte)
+        self.root.after(120, self._focus_expose_qte)
         self._expose_qte_tick()
+        self._show_toast("暴露开始 · Enter 判定", "#ff88aa", duration_ms=1200)
+
+    def _focus_expose_qte(self) -> None:
+        if not self.expose_session_active:
+            return
+        try:
+            self.root.focus_force()
+            if self.expose_qte_win and self.expose_qte_win.winfo_exists():
+                self.expose_qte_win.lift()
+                self.expose_qte_win.focus_force()
+            if self.expose_glitch_win and self.expose_glitch_win.winfo_exists():
+                self.expose_glitch_win.lift()
+        except Exception:
+            pass
+
+    def _expose_enter_key_down(self) -> bool:
+        if sys.platform != "win32":
+            return False
+        try:
+            # VK_RETURN = 0x0D
+            return bool(ctypes.windll.user32.GetAsyncKeyState(0x0D) & 0x8000)
+        except Exception:
+            return False
 
     def _expose_qte_tick(self) -> None:
+        if not self.expose_qte_active or not self.expose_qte_canvas:
+            return
+        # 无焦点时也能用 Enter：轮询物理按键边沿
+        if self.expose_enter_armed and not self.expose_qte_done:
+            down = self._expose_enter_key_down()
+            if down and not self.expose_enter_was_down:
+                self._expose_qte_enter()
+            self.expose_enter_was_down = down
         if not self.expose_qte_active or not self.expose_qte_canvas:
             return
         cur = getattr(self, "_expose_pointer_speed", EXPOSE_POINTER_SPEED)
@@ -8411,6 +9954,8 @@ class DesktopPet:
         self.expose_anim_job = self.root.after(EXPOSE_QTE_TICK_MS, self._expose_qte_tick)
 
     def _expose_qte_enter(self, _event=None) -> None:
+        if not self.expose_enter_armed:
+            return
         if not self.expose_qte_active or self.expose_qte_done or not self.expose_session_active:
             return
         hit = _angle_in_arc(
@@ -8424,6 +9969,8 @@ class DesktopPet:
         if self.dragging or self.state == "work":
             return
         self._interrupt_current_interaction()
+        self._cancel_game_countdown()
+        self._cancel_idle_chain()
         self._hide_main_menu()
         if self.mode == "quiet" and self.state == "rest":
             self._stop_rest_bobble()
@@ -8432,26 +9979,53 @@ class DesktopPet:
         self.expose_hit_streak = 0
         self._cancel_expose_qte()
         self.expose_session_active = False
+        self.expose_enter_armed = False
         _, base = self._expose_medium_params()
         self.expose_pointer_base_speed = base
 
         def begin() -> None:
-            if self.action_name != "expose":
-                return
+            # 倒计时期间看门狗可能改过状态：强制拉回暴露
+            self.state = "action"
+            self.action_name = "expose"
             self.expose_session_active = True
-            self.root.bind_all("<Return>", self._expose_qte_enter, add="+")
+            self.expose_enter_armed = True
+            self.expose_enter_was_down = self._expose_enter_key_down()
+            self._cancel_idle_chain()
+            # 整场绑定 root（覆盖同键位，不叠多层）；靠 expose_enter_armed 开关
+            for seq in ("<Return>", "<KP_Enter>", "<KeyPress-Return>", "<KeyPress-KP_Enter>"):
+                self.root.bind(seq, self._expose_qte_enter)
             try:
-                self.root.focus_force()
+                self._spawn_expose_glitch_round()
             except Exception:
-                pass
-            self._spawn_expose_glitch_round()
+                try:
+                    self._spawn_expose_glitch_round()
+                except Exception as exc:
+                    self._show_toast(f"暴露界面打开失败：{exc}", "#ff6666")
+                    self._finish_expose_session(cleared=False)
+                    return
+            if not self.expose_qte_win or not self.expose_glitch_win:
+                self._show_toast("暴露界面未生成，请重试", "#ff6666")
+                self._finish_expose_session(cleared=False)
+                return
+            self._focus_expose_qte()
+            self.root.after(80, self._focus_expose_qte)
+            self.root.after(250, self._focus_expose_qte)
 
-        self._start_game_countdown(begin, title="暴露")
+        def after_guide() -> None:
+            self.state = "action"
+            self.action_name = "expose"
+            self._start_game_countdown(begin, title="暴露")
+
+        self._ensure_first_play_guide("expose", after_guide)
 
     def _resolve_expose_qte_hit(self, success: bool) -> None:
         if self.action_name != "expose" or not self.expose_session_active:
             return
+        if self.expose_qte_done:
+            return
+        self.expose_qte_done = True
         self.expose_qte_active = False
+        self.expose_enter_armed = False
         if self.expose_anim_job:
             self.root.after_cancel(self.expose_anim_job)
             self.expose_anim_job = None
@@ -8470,6 +10044,7 @@ class DesktopPet:
 
     def _finish_expose_session(self, *, cleared: bool) -> None:
         self.expose_session_active = False
+        self._cancel_game_countdown()
         self._cancel_expose_qte()
         if cleared:
             self.mood = min(100, self.mood + 5)
@@ -8573,7 +10148,7 @@ class DesktopPet:
         self._finish_expression()
 
     def _play_expression(self, name: str) -> None:
-        if self.dragging:
+        if self.dragging or self.music_sprite_mode:
             return
         sprites = {"angry": self.sprites.stand_angry, "question": self.sprites.stand_question}
         if name not in sprites:
@@ -9926,6 +11501,8 @@ class DesktopPet:
     def _play_action(self, name: str) -> None:
         if self.dragging or self.state == "work":
             return
+        if self.music_sprite_mode:
+            return
         if name == "happy":
             self._play_happy()
             return
@@ -9959,7 +11536,7 @@ class DesktopPet:
             self._schedule_action_end(action=name)
 
     def _play_happy(self) -> None:
-        if self.dragging or self.state == "work":
+        if self.dragging or self.state == "work" or self.music_sprite_mode:
             return
         self._interrupt_current_interaction()
         self._interact_flair("happy", banter=False, show_fx=False)
@@ -10122,11 +11699,18 @@ class DesktopPet:
             return
         if self.state in ("work", "sleep", "game"):
             return
+        # 暴露 / 倒计时 / 进行中的 QTE 会话：不可被看门狗清掉
+        if getattr(self, "expose_session_active", False) or self.action_name == "expose":
+            return
+        if getattr(self, "_countdown_active", False):
+            return
         if self.state == "action":
             if self.action_end_job or self.action_defer_job:
                 return
             if self.action_name == "wink":
                 self._after_wink_expression()
+                return
+            if self.action_name in ("expose", "yesno"):
                 return
             self.action_name = ""
             self._clear_all_action_fx()
@@ -10146,6 +11730,10 @@ class DesktopPet:
         if self.state == "sleep" or self.sleep_interact_active:
             return
         if self.mode == "game":
+            return
+        if getattr(self, "expose_session_active", False) or self.action_name == "expose":
+            return
+        if getattr(self, "_countdown_active", False):
             return
         if self.mode in ("free", "stroll") and self.state == "action":
             self._cancel_action_end()
@@ -10766,6 +12354,8 @@ class DesktopPet:
         self.work_flag_movable = bool(flag_movable)
         self.work_delivered = 0
         self.work_stack = 0
+        self.work_local_stack = 0
+        self._clear_work_anchored_boxes()
         self.work_boxes_since_banter = 0
         self.work_banter_last_ms = 0
         self.work_has_start_box = True
@@ -10971,6 +12561,8 @@ class DesktopPet:
         was_dragging = self.work_flag_dragging
         self.work_flag_dragging = False
         if was_dragging and self.state == "work":
+            # 旗子挪走后，新送达的箱子从新位置重新堆起；已送达的留在原位
+            self.work_local_stack = 0
             self._refresh_work_overlay()
 
     def _work_flag_button_down(self) -> bool:
@@ -11026,21 +12618,53 @@ class DesktopPet:
             self._unbind_work_flag_drag()
         self._refresh_work_overlay()
 
+    def _clear_work_anchored_boxes(self) -> None:
+        for win in self.work_anchored_box_wins:
+            try:
+                if win.winfo_exists():
+                    win.destroy()
+            except Exception:
+                pass
+        self.work_anchored_box_wins = []
+        self.work_local_stack = 0
+
+    def _spawn_work_anchored_box(self) -> None:
+        """在当前旗子位置钉住一箱；之后拖旗不会带走。"""
+        if not self._work_mode_config().get("show_stack", True):
+            return
+        idx = self.work_local_stack
+        offsets = self._work_stack_offsets(idx + 1)
+        dx, dy = offsets[idx]
+        step = WORK_STACK_OFFSET
+        flag_sx = self.work_end_x + self.display_size // 2
+        flag_sy = self.work_end_y
+        box_sx = flag_sx + dx * step
+        box_sy = flag_sy + dy * step
+        pad = 6
+        size = WORK_PROP_SIZE + pad * 2
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.attributes("-topmost", True)
+        win.configure(bg="magenta")
+        win.wm_attributes("-transparentcolor", "magenta")
+        c = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
+        c.pack()
+        c.create_image(size // 2, size - pad, image=self.sprites.box_img, anchor=tk.S)
+        win.geometry(f"{size}x{size}+{box_sx - size // 2}+{box_sy - size + pad}")
+        self.work_anchored_box_wins.append(win)
+        self.work_local_stack += 1
+
     def _refresh_work_overlay(self) -> None:
         if not self.work_canvas or not self.work_overlay:
             return
-        cfg = self._work_mode_config()
-        show_stack = cfg.get("show_stack", True)
         pad = 40
-        stack_count = self.work_stack if show_stack else 0
-        offsets = self._work_stack_offsets(stack_count)
-        width, height = self._work_stack_canvas_size(stack_count)
+        # 已送达箱子用独立窗口钉住，旗子 overlay 只画终点旗
+        width, height = self._work_stack_canvas_size(0)
         flag_x = width // 2
         flag_y = height - pad
 
         self.work_canvas.config(width=width, height=height)
         self.work_canvas.delete("all")
-        # 旗子底部对准终点坐标
         overlay_x = self.work_end_x + self.display_size // 2 - flag_x
         overlay_y = self.work_end_y - height + pad
         self.work_overlay.geometry(f"{width}x{height}+{overlay_x}+{overlay_y}")
@@ -11054,10 +12678,6 @@ class DesktopPet:
             font=PIXEL_FONT,
             anchor=tk.S,
         )
-        if show_stack:
-            for i in range(stack_count):
-                x, y = self._work_box_xy(i, offsets, pad, width, height)
-                self.work_canvas.create_image(x, y, image=self.sprites.box_img, anchor=tk.S)
 
         self._sync_work_end_button(overlay_x, overlay_y, flag_x, flag_y)
         self._update_work_start_box()
@@ -11161,6 +12781,7 @@ class DesktopPet:
                 self.work_carrying = False
                 self.work_delivered += 1
                 self.work_stack += 1
+                self._spawn_work_anchored_box()
                 self.stamina = min(100, self.stamina + 2)
                 self.mood = min(100, self.mood + 1)
                 self._refresh_panel()

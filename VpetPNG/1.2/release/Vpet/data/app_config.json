@@ -8,7 +8,15 @@
     "rhyme_invite": true,
     "companion_bar": true,
     "game_mode": true,
-    "music_mode": true
+    "music_mode": true,
+    "first_play:rhythm_game": true,
+    "rhythm_game": true,
+    "first_play:expose": true,
+    "first_play:rhyme": true
+  },
+  "work_mode": {
+    "show_props": true,
+    "show_stack": true
   },
   "work_box_total": 5
 }

@@ -82,24 +82,6 @@
           "tea": 5,
           "bread": 1
         }
-      },
-      {
-        "ts": "2026-07-12 02:30:09",
-        "pet_id": 0,
-        "catches": 22,
-        "misses": 1,
-        "score": 218,
-        "difficulty": "中",
-        "food": {
-          "cake": 2,
-          "bread": 2,
-          "meat": 2,
-          "candy": 4,
-          "berry": 6,
-          "donut": 3,
-          "tea": 2,
-          "apple": 1
-        }
       }
     ],
     "typing": [
@@ -129,6 +111,30 @@
       }
     ],
     "vocab_daily_date": "2026-07-11",
-    "vocab_daily_count": 3
+    "vocab_daily_count": 3,
+    "music": [
+      {
+        "ts": "2026-07-12 03:27:09",
+        "pet_id": 0,
+        "score": 0,
+        "max_combo": 0,
+        "perfect": 0,
+        "great": 0,
+        "good": 0,
+        "miss": 24,
+        "grade": "D",
+        "accuracy": 0.0,
+        "track": "crystalline",
+        "difficulty": "中"
+      }
+    ],
+    "rhyme": [
+      {
+        "ts": "2026-07-12 03:32:15",
+        "pet_id": 0,
+        "won": true,
+        "difficulty": "中"
+      }
+    ]
   }
 }

@@ -4,7 +4,7 @@
       "pet_id": 0,
       "best_score": 270,
       "best_catches": 27,
-      "attempts": 5,
+      "attempts": 4,
       "ts": "2026-07-11 15:23:28"
     }
   ],
@@ -15,6 +15,23 @@
       "best_grade": "B",
       "attempts": 3,
       "ts": "2026-07-11 22:03:53"
+    }
+  ],
+  "music": [
+    {
+      "pet_id": 0,
+      "best_score": 0,
+      "best_combo": 0,
+      "best_grade": "D",
+      "attempts": 1,
+      "ts": "2026-07-12 03:27:09"
+    }
+  ],
+  "rhyme": [
+    {
+      "pet_id": 0,
+      "wins": 1,
+      "ts": "2026-07-12 03:32:15"
     }
   ]
 }
