@@ -22,22 +22,10 @@ from PIL import Image, ImageDraw, ImageTk
 
 ASSET_DIR = Path(__file__).parent
 GALLERY_DIR = ASSET_DIR / "gallery"
-GALLERY_MANIFEST_FILE = GALLERY_DIR / "gallery.json"
-GALLERY_THUMB_MAX = 96
-GALLERY_VIEW_MAX = 360
+GALLERY_CONFIG_FILE = GALLERY_DIR / "gallery.json"
+GALLERY_THUMB_SIZE = 96
+GALLERY_PREVIEW_SIZE = 280
 GALLERY_COLS = 3
-GALLERY_SAMPLE_SOURCES: tuple[tuple[str, str], ...] = (
-    ("stand.jpg", "站立"),
-    ("happy.jpg", "开心"),
-    ("hi1.jpg", "打招呼"),
-    ("wink.jpg", "Wink"),
-    ("like.jpg", "点赞"),
-    ("squat.jpg", "下蹲"),
-    ("kick.jpg", "侧踢"),
-    ("sad1.jpg", "伤心"),
-    ("eat1.jpg", "吃东西"),
-    ("sleep1.jpg", "睡眠"),
-)
 CALL_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\call.mp3.mp4")
 CALL_AUDIO_WAV = ASSET_DIR / "call_cache.wav"
 TYPE_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\type.mp4")
@@ -192,6 +180,22 @@ SAD_SAD1_MS = 1000
 SAD_SAD2_MS = 3000
 MINI_PET_SIDE_GAP = 6
 TYPING_GAME_MS = 30000
+TYPING_MOOD_SIZE = 88
+TYPING_GRADE_BAR_H = 40
+TYPING_GRADE_TIERS: tuple[tuple[str, int, str], ...] = (
+    ("D", 0, "#ff6666"),
+    ("C", 5, "#ffaa44"),
+    ("B", 10, "#4488ff"),
+    ("A", 15, "#88dd88"),
+    ("S", 20, "#ff88cc"),
+)
+TYPING_MOOD_FILES: dict[str, str] = {
+    "D": "sad1.jpg",
+    "C": "squat.jpg",
+    "B": "stand.jpg",
+    "A": "happy.jpg",
+    "S": "like.jpg",
+}
 VOCAB_DAILY_MAX = 3
 MULTI_CLICK_WINDOW_MS = 850
 SIZE_LOAD_ANIM_MS = 30
@@ -235,6 +239,8 @@ FACE_DCLICK_COMBO_RESET_MS = 4500
 EXIT_DISSOLVE_MS = 45
 EXIT_DISSOLVE_FRAMES = 36
 EXIT_DISSOLVE_PX_SCALE = 5
+EXIT_DISSOLVE_MAIN_COLORS = ("#4488ff", "#88ccff", "#ff88cc", "#ffffff", "#66aaff")
+EXIT_DISSOLVE_COMPANION_COLORS = ("#44cc88", "#88ffcc", "#ffdd44", "#ccffaa", "#66dd99")
 EXPOSE_RING_PAD = 36
 EXPOSE_BLUE_SPAN = 60
 EXPOSE_POINTER_SPEED = 4.5
@@ -527,6 +533,45 @@ PRELOAD_STEP_MS = 8000
 _SOURCE_FILE_CACHE: dict[str, Image.Image] = {}
 _REF_SCALE_CACHE: dict[int, float] = {}
 _PROCESSED_CANVAS_CACHE: dict[tuple, Image.Image] = {}
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    value = hex_color.lstrip("#")
+    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
+
+
+def _load_gallery_catalog() -> list[tuple[str, str, Path]]:
+    entries: list[tuple[str, str, Path]] = []
+    titles: dict[str, str] = {}
+    if GALLERY_CONFIG_FILE.exists():
+        try:
+            data = json.loads(GALLERY_CONFIG_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                titles = {str(k): str(v) for k, v in data.items()}
+        except Exception:
+            pass
+    seen: set[str] = set()
+    for fname, title in titles.items():
+        path = GALLERY_DIR / fname
+        if path.exists() and path.suffix.lower() == ".png":
+            entries.append((fname, title, path))
+            seen.add(fname)
+    for path in sorted(GALLERY_DIR.glob("*.png")):
+        if path.name not in seen:
+            entries.append((path.name, path.stem, path))
+    return entries
+
+
+def _gallery_photo(path: Path, max_side: int, *, bg_hex: str = MENU_BG) -> ImageTk.PhotoImage:
+    img = Image.open(path).convert("RGBA")
+    w, h = img.size
+    scale = min(1.0, max_side / max(w, h, 1))
+    if scale < 1.0:
+        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+    bg = _hex_to_rgb(bg_hex) + (255,)
+    canvas = Image.new("RGBA", img.size, bg)
+    canvas.paste(img, (0, 0), img)
+    return ImageTk.PhotoImage(canvas.convert("RGB"))
 
 
 def _open_asset_image(filename: str) -> Image.Image:
@@ -1257,6 +1302,56 @@ def _typing_grade(score: int) -> str:
     return "D"
 
 
+def _typing_grade_info(score: int) -> tuple[str, str | None, float]:
+    current = TYPING_GRADE_TIERS[0][0]
+    for grade, threshold, _color in reversed(TYPING_GRADE_TIERS):
+        if score >= threshold:
+            current = grade
+            break
+    next_grade: str | None = None
+    progress = 1.0
+    for i, (grade, threshold, _color) in enumerate(TYPING_GRADE_TIERS):
+        if grade != current:
+            continue
+        if i + 1 < len(TYPING_GRADE_TIERS):
+            next_grade, next_threshold, _ = TYPING_GRADE_TIERS[i + 1]
+            span = max(1, next_threshold - threshold)
+            progress = min(1.0, (score - threshold) / span)
+        break
+    return current, next_grade, progress
+
+
+def _draw_typing_grade_bar(canvas: tk.Canvas, width: int, height: int, score: int) -> None:
+    canvas.delete("all")
+    grade, next_grade, tier_progress = _typing_grade_info(score)
+    grade_colors = {g: c for g, _t, c in TYPING_GRADE_TIERS}
+    bar_top = 16
+    bar_h = max(8, height - bar_top - 14)
+    canvas.create_rectangle(0, bar_top, width, bar_top + bar_h, fill="#222233", outline="#666688", width=1)
+    tier_count = len(TYPING_GRADE_TIERS)
+    for i, (g, threshold, color) in enumerate(TYPING_GRADE_TIERS):
+        x = int(width * i / max(1, tier_count - 1))
+        canvas.create_line(x, bar_top, x, bar_top + bar_h, fill="#444466")
+        canvas.create_text(x, 6, text=g, fill=color, font=("Courier New", 8, "bold"))
+    total_progress = min(1.0, score / TYPING_GRADE_TIERS[-1][1])
+    fill_w = max(0, int((width - 2) * total_progress))
+    if fill_w > 0:
+        canvas.create_rectangle(1, bar_top + 1, 1 + fill_w, bar_top + bar_h - 1, fill=grade_colors[grade], outline="")
+    if next_grade:
+        need = TYPING_GRADE_TIERS[[t[0] for t in TYPING_GRADE_TIERS].index(next_grade)][1] - score
+        hint = f"评级 {grade}  {int(tier_progress * 100)}% → {next_grade}（还差 {max(0, need)} 分）"
+    else:
+        hint = f"评级 {grade}  满分！"
+    canvas.create_text(
+        width // 2,
+        height - 2,
+        text=hint,
+        fill=MENU_FG,
+        anchor=tk.S,
+        font=("Courier New", 8, "bold"),
+    )
+
+
 KEYBOARD_ROWS = ("1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM")
 
 
@@ -1775,7 +1870,6 @@ class DesktopPet:
         self.face_dclick_combos = 0
         self.face_dclick_last_combo_ms = 0
         self._closing = False
-        self.exit_dissolve_job: str | None = None
         self.yesno_overlay_win: tk.Toplevel | None = None
         self.yesno_reveal_job: str | None = None
         self.music_sprite_mode = False
@@ -1879,7 +1973,10 @@ class DesktopPet:
         self.panel_settings_win: tk.Toplevel | None = None
         self.about_win: tk.Toplevel | None = None
         self.diary_win: tk.Toplevel | None = None
+        self.gallery_win: tk.Toplevel | None = None
+        self.gallery_photos: list[ImageTk.PhotoImage] = []
         self.typing_game_win: tk.Toplevel | None = None
+        self._typing_mood_cache: dict[str, ImageTk.PhotoImage] = {}
         self.vocab_game_win: tk.Toplevel | None = None
         self.rhyme_fight_win: tk.Toplevel | None = None
         self.rhyme_fight_job: str | None = None
@@ -2653,11 +2750,12 @@ class DesktopPet:
         if self.schedule_win and self.schedule_win.winfo_exists():
             self.schedule_win.destroy()
             self.schedule_win = None
-        for attr in ("diary_win", "typing_game_win", "vocab_game_win", "panel_settings_win", "about_win", "rhyme_fight_win", "operation_guide_win"):
+        for attr in ("diary_win", "gallery_win", "typing_game_win", "vocab_game_win", "panel_settings_win", "about_win", "rhyme_fight_win", "operation_guide_win"):
             win = getattr(self, attr, None)
             if win and win.winfo_exists():
                 win.destroy()
             setattr(self, attr, None)
+        self.gallery_photos.clear()
         self._close_rhyme_fight()
         self._close_typing_game()
         self._hide_speech_dialog()
@@ -3418,6 +3516,70 @@ class DesktopPet:
         )
         refresh_list()
 
+    def _open_gallery(self) -> None:
+        self._hide_main_menu()
+        if self.gallery_win and self.gallery_win.winfo_exists():
+            self.gallery_win.destroy()
+            self.gallery_win = None
+            self.gallery_photos.clear()
+            return
+
+        items = _load_gallery_catalog()
+        self.gallery_photos = []
+        self.gallery_win = tk.Toplevel(self.root)
+        self.gallery_win.title("画廊")
+        self.gallery_win.attributes("-topmost", True)
+        self.gallery_win.configure(bg=MENU_BG)
+        self.gallery_win.geometry(f"+{self.x + self.display_size + 12}+{max(0, self.y - 20)}")
+
+        outer = tk.Frame(self.gallery_win, bg=MENU_BG, padx=12, pady=10)
+        outer.pack()
+        tk.Label(outer, text="画廊", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+        tk.Label(
+            outer,
+            text="透明底立绘一览，点击缩略图查看大图",
+            font=PIXEL_FONT,
+            fg="#888888",
+            bg=MENU_BG,
+        ).pack(anchor=tk.W, pady=(2, 8))
+
+        preview_box = tk.Frame(outer, bg="#1a1a2e", padx=8, pady=8)
+        preview_box.pack(fill=tk.X, pady=(0, 10))
+        preview_img = tk.Label(preview_box, bg="#1a1a2e")
+        preview_img.pack()
+        preview_caption = tk.Label(preview_box, text="", font=PIXEL_FONT, fg=PIXEL_COLOR, bg="#1a1a2e")
+        preview_caption.pack(pady=(6, 0))
+
+        grid_wrap = tk.Frame(outer, bg=MENU_BG)
+        grid_wrap.pack()
+
+        def show_preview(entry: tuple[str, str, Path]) -> None:
+            _fname, title, path = entry
+            photo = _gallery_photo(path, GALLERY_PREVIEW_SIZE, bg_hex="#1a1a2e")
+            self.gallery_photos.append(photo)
+            preview_img.config(image=photo)
+            preview_img.image = photo
+            preview_caption.config(text=title)
+
+        if not items:
+            tk.Label(grid_wrap, text="gallery 文件夹暂无 PNG 图片", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack()
+            preview_caption.config(text="暂无作品")
+            return
+
+        for i, entry in enumerate(items):
+            row, col = divmod(i, GALLERY_COLS)
+            cell = tk.Frame(grid_wrap, bg=MENU_BG, padx=4, pady=4)
+            cell.grid(row=row, column=col, sticky=tk.N)
+            thumb = _gallery_photo(entry[2], GALLERY_THUMB_SIZE)
+            self.gallery_photos.append(thumb)
+            thumb_lbl = tk.Label(cell, image=thumb, bg=MENU_BG, cursor="hand2")
+            thumb_lbl.image = thumb
+            thumb_lbl.pack()
+            thumb_lbl.bind("<Button-1>", lambda _e, ent=entry: show_preview(ent))
+            tk.Label(cell, text=entry[1], font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(pady=(2, 0))
+
+        show_preview(items[0])
+
     def _open_panel_settings(self) -> None:
         self._hide_main_menu()
         if self.panel_settings_win and self.panel_settings_win.winfo_exists():
@@ -3680,6 +3842,16 @@ class DesktopPet:
         if self.typing_game_win and self.typing_game_win.winfo_exists():
             self.typing_game_win.destroy()
         self.typing_game_win = None
+        self._typing_mood_cache.clear()
+
+    def _typing_mood_photo(self, grade: str) -> ImageTk.PhotoImage:
+        if grade in self._typing_mood_cache:
+            return self._typing_mood_cache[grade]
+        filename = TYPING_MOOD_FILES.get(grade, "stand.jpg")
+        ref = _reference_scale(TYPING_MOOD_SIZE)
+        photo = ImageTk.PhotoImage(_get_processed_canvas(filename, TYPING_MOOD_SIZE, ref))
+        self._typing_mood_cache[grade] = photo
+        return photo
 
     def _start_typing_game(self, lang: str) -> None:
         self._hide_main_menu()
@@ -3708,10 +3880,16 @@ class DesktopPet:
 
         frame = tk.Frame(self.typing_game_win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
+        mood_row = tk.Frame(frame, bg=MENU_BG)
+        mood_row.pack(fill=tk.X, pady=(0, 6))
+        mood_label = tk.Label(mood_row, bg=MENU_BG)
+        mood_label.pack()
         tk.Label(frame, text=f"打字 · {lang}（30s）", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+        grade_bar = tk.Canvas(frame, width=300, height=TYPING_GRADE_BAR_H, bg=MENU_BG, highlightthickness=0)
+        grade_bar.pack(fill=tk.X, pady=(4, 6))
         timer_label = tk.Label(frame, text="30s", font=PIXEL_FONT, fg="#ffcc44", bg=MENU_BG)
         timer_label.pack(anchor=tk.W)
-        score_label = tk.Label(frame, text="得分 0", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
+        score_label = tk.Label(frame, text="得分 0  评级 D", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
         score_label.pack(anchor=tk.W)
         word_label = tk.Label(frame, text=f"输入：{display}", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
         word_label.pack(anchor=tk.W, pady=(6, 4))
@@ -3735,6 +3913,14 @@ class DesktopPet:
         state["display"] = display
         state["target"] = target.lower()
 
+        def update_grade_ui() -> None:
+            grade = _typing_grade(state["score"])
+            score_label.config(text=f"得分 {state['score']}  评级 {grade}")
+            _draw_typing_grade_bar(grade_bar, 300, TYPING_GRADE_BAR_H, state["score"])
+            photo = self._typing_mood_photo(grade)
+            mood_label.config(image=photo)
+            mood_label.image = photo
+
         def refresh_kb() -> None:
             nxt = state["target"][len(state["typed"])] if len(state["typed"]) < len(state["target"]) else None
             hk = _key_for_char(nxt) if nxt else None
@@ -3753,6 +3939,7 @@ class DesktopPet:
             self.mood = min(100, self.mood + min(5, state["score"] // 4))
             self._refresh_panel()
             result.config(text=f"时间到！得分 {state['score']}  评级 {grade}", fg="#88ccff")
+            update_grade_ui()
             self._show_speech_dialog(f"打字结束~ 评级 {grade}！", auto_hide_ms=2800)
             self.root.after(2200, self._close_typing_game)
 
@@ -3775,7 +3962,7 @@ class DesktopPet:
             tgt = state["target"]
             if state["typed"] == tgt or raw.strip() == state["display"]:
                 state["score"] += 1
-                score_label.config(text=f"得分 {state['score']}")
+                update_grade_ui()
                 result.config(text="正确！", fg="#88dd88")
                 next_word()
             elif not tgt.startswith(state["typed"]) and state["typed"]:
@@ -3934,6 +4121,10 @@ class DesktopPet:
         if self.diary_win and self.diary_win.winfo_exists():
             self.diary_win.destroy()
             self.diary_win = None
+        if self.gallery_win and self.gallery_win.winfo_exists():
+            self.gallery_win.destroy()
+            self.gallery_win = None
+        self.gallery_photos.clear()
         if self.panel_settings_win and self.panel_settings_win.winfo_exists():
             self.panel_settings_win.destroy()
             self.panel_settings_win = None
@@ -5386,6 +5577,7 @@ class DesktopPet:
         self._show_sub_menu(
             [
                 ("操作说明", self._open_operation_guide),
+                ("画廊", self._open_gallery),
                 ("我的 ▶", self._open_my_menu),
                 ("设置 ▶", self._open_panel_settings),
                 (diff_label, self._open_difficulty_menu),
@@ -5873,12 +6065,60 @@ class DesktopPet:
         self._play_exit_dissolve()
 
     def _play_exit_dissolve(self) -> None:
-        size = self.display_size
+        pending = {"count": 0}
+
+        def one_done() -> None:
+            pending["count"] -= 1
+            if pending["count"] <= 0:
+                self._finalize_close()
+
+        pending["count"] += 1
+        self._run_exit_dissolve_at(
+            self.x,
+            self.y + self.click_bounce_offset,
+            self.display_size,
+            EXIT_DISSOLVE_MAIN_COLORS,
+            on_hide=lambda: self.label.pack_forget(),
+            on_done=one_done,
+        )
+
+        if self.companion_bar_enabled and self.mini_pets:
+            for entry in list(self.mini_pets):
+                follow_job = entry.get("follow_job")
+                if follow_job:
+                    try:
+                        self.root.after_cancel(follow_job)
+                    except Exception:
+                        pass
+                    entry["follow_job"] = None
+                self._stop_mini_pet_music_wave(entry)
+                lbl = entry.get("label")
+                pending["count"] += 1
+                self._run_exit_dissolve_at(
+                    int(entry["x"]),
+                    int(entry["y"]),
+                    int(entry.get("size", MINI_PET_SIZE)),
+                    EXIT_DISSOLVE_COMPANION_COLORS,
+                    on_hide=lambda label=lbl: label.pack_forget() if label else None,
+                    on_done=one_done,
+                )
+
+    def _run_exit_dissolve_at(
+        self,
+        x: int,
+        y: int,
+        size: int,
+        colors: tuple[str, ...],
+        *,
+        on_hide=None,
+        on_done=None,
+    ) -> None:
+        if on_hide:
+            on_hide()
         px = max(3, size // 24) * EXIT_DISSOLVE_PX_SCALE
         cols = max(4, size // px)
         rows = max(4, size // px)
         particles: list[dict] = []
-        colors = ("#4488ff", "#88ccff", "#ff88cc", "#ffffff", "#66aaff")
         for row in range(rows):
             for col in range(cols):
                 particles.append(
@@ -5892,7 +6132,6 @@ class DesktopPet:
                         "size": px,
                     }
                 )
-        self.label.pack_forget()
         dissolve_win = tk.Toplevel(self.root)
         dissolve_win.overrideredirect(True)
         dissolve_win.attributes("-topmost", True)
@@ -5900,11 +6139,15 @@ class DesktopPet:
         dissolve_win.wm_attributes("-transparentcolor", "magenta")
         canvas = tk.Canvas(dissolve_win, width=size, height=size, bg="magenta", highlightthickness=0)
         canvas.pack()
-        display_y = self.y + self.click_bounce_offset
-        dissolve_win.geometry(f"+{self.x}+{display_y}")
+        dissolve_win.geometry(f"+{x}+{y}")
         frame = {"n": 0}
+        tick_job: dict[str, str | None] = {"id": None}
 
         def tick() -> None:
+            if not dissolve_win.winfo_exists():
+                if on_done:
+                    on_done()
+                return
             canvas.delete("all")
             alive = False
             for p in particles:
@@ -5927,19 +6170,17 @@ class DesktopPet:
                 )
             frame["n"] += 1
             if alive and frame["n"] < EXIT_DISSOLVE_FRAMES + 8:
-                self.exit_dissolve_job = self.root.after(EXIT_DISSOLVE_MS, tick)
+                tick_job["id"] = self.root.after(EXIT_DISSOLVE_MS, tick)
             else:
-                self._finalize_close()
+                tick_job["id"] = None
+                if dissolve_win.winfo_exists():
+                    dissolve_win.destroy()
+                if on_done:
+                    on_done()
 
         tick()
 
     def _finalize_close(self) -> None:
-        if self.exit_dissolve_job:
-            try:
-                self.root.after_cancel(self.exit_dissolve_job)
-            except Exception:
-                pass
-            self.exit_dissolve_job = None
         self._hide_size_loading()
         self._hide_companion_loading()
         self._hide_happy_fx()
