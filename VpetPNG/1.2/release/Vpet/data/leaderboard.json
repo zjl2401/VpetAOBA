@@ -4,7 +4,7 @@
       "pet_id": 0,
       "best_score": 270,
       "best_catches": 27,
-      "attempts": 4,
+      "attempts": 5,
       "ts": "2026-07-11 15:23:28"
     }
   ],
@@ -15,14 +15,6 @@
       "best_grade": "B",
       "attempts": 3,
       "ts": "2026-07-11 22:03:53"
-    }
-  ],
-  "vocab:英语": [
-    {
-      "pet_id": 0,
-      "total_correct": 5,
-      "best_streak": 5,
-      "ts": "2026-07-12 01:48:32"
     }
   ]
 }

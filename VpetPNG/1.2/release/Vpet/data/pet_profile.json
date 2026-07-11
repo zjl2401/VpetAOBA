@@ -82,6 +82,24 @@
           "tea": 5,
           "bread": 1
         }
+      },
+      {
+        "ts": "2026-07-12 02:30:09",
+        "pet_id": 0,
+        "catches": 22,
+        "misses": 1,
+        "score": 218,
+        "difficulty": "中",
+        "food": {
+          "cake": 2,
+          "bread": 2,
+          "meat": 2,
+          "candy": 4,
+          "berry": 6,
+          "donut": 3,
+          "tea": 2,
+          "apple": 1
+        }
       }
     ],
     "typing": [
@@ -111,53 +129,6 @@
       }
     ],
     "vocab_daily_date": "2026-07-11",
-    "vocab_daily_count": 3,
-    "vocab": [
-      {
-        "ts": "2026-07-12 01:48:20",
-        "pet_id": 0,
-        "lang": "英语",
-        "word": "sleep",
-        "correct": true,
-        "streak_clear": 0,
-        "difficulty": "中"
-      },
-      {
-        "ts": "2026-07-12 01:48:22",
-        "pet_id": 0,
-        "lang": "英语",
-        "word": "catch",
-        "correct": true,
-        "streak_clear": 0,
-        "difficulty": "中"
-      },
-      {
-        "ts": "2026-07-12 01:48:25",
-        "pet_id": 0,
-        "lang": "英语",
-        "word": "happy",
-        "correct": true,
-        "streak_clear": 0,
-        "difficulty": "中"
-      },
-      {
-        "ts": "2026-07-12 01:48:27",
-        "pet_id": 0,
-        "lang": "英语",
-        "word": "star",
-        "correct": true,
-        "streak_clear": 0,
-        "difficulty": "中"
-      },
-      {
-        "ts": "2026-07-12 01:48:32",
-        "pet_id": 0,
-        "lang": "英语",
-        "word": "companion",
-        "correct": true,
-        "streak_clear": 5,
-        "difficulty": "中"
-      }
-    ]
+    "vocab_daily_count": 3
   }
 }
