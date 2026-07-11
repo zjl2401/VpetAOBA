@@ -47,6 +47,38 @@ def _collect_data_args() -> list[str]:
     return args
 
 
+_RELEASE_LOCK_HINT = (
+    "无法更新 release 目录：请先右键系统托盘里的 Vpet 图标并「退出」，"
+    "关闭所有桌宠窗口后再运行 build_app.py"
+)
+
+
+def _prepare_release_dir(release_dir: Path) -> None:
+    if not release_dir.exists():
+        return
+    try:
+        shutil.rmtree(release_dir)
+        return
+    except OSError:
+        pass
+    backup = release_dir.with_name(f"{release_dir.name}_old")
+    if backup.exists():
+        shutil.rmtree(backup, ignore_errors=True)
+    try:
+        release_dir.rename(backup)
+        return
+    except OSError as exc:
+        raise SystemExit(_RELEASE_LOCK_HINT) from exc
+
+
+def _deploy_tree(src_dir: Path, dst_dir: Path) -> None:
+    _prepare_release_dir(dst_dir)
+    try:
+        shutil.copytree(src_dir, dst_dir)
+    except FileExistsError:
+        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+
+
 def _create_shortcut(exe_path: Path) -> None:
     if sys.platform != "win32":
         return
@@ -108,17 +140,13 @@ def main() -> None:
         raise SystemExit(f"未找到输出文件：{DIST / EXE_NAME}")
 
     release_dir = ROOT / "release" / EXE_NAME.removesuffix(".exe")
-    if release_dir.exists():
-        shutil.rmtree(release_dir, ignore_errors=True)
-    shutil.copytree(exe_path.parent, release_dir)
+    _deploy_tree(exe_path.parent, release_dir)
     release_exe = release_dir / EXE_NAME
 
     data_src = ROOT / "data"
     data_dst = release_dir / "data"
     if data_src.is_dir():
-        if data_dst.exists():
-            shutil.rmtree(data_dst, ignore_errors=True)
-        shutil.copytree(data_src, data_dst)
+        _deploy_tree(data_src, data_dst)
     else:
         data_dst.mkdir(parents=True, exist_ok=True)
 

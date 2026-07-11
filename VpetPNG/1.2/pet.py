@@ -1264,6 +1264,18 @@ def _make_type_tick_sound():
         return None
 
 
+def _resolve_type_cache_wav() -> Path | None:
+    """打字音效固定使用 type_cache.wav，优先 data/audio，再回退项目根目录。"""
+    root = Path(__file__).resolve().parent
+    for path in (TYPE_AUDIO_WAV, root / "type_cache.wav", AUDIO_ASSET_DIR / "type_cache.wav"):
+        if path.is_file():
+            return path
+    generated = _ensure_audio_wav(TYPE_AUDIO_SRC, TYPE_AUDIO_WAV)
+    if generated is not None and Path(generated).is_file():
+        return Path(generated)
+    return None
+
+
 def _get_type_sound():
     global _type_sound
     if _type_sound is not False and _type_sound is not None:
@@ -1272,15 +1284,15 @@ def _get_type_sound():
         import pygame
 
         _init_pygame_mixer()
-        wav = TYPE_AUDIO_WAV if TYPE_AUDIO_WAV.exists() else _ensure_audio_wav(TYPE_AUDIO_SRC, TYPE_AUDIO_WAV)
-        if wav is not None and Path(wav).exists():
+        wav = _resolve_type_cache_wav()
+        if wav is not None:
             snd = pygame.mixer.Sound(str(wav))
             snd.set_volume(0.85)
             _type_sound = snd
         else:
-            _type_sound = _make_type_tick_sound() or False
+            _type_sound = False
     except Exception:
-        _type_sound = _make_type_tick_sound() or False
+        _type_sound = False
     return _type_sound
 
 
@@ -1394,7 +1406,7 @@ def _build_phonograph_catalog() -> list[dict]:
     add_file(
         "builtin:type",
         "打字·键盘",
-        TYPE_AUDIO_WAV if TYPE_AUDIO_WAV.exists() else _ensure_audio_wav(TYPE_AUDIO_SRC, TYPE_AUDIO_WAV),
+        _resolve_type_cache_wav(),
         category="sfx",
     )
     music_wav = _ensure_audio_wav(MUSIC_AUDIO_SRC, MUSIC_AUDIO_WAV)
