@@ -119,8 +119,13 @@ GAME_PENALTY_MISS = 2
 WORK_ARRIVE_DIST = 18
 WORK_TOTAL_MIN = 3
 WORK_TOTAL_MAX = 8
+WORK_BOX_TOTAL_DEFAULT = 5
+WORK_TOTAL_SETTING_MIN = 1
+WORK_TOTAL_SETTING_MAX = 30
 WORK_PROP_SIZE = 104
 WORK_STACK_OFFSET = 22
+WORK_STACK_COLUMN_MAX = 6
+WORK_STACK_COL_OFFSET = 30
 BULB_FX_SIZE = 144
 AI_DIALOG_HIDE_MS = 5000
 AI_CHAT_IDLE_MS = 5000
@@ -1159,6 +1164,7 @@ def _load_app_config() -> dict:
         "display_preset": "中",
         "difficulty": "中",
         "seen_hints": {},
+        "work_box_total": WORK_BOX_TOTAL_DEFAULT,
     }
     if not APP_CONFIG_FILE.exists():
         return default
@@ -1701,6 +1707,8 @@ class DesktopPet:
         self.work_phase = ""
         self.work_use_work_sprites = False
         self.work_start_box_win: tk.Toplevel | None = None
+        self.work_flag_dragging = False
+        self.work_flag_drag_origin: tuple[int, int, int, int] = (0, 0, 0, 0)
 
         self.drag_x = 0
         self.drag_y = 0
@@ -2758,6 +2766,7 @@ class DesktopPet:
         self._hide_wink_fx()
         self._hide_follow_dizzy_fx()
         self._cancel_expose_qte()
+        self._cancel_game_countdown()
         self._cancel_yesno_overlay()
         self._stop_drag_move()
         self._stop_rest_bobble()
@@ -3470,6 +3479,26 @@ class DesktopPet:
                 diff_row, text=f"{level}{mark}", command=set_diff, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
             ).pack(side=tk.LEFT, padx=2)
 
+        work_row = tk.Frame(frame, bg=MENU_BG)
+        work_row.pack(fill=tk.X, pady=(8, 0))
+        tk.Label(work_row, text="工作箱数(自由)", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        current_total = int(self.app_config.get("work_box_total", WORK_BOX_TOTAL_DEFAULT))
+        for total in (3, 5, 8, 10, 15, 20):
+            mark = " ✓" if current_total == total else ""
+
+            def set_work_total(n=total) -> None:
+                self.app_config["work_box_total"] = max(WORK_TOTAL_SETTING_MIN, min(WORK_TOTAL_SETTING_MAX, n))
+                _save_app_config(self.app_config)
+                self._show_toast(f"自由模式工作箱数：{self.app_config['work_box_total']}", PIXEL_COLOR)
+                if self.panel_settings_win and self.panel_settings_win.winfo_exists():
+                    self.panel_settings_win.destroy()
+                    self.panel_settings_win = None
+                self._open_panel_settings()
+
+            tk.Button(
+                work_row, text=f"{total}{mark}", command=set_work_total, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
+            ).pack(side=tk.LEFT, padx=2)
+
     def _open_rhyme_menu(self) -> None:
         self._show_sub_menu(
             [
@@ -3917,6 +3946,7 @@ class DesktopPet:
             "display_preset": "中",
             "difficulty": "中",
             "seen_hints": {},
+            "work_box_total": WORK_BOX_TOTAL_DEFAULT,
         }
         _save_app_config(self.app_config)
         if PET_ID_FEATURE:
@@ -4835,6 +4865,7 @@ class DesktopPet:
         self.angry_anim_job = self.root.after(ANGRY_FRAME_MS, lambda: self._angry_anim_step(step + 1))
 
     def _cancel_expose_qte(self) -> None:
+        self._cancel_game_countdown()
         self.expose_qte_active = False
         self.expose_session_active = False
         if self.expose_anim_job:
@@ -4983,6 +5014,8 @@ class DesktopPet:
         self.expose_pointer_base_speed = base
 
         def begin() -> None:
+            if self.action_name != "expose":
+                return
             self.expose_session_active = True
             self.root.bind_all("<Return>", self._expose_qte_enter, add="+")
             try:
@@ -6800,7 +6833,7 @@ class DesktopPet:
             if self._dist_to(self.work_end_x + self.display_size // 2, self.work_end_y + self.display_size // 2) > 160:
                 break
 
-        self.work_total = random.randint(WORK_TOTAL_MIN, WORK_TOTAL_MAX)
+        self.work_total = self._resolve_work_total()
         self.work_delivered = 0
         self.work_stack = 0
         self.work_has_start_box = True
@@ -6815,51 +6848,119 @@ class DesktopPet:
         self._set_image(self.sprites.work_stand)
         self._place_window()
         self._show_work_overlay()
-        self._show_toast(f"搬运任务：{self.work_total} 箱", PIXEL_COLOR, duration_ms=2000)
+        self._show_toast(f"搬运任务：{self.work_total} 箱（可拖动旗子）", PIXEL_COLOR, duration_ms=2400)
         self._work_move_step()
         if not self.work_animating:
             self.work_animating = True
             self._work_animate()
 
+    def _resolve_work_total(self) -> int:
+        if self.mode == "free":
+            total = int(self.app_config.get("work_box_total", WORK_BOX_TOTAL_DEFAULT))
+            return max(WORK_TOTAL_SETTING_MIN, min(WORK_TOTAL_SETTING_MAX, total))
+        return random.randint(WORK_TOTAL_MIN, WORK_TOTAL_MAX)
+
+    def _work_stack_canvas_size(self, stack_count: int) -> tuple[int, int, int]:
+        pad = 40
+        cols = max(1, (stack_count + WORK_STACK_COLUMN_MAX - 1) // WORK_STACK_COLUMN_MAX) if stack_count else 1
+        rows = min(WORK_STACK_COLUMN_MAX, stack_count) if stack_count else 0
+        width = pad * 2 + WORK_PROP_SIZE + max(0, cols - 1) * WORK_STACK_COL_OFFSET
+        height = pad * 2 + WORK_PROP_SIZE + max(0, rows) * WORK_STACK_OFFSET
+        return width, height, cols
+
+    def _work_box_xy(self, index: int, cols: int, pad: int, canvas_w: int, canvas_h: int) -> tuple[int, int]:
+        col = index // WORK_STACK_COLUMN_MAX
+        row = index % WORK_STACK_COLUMN_MAX
+        group_w = WORK_PROP_SIZE + max(0, cols - 1) * WORK_STACK_COL_OFFSET
+        start_x = (canvas_w - group_w) // 2 + WORK_PROP_SIZE // 2
+        x = start_x + col * WORK_STACK_COL_OFFSET
+        y = canvas_h - pad - WORK_PROP_SIZE - row * WORK_STACK_OFFSET
+        return x, y
+
+    def _bind_work_flag_drag(self) -> None:
+        if not self.work_canvas:
+            return
+        self.work_canvas.bind("<ButtonPress-1>", self._work_flag_press)
+        self.work_canvas.bind("<B1-Motion>", self._work_flag_motion)
+        self.work_canvas.bind("<ButtonRelease-1>", self._work_flag_release)
+
+    def _unbind_work_flag_drag(self) -> None:
+        if not self.work_canvas:
+            return
+        try:
+            self.work_canvas.unbind("<ButtonPress-1>")
+            self.work_canvas.unbind("<B1-Motion>")
+            self.work_canvas.unbind("<ButtonRelease-1>")
+        except Exception:
+            pass
+
+    def _work_flag_press(self, event: tk.Event) -> None:
+        if self.state != "work":
+            return
+        self.work_flag_dragging = True
+        self.work_flag_drag_origin = (event.x_root, event.y_root, self.work_end_x, self.work_end_y)
+
+    def _work_flag_motion(self, event: tk.Event) -> None:
+        if not self.work_flag_dragging or self.state != "work":
+            return
+        ox, oy, ex, ey = self.work_flag_drag_origin
+        dx = event.x_root - ox
+        dy = event.y_root - oy
+        margin = 80
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        max_x = max(margin, sw - self.display_size - margin)
+        max_y = max(margin, sh - self.display_size - margin)
+        self.work_end_x = max(margin, min(max_x, ex + dx))
+        self.work_end_y = max(margin, min(max_y, ey + dy))
+        self._refresh_work_overlay()
+
+    def _work_flag_release(self, _event: tk.Event) -> None:
+        self.work_flag_dragging = False
+
     def _hide_work_overlay(self) -> None:
+        self._unbind_work_flag_drag()
         if self.work_overlay and self.work_overlay.winfo_exists():
             self.work_overlay.destroy()
         self.work_overlay = None
         self.work_canvas = None
+        self.work_flag_dragging = False
 
     def _show_work_overlay(self) -> None:
         self._hide_work_overlay()
-        pad = 40
-        size = WORK_PROP_SIZE + pad * 2
+        width, height, _ = self._work_stack_canvas_size(0)
         self.work_overlay = tk.Toplevel(self.root)
         self.work_overlay.overrideredirect(True)
         self.work_overlay.attributes("-topmost", False)
         self.work_overlay.configure(bg="magenta")
         self.work_overlay.wm_attributes("-transparentcolor", "magenta")
-        self.work_overlay.geometry(f"{size}x{size}+0+0")
+        self.work_overlay.geometry(f"{width}x{height}+0+0")
         self.work_canvas = tk.Canvas(
-            self.work_overlay, width=size, height=size, bg="magenta", highlightthickness=0
+            self.work_overlay, width=width, height=height, bg="magenta", highlightthickness=0
         )
         self.work_canvas.pack()
+        self._bind_work_flag_drag()
         self._refresh_work_overlay()
 
     def _refresh_work_overlay(self) -> None:
         if not self.work_canvas or not self.work_overlay:
             return
         pad = 40
-        stack_extra = max(0, self.work_stack) * WORK_STACK_OFFSET
-        size = WORK_PROP_SIZE + pad * 2 + stack_extra
-        half = WORK_PROP_SIZE // 2
+        stack_count = self.work_stack
+        width, height, cols = self._work_stack_canvas_size(stack_count)
+        group_w = WORK_PROP_SIZE + max(0, cols - 1) * WORK_STACK_COL_OFFSET
+        flag_x = (width - group_w) // 2 + WORK_PROP_SIZE // 2
+        flag_y = height - pad
 
-        self.work_canvas.config(width=size, height=size)
+        self.work_canvas.config(width=width, height=height)
         self.work_canvas.delete("all")
-        overlay_x = self.work_end_x + self.display_size // 2 - half
-        overlay_y = self.work_end_y - size + pad
-        self.work_overlay.geometry(f"{size}x{size}+{overlay_x}+{overlay_y}")
-        self.work_canvas.create_image(half, size - pad, image=self.sprites.flag_img, anchor=tk.S)
-        for i in range(self.work_stack):
-            y = size - pad - WORK_PROP_SIZE - i * WORK_STACK_OFFSET
-            self.work_canvas.create_image(half, y, image=self.sprites.box_img, anchor=tk.S)
+        overlay_x = self.work_end_x + self.display_size // 2 - flag_x
+        overlay_y = self.work_end_y - height + pad
+        self.work_overlay.geometry(f"{width}x{height}+{overlay_x}+{overlay_y}")
+        self.work_canvas.create_image(flag_x, flag_y, image=self.sprites.flag_img, anchor=tk.S)
+        for i in range(stack_count):
+            x, y = self._work_box_xy(i, cols, pad, width, height)
+            self.work_canvas.create_image(x, y, image=self.sprites.box_img, anchor=tk.S)
 
         self._update_work_start_box()
         self.root.lift()
@@ -6908,7 +7009,7 @@ class DesktopPet:
     def _work_move_step(self) -> None:
         if self.state != "work":
             return
-        if self.dragging:
+        if self.dragging or self.work_flag_dragging:
             self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
             return
 
