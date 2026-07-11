@@ -16,10 +16,9 @@ DATA = ROOT / "data"
 DATA_AUDIO = DATA / "audio"
 
 PROP_FILES = {"box.jpg", "flag.jpg"}
-BUNDLED_AUDIO = {"type_tick.wav"}
+BUNDLED_AUDIO: set[str] = set()
 DATA_AUDIO_FILES = {
     "call_cache.wav",
-    "call2_cache.wav",
     "type_cache.wav",
     "music_aicatch_cache.wav",
 }

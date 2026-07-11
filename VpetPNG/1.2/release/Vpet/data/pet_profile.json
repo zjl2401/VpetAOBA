@@ -108,6 +108,14 @@
         "score": 11,
         "grade": "B",
         "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-11 23:52:11",
+        "pet_id": 0,
+        "lang": "中文",
+        "score": 10,
+        "grade": "B",
+        "difficulty": "中"
       }
     ],
     "vocab_daily_date": "2026-07-11",

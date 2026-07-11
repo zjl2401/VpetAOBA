@@ -1,0 +1,20 @@
+{
+  "gather": [
+    {
+      "pet_id": 0,
+      "best_score": 270,
+      "best_catches": 27,
+      "attempts": 4,
+      "ts": "2026-07-11 15:23:28"
+    }
+  ],
+  "typing:中文": [
+    {
+      "pet_id": 0,
+      "best_score": 11,
+      "best_grade": "B",
+      "attempts": 4,
+      "ts": "2026-07-11 22:03:53"
+    }
+  ]
+}

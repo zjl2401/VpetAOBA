@@ -76,13 +76,11 @@ CALL_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\call.mp3.mp4")
 CALL_AUDIO_WAV = DATA_AUDIO_DIR / "call_cache.wav"
 TYPE_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\type.mp4")
 TYPE_AUDIO_WAV = DATA_AUDIO_DIR / "type_cache.wav"
-TYPE_TICK_WAV = AUDIO_ASSET_DIR / "type_tick.wav"
 MUSIC_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\aicatch.mp4")
 MUSIC_AUDIO_WAV = DATA_AUDIO_DIR / "music_aicatch_cache.wav"
 MUSIC_CONFIG_FILE = DATA_DIR / "music_config.json"
 PHONOGRAPH_FILE = DATA_DIR / "phonograph.json"
 PHONOGRAPH_USER_DIR = DATA_DIR / "phonograph"
-CALL2_AUDIO_WAV = DATA_AUDIO_DIR / "call2_cache.wav"
 
 
 def _ensure_data_dirs() -> None:
@@ -116,12 +114,10 @@ def _migrate_legacy_layout() -> None:
         src, dst = root / name, DATA_DIR / name
         if src.is_file() and not dst.exists():
             shutil.copy2(src, dst)
-    for name in ("call_cache.wav", "call2_cache.wav", "type_cache.wav", "music_aicatch_cache.wav"):
+    for name in ("call_cache.wav", "type_cache.wav", "music_aicatch_cache.wav"):
         src, dst = root / name, DATA_AUDIO_DIR / name
         if src.is_file() and not dst.exists():
             shutil.copy2(src, dst)
-    if (root / "type_tick.wav").is_file() and not TYPE_TICK_WAV.exists():
-        shutil.copy2(root / "type_tick.wav", TYPE_TICK_WAV)
     for path in root.glob("*.jpg"):
         name = path.name
         if name in {"box.jpg", "flag.jpg"}:
@@ -275,8 +271,6 @@ WORK_TOTAL_SETTING_MIN = 1
 WORK_TOTAL_SETTING_MAX = 30
 WORK_PROP_SIZE = 104
 WORK_STACK_OFFSET = 22
-WORK_STACK_COLUMN_MAX = 6
-WORK_STACK_COL_OFFSET = 30
 WORK_MODE_BANTER_COOLDOWN_MS = 30_000
 WORK_MODE_BANTER_INTERVAL_MS = (30_000, 90_000)
 WORK_MODE_BANTER: tuple[str, ...] = (
@@ -377,7 +371,6 @@ TYPING_MOOD_FILES: dict[str, str] = {
     "A": "happy.jpg",
     "S": "like.jpg",
 }
-VOCAB_DAILY_MAX = 3
 MULTI_CLICK_WINDOW_MS = 850
 SIZE_LOAD_ANIM_MS = 30
 SIZE_LOAD_MIN_MS = 72
@@ -473,7 +466,7 @@ ABOUT_CREDITS: tuple[str, ...] = (
 )
 ABOUT_TEXT = (
     "濑良垣苍叶，出自 Nitro+CHiRAL 的视觉小说《DRAMAtical Murder》（DMMD）。\n"
-    "开朗讲义气，却总被头痛缠着；体内还有人格「莲」与他共处。\n\n"
+    "开朗讲义气，却总被头痛缠着；体内还有其他人格与他共处。\n\n"
     "本程序为同人像素桌宠，非官方作品。\n"
     "想体验完整故事请支持正版：\n"
     "· Steam 搜索「DRAMAtical Murder」\n"
@@ -501,6 +494,8 @@ DIFFICULTY_PRESETS: dict[str, dict] = {
         "game_catch_dist": 58,
         "expose_blue_span": 78,
         "expose_pointer_speed": 3.4,
+        "expose_fail_mood_pct": 0.30,
+        "expose_fail_stamina_pct": 0.30,
         "fight_enemy_mult": 0.75,
         "fight_player_mult": 1.15,
     },
@@ -514,6 +509,8 @@ DIFFICULTY_PRESETS: dict[str, dict] = {
         "game_catch_dist": 48,
         "expose_blue_span": 60,
         "expose_pointer_speed": 4.5,
+        "expose_fail_mood_pct": 0.50,
+        "expose_fail_stamina_pct": 0.50,
         "fight_enemy_mult": 1.0,
         "fight_player_mult": 1.0,
     },
@@ -527,6 +524,8 @@ DIFFICULTY_PRESETS: dict[str, dict] = {
         "game_catch_dist": 40,
         "expose_blue_span": 42,
         "expose_pointer_speed": 6.2,
+        "expose_fail_mood_pct": 0.65,
+        "expose_fail_stamina_pct": 0.65,
         "fight_enemy_mult": 1.35,
         "fight_player_mult": 0.9,
     },
@@ -549,7 +548,7 @@ OPERATION_GUIDE_TEXT = (
     "  智能伴侣 · 莱姆对战 · 暴露 QTE\n\n"
     "▶ 小游戏\n"
     "  打字 30s 倒计时 C~S 评级（中/英）· 虚拟键盘闪光\n"
-    "  背单词 英/中 · 自由模式每日最多 3 次\n"
+    "  背单词 英/中 · 随时可玩无次数限制\n"
     "  模式→游戏→持有者排名：各游戏桌宠编号排行榜\n"
     "  连点桌宠可触发额外状态对话\n\n"
     "▶ 莱姆对战\n"
@@ -558,7 +557,7 @@ OPERATION_GUIDE_TEXT = (
     "  H 打招呼  E 喂食  T 电话  J 下蹲\n"
     "  N 睡眠    A 对话(AI)  V 打开/关闭菜单\n\n"
     "▶ 难度（系统 → 设置）\n"
-    "  低/中/高 影响体力心情下降速度、接食物、暴露 QTE、莱姆对战"
+    "  低/中/高 影响体力心情下降速度、接食物、暴露 QTE、莱姆对战；暴露失败按难度扣当前心情/体力比例"
 )
 
 ONCE_HINTS: dict[str, str] = {
@@ -660,90 +659,125 @@ AI_SYSTEM_PROMPT = (
     "6. 保持角色，不要跳出人设，不要像通用 AI 助手。"
 )
 
-# 普通对话：问句与参考设定（苍叶/DRAMatical Murder 萌娘百科、百度百科等）
+# 普通对话：濑良垣苍叶（DRAMatical Murder）设定参考
 PRESET_DIALOGS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (
-        "你喜爱的食物？",
-        (
-            "最喜欢炙鳍啦！蓝场的人气小吃，串烤刷酱超香~",
-            "旧货店忙完来一串炙鳍最治愈！在这个桌宠里，草莓和甜甜圈我也超爱~",
-        ),
-    ),
     (
         "你是谁？",
         (
-            "我是旧货店店员「平凡」呀~开朗温柔那种，有人说气质像苍叶？诶嘿嘿~",
-            "平凡，旧货店打工人！像素桌宠版的我，随时陪你聊天哦。",
+            "濑良垣苍叶，叫我苍叶就好~故事的主人公，和祖母多惠住在碧岛旧居民区。",
+            "我是苍叶。外表普通，体内却藏着连自己都没察觉过的「特殊能力」…",
         ),
     ),
     (
-        "你在哪里工作？",
+        "你的能力是什么？",
         (
-            "旧货店！整理旧物、招待客人，偶尔也陪人唠嗑~蓝场那边的事我略懂一点。",
-            "就在这条旧街区的旧货店，平凡但挺温馨的，欢迎来坐坐！",
+            "「暴露」——用「声音」操纵人心、介入精神并加以破坏的力量。",
+            "能通过声音介入精神…祖母多惠一直用配制药剂抑制我体内的「魄」。",
         ),
     ),
     (
-        "智能伴侣是什么？",
+        "你多高？",
         (
-            "像 Allmate 那样的伙伴啦！我这边是金目，会跟在左右两侧，游戏模式还会跟紧~",
-            "理芽那种智能伴侣的设定你懂吧？金目就是我的 Allmate，噗~会陪我到处跑！",
+            "175cm 哦。",
+            "身高一百七十五，不算特别高吧~",
         ),
     ),
     (
-        "你的梦想是什么？",
+        "你的血型？",
         (
-            "诶…让旧货店和街道都暖洋洋的，大家每天开心就好！",
-            "希望身边的人都能平平安安，旧货店一直热闹下去~",
+            "A 型。",
+            "血型是 A 型~",
         ),
     ),
     (
-        "你今年多大？",
+        "你的生日？",
         (
-            "23 岁哦~",
-            "二十三啦，旧货店还算年轻的店员吧！",
+            "4 月 22 日，金牛座。",
+            "生日四月二十二，金牛座哦~",
         ),
     ),
     (
-        "你喜欢什么颜色？",
+        "你的职业？",
         (
-            "蓝绿色吧~像…呃，像那种清爽的海风色！",
-            "蓝与绿混在一起那种，看着就心情好~",
+            "兼职者啦，哪儿缺人就去帮把手。",
+            "现在算兼职者吧，各种零工都做过一点。",
         ),
     ),
     (
-        "你讨厌什么？",
+        "你的搭档？",
         (
-            "暴力纠纷最受不了…还有饿肚子的时候，呜。",
-            "讨厌大家吵架啦，还有被丢下的感觉…",
+            "蓮——犬型智能伴侣。十年前在路边捡到遗落的旧款，修好后一直陪着我。",
+            "虽是罕见的旧型号 Allmate，我也从没想过丢掉。筹措零件保养很辛苦，但莲是无可替代的搭档。",
         ),
     ),
     (
-        "平时爱做什么？",
+        "你的夹克？",
         (
-            "看店、散步、接食物小游戏、听歌~面板里打字背单词也会哦！",
-            "自由模式晃悠、跟金目玩、偶尔运送货物打工…挺充实的！",
+            "标志性的蓝色 Jacket 吧？Plain Nuts 的稀有单品，连小混混都会出手抢的人气货。",
+            "那件蓝色夹克在《re:connect》里也还在穿！超抢手的 Plain Nuts 限定款~",
         ),
     ),
     (
-        "你会莱姆对战吗？",
+        "你的身世？",
         (
-            "会呀！面板→莱姆对战，练习模式随时来~Rhyme 的感觉很带感！",
-            "当然会！虽然邀请对战要联机，练习对战可以先切磋~",
+            "东江财阀统帅用基因操作造出的「棋子」…一度被当成死产弃掉，后来奇迹般活过来了。",
+            "祖母多惠曾参与东江的研究，一直瞒着我调配药剂，压制我体内的力量。",
         ),
     ),
     (
-        "旧货店卖什么？",
+        "你想说什么？",
         (
-            "各种旧物、小玩意、有点年月的东西~什么都有，像宝藏一样！",
-            "旧货嘛，旧电器、小摆件、客人寄卖的东西…每件都有故事。",
+            "思念某人的心意会化为力量。",
+            "这种感觉，倒像是由你教会我的呢。",
         ),
     ),
     (
-        "你的口头禅？",
+        "你是怎么长大的？",
         (
-            "「诶？！」「哇——」大概就这些吧，天然系发言？",
-            "诶？！你说这个…我会先愣一下，然后哇——地反应过来~",
+            "与祖母多惠在碧岛旧居民区相依为命，过着极为普通的日子…直到被卷进事件漩涡。",
+            "在不知身世的情况下长大，后来精神负荷太重，还分裂出了别的人格…",
+        ),
+    ),
+    (
+        "你住在哪里？",
+        (
+            "碧岛旧居民区，和祖母多惠一起住。",
+            "就在碧岛的旧街区…算不上时髦，但那里是我的家。",
+        ),
+    ),
+    (
+        "平时是怎样的？",
+        (
+            "外表跟得上潮流，其实对莱姆音乐和肋排餐厅都没什么兴趣。头痛时靠音乐当特效药，上街耳机不离身。",
+            "日常极为普通啦~患头痛的我会用音乐缓解，走路也总戴着耳机。",
+        ),
+    ),
+    (
+        "莱姆对战经历？",
+        (
+            "曾无意识滥用「暴露」在莱姆对战中所向披靡…直到一次用力过猛，摧毁了对手的精神。",
+            "战无不胜的那段日子后，察觉秘密的病毒与旅行者抹去了我的记忆，把「暴露」封印了——但力量终会再解放。",
+        ),
+    ),
+    (
+        "另一个苍叶？",
+        (
+            "在双胞胎哥哥生的精神世界里遇见的「另一个苍叶」，是体内「暴露」破坏冲动的源头。",
+            "「保护苍叶的莲」曾把他封在脑内…后来我明白，他并非该被憎恨的存在。红雀路线里还有不具备破坏力的白色苍叶。",
+        ),
+    ),
+    (
+        "暴露的真谛？",
+        (
+            "为拯救重要伙伴而解放危险的力量…虽因「破坏」之罪孽颤抖，最终却领悟到破坏尽头的「解放」。",
+            "苍叶将「暴露」用于拯救所爱——不是为破坏，而是为重生。为救莲，我曾毅然对自己执行潜入。",
+        ),
+    ),
+    (
+        "东江财阀？",
+        (
+            "为操控民众的黑色野心，东江用基因操作创造了我这身「暴露」能力。",
+            "东江财阀统帅把我当作棋子…但我不想只为破坏而活。",
         ),
     ),
 )
@@ -1402,8 +1436,6 @@ def _build_phonograph_catalog() -> list[dict]:
         CALL_AUDIO_WAV if CALL_AUDIO_WAV.exists() else _ensure_audio_wav(CALL_AUDIO_SRC, CALL_AUDIO_WAV),
         category="voice",
     )
-    if CALL2_AUDIO_WAV.exists():
-        add_file("builtin:call2", "电话·金目", CALL2_AUDIO_WAV, category="voice")
     add_file(
         "builtin:type",
         "打字·键盘",
@@ -1413,8 +1445,6 @@ def _build_phonograph_catalog() -> list[dict]:
     music_wav = _ensure_audio_wav(MUSIC_AUDIO_SRC, MUSIC_AUDIO_WAV)
     if music_wav is not None:
         add_file("builtin:music", "音乐·All Catch", music_wav, category="music")
-    if TYPE_TICK_WAV.exists():
-        add_file("builtin:tick_wav", "滴答·打字（wav）", TYPE_TICK_WAV, category="sfx")
 
     catalog.extend(
         [
@@ -2775,6 +2805,7 @@ class DesktopPet:
         self.work_phase = ""
         self.work_use_work_sprites = False
         self.work_start_box_win: tk.Toplevel | None = None
+        self.work_end_btn_win: tk.Toplevel | None = None
         self.work_flag_dragging = False
         self.work_flag_drag_origin: tuple[int, int, int, int] = (0, 0, 0, 0)
         self.work_flag_movable = False
@@ -3502,7 +3533,6 @@ class DesktopPet:
         self.sound_settings_win.title("声音设置")
         self.sound_settings_win.attributes("-topmost", True)
         self.sound_settings_win.configure(bg=MENU_BG)
-        self.sound_settings_win.geometry(f"+{self.x}+{self.y + self.display_size + 8}")
 
         frame = tk.Frame(self.sound_settings_win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
@@ -3629,6 +3659,7 @@ class DesktopPet:
             bg=MENU_BG,
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(4, 0))
+        self._place_panel_popup(self.sound_settings_win)
 
     def _open_music_settings(self) -> None:
         self._open_sound_settings()
@@ -3665,16 +3696,37 @@ class DesktopPet:
 
     def _panel_popup_pos(self, panel_w: int, panel_h: int) -> tuple[int, int]:
         sw = self.root.winfo_screenwidth()
-        right_x = self.x + self.display_size + 8
-        left_x = self.x - panel_w - 8
-        if right_x + panel_w <= sw:
-            return self._smart_popup_pos(right_x, self.y, panel_w, panel_h)
-        if left_x >= 0:
-            return self._smart_popup_pos(left_x, self.y, panel_w, panel_h)
-        below_y = self.y + self.display_size + 8
-        if below_y + panel_h <= self.root.winfo_screenheight():
-            return self._smart_popup_pos(self.x, below_y, panel_w, panel_h)
-        return self._smart_popup_pos(right_x, self.y, panel_w, panel_h)
+        sh = self.root.winfo_screenheight()
+        candidates = [
+            (self.x + self.display_size + 8, self.y),
+            (self.x - panel_w - 8, self.y),
+            (self.x, self.y + self.display_size + 8),
+            (max(8, self.x + self.display_size // 2 - panel_w // 2), self.y - panel_h - 8),
+            (max(8, sw // 2 - panel_w // 2), max(8, sh // 2 - panel_h // 2)),
+        ]
+        for px, py in candidates:
+            cx, cy = self._smart_popup_pos(px, py, panel_w, panel_h)
+            if cx + panel_w <= sw and cy + panel_h <= sh:
+                return cx, cy
+        return self._smart_popup_pos(candidates[0][0], candidates[0][1], panel_w, panel_h)
+
+    def _place_popup(self, win: tk.Toplevel | None, pref_x: int, pref_y: int) -> None:
+        if not win or not win.winfo_exists():
+            return
+        win.update_idletasks()
+        w = max(win.winfo_width(), win.winfo_reqwidth(), 1)
+        h = max(win.winfo_height(), win.winfo_reqheight(), 1)
+        x, y = self._smart_popup_pos(pref_x, pref_y, w, h)
+        win.geometry(f"+{x}+{y}")
+
+    def _place_panel_popup(self, win: tk.Toplevel | None) -> None:
+        if not win or not win.winfo_exists():
+            return
+        win.update_idletasks()
+        pw = max(win.winfo_width(), win.winfo_reqwidth(), 100)
+        ph = max(win.winfo_height(), win.winfo_reqheight(), 80)
+        px, py = self._panel_popup_pos(pw, ph)
+        win.geometry(f"+{px}+{py}")
 
     def _persist_food_inventory(self) -> None:
         _save_food_inventory(self.food_inventory)
@@ -3736,27 +3788,15 @@ class DesktopPet:
         _save_pet_profile(self.pet_profile)
         _update_leaderboard(category, self.pet_id, entry)
 
-    def _vocab_daily_remaining(self) -> int:
-        if not PET_ID_FEATURE:
-            return VOCAB_DAILY_MAX
-        today = datetime.now().strftime("%Y-%m-%d")
-        records = self.pet_profile.setdefault("records", {})
-        if records.get("vocab_daily_date") != today:
-            return VOCAB_DAILY_MAX
-        used = int(records.get("vocab_daily_count", 0))
-        return max(0, VOCAB_DAILY_MAX - used)
-
-    def _consume_vocab_daily(self) -> bool:
-        if self._vocab_daily_remaining() <= 0:
-            return False
-        today = datetime.now().strftime("%Y-%m-%d")
-        records = self.pet_profile.setdefault("records", {})
-        if records.get("vocab_daily_date") != today:
-            records["vocab_daily_date"] = today
-            records["vocab_daily_count"] = 0
-        records["vocab_daily_count"] = int(records.get("vocab_daily_count", 0)) + 1
-        _save_pet_profile(self.pet_profile)
-        return True
+    def _apply_expose_fail_penalty(self) -> None:
+        p = self._difficulty_params()
+        mood_pct = float(p.get("expose_fail_mood_pct", 0.5))
+        stamina_pct = float(p.get("expose_fail_stamina_pct", 0.5))
+        mood_loss = max(1, int(round(self.mood * mood_pct))) if self.mood > 0 else 0
+        stamina_loss = max(1, int(round(self.stamina * stamina_pct))) if self.stamina > 0 else 0
+        self.mood = max(0, self.mood - mood_loss)
+        self.stamina = max(0, self.stamina - stamina_loss)
+        self._refresh_panel()
 
     def _clear_all_action_fx(self) -> None:
         self._hide_rain_fx()
@@ -3831,7 +3871,6 @@ class DesktopPet:
         self.operation_guide_win.title("操作说明")
         self.operation_guide_win.attributes("-topmost", True)
         self.operation_guide_win.configure(bg=MENU_BG)
-        self.operation_guide_win.geometry(f"+{max(0, self.x - 40)}+{max(0, self.y + self.display_size + 8)}")
         frame = tk.Frame(self.operation_guide_win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
         tk.Label(frame, text="操作说明", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
@@ -3852,6 +3891,7 @@ class DesktopPet:
             bg=MENU_ACTIVE,
             fg=MENU_FG,
         ).pack(anchor=tk.E, pady=(10, 0))
+        self._place_panel_popup(self.operation_guide_win)
 
     def _poll_hotkey(self) -> None:
         if not self.hotkey_ids:
@@ -3975,7 +4015,7 @@ class DesktopPet:
             btn = self._menu_btn(frame, label, cmd)
             btn.pack(side=tk.LEFT, padx=1)
 
-        self.menu_bar.geometry(f"+{self.x}+{self.y + self.display_size}")
+        self._place_popup(self.menu_bar, self.x, self.y + self.display_size)
 
     def _supports_walk_idle(self) -> bool:
         return self.mode in ("free", "stroll")
@@ -4011,7 +4051,7 @@ class DesktopPet:
         cfg = self.app_config.setdefault("work_mode", {"show_props": True, "show_stack": True})
         cfg[key] = value
         _save_app_config(self.app_config)
-        label = "显示道具" if key == "show_props" else "显示运送货物"
+        label = "显示目的地" if key == "show_props" else "显示运送货物"
         self._show_toast(f"{label}：{'开' if value else '关'}", PIXEL_COLOR)
         if self.state == "work":
             self._sync_work_overlay()
@@ -4024,7 +4064,7 @@ class DesktopPet:
         self._show_sub_menu(
             [
                 (toggle_label, self._toggle_work_mode),
-                (f"显示道具{' ✓' if show_props else ''}", lambda: self._set_work_mode_setting("show_props", not show_props)),
+                (f"显示目的地{' ✓' if show_props else ''}", lambda: self._set_work_mode_setting("show_props", not show_props)),
                 (
                     f"显示运送货物{' ✓' if show_stack else ''}",
                     lambda: self._set_work_mode_setting("show_stack", not show_stack),
@@ -4222,6 +4262,7 @@ class DesktopPet:
         if self.work_start_box_win and self.work_start_box_win.winfo_exists():
             self.work_start_box_win.destroy()
         self.work_start_box_win = None
+        self._hide_work_end_button()
         self.work_phase = ""
         self.work_carrying = False
         self.work_has_start_box = False
@@ -4479,7 +4520,7 @@ class DesktopPet:
                 f"接住 {self.game_catches}  错过 {self.game_misses}  库存 {self._food_inventory_total()}"
             )
         )
-        self.game_hud_win.geometry(f"+{self.x}+{max(0, self.y - 52)}")
+        self._place_popup(self.game_hud_win, self.x, max(0, self.y - 52))
 
     def _finish_game(self) -> None:
         if self.mode != "game":
@@ -4597,6 +4638,13 @@ class DesktopPet:
         if self.action_end_job:
             self.root.after_cancel(self.action_end_job)
             self.action_end_job = None
+
+    def _defer_until_not_dragging(self, callback) -> None:
+        if not self.dragging:
+            callback()
+            return
+        self._cancel_action_end()
+        self.action_end_job = self.root.after(120, lambda: self._defer_until_not_dragging(callback))
 
     def _schedule_action_end(
         self,
@@ -4930,8 +4978,6 @@ class DesktopPet:
     def _maybe_vocab_dialogue(self) -> None:
         if self.mode == "free" or self.state != "stand":
             return
-        if self._vocab_daily_remaining() <= 0:
-            return
         if random.random() > VOCAB_DIALOGUE_CHANCE:
             return
         if self.speech_dialog and self.speech_dialog.winfo_exists():
@@ -4952,7 +4998,6 @@ class DesktopPet:
         )
         self._show_speech_dialog(line, auto_hide_ms=3200)
         self._add_diary_entry(f"词库触发：{word} — {meaning}", auto=True)
-        self._consume_vocab_daily()
 
     def _add_diary_entry(self, text: str, *, auto: bool = False) -> None:
         entry = {
@@ -4980,7 +5025,6 @@ class DesktopPet:
         self.diary_win.title("日记")
         self.diary_win.attributes("-topmost", True)
         self.diary_win.configure(bg=MENU_BG)
-        self.diary_win.geometry(f"+{self.x}+{self.y + self.display_size + 8}")
 
         frame = tk.Frame(self.diary_win, bg=MENU_BG, padx=10, pady=8)
         frame.pack()
@@ -5033,6 +5077,7 @@ class DesktopPet:
             side=tk.LEFT
         )
         refresh_list()
+        self._place_panel_popup(self.diary_win)
 
     def _open_gallery(self) -> None:
         self._hide_main_menu()
@@ -5048,7 +5093,6 @@ class DesktopPet:
         self.gallery_win.title("画廊")
         self.gallery_win.attributes("-topmost", True)
         self.gallery_win.configure(bg=MENU_BG)
-        self.gallery_win.geometry(f"+{self.x + self.display_size + 12}+{max(0, self.y - 20)}")
 
         outer = tk.Frame(self.gallery_win, bg=MENU_BG, padx=12, pady=10)
         outer.pack()
@@ -5191,6 +5235,7 @@ class DesktopPet:
         if not groups:
             tk.Label(grid_wrap, text="暂无可用立绘", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack()
             preview_caption.config(text="暂无作品")
+            self._place_panel_popup(self.gallery_win)
             return
 
         for i, group in enumerate(groups):
@@ -5220,6 +5265,7 @@ class DesktopPet:
             tk.Label(cell, text=str(group["title"]), font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(pady=(2, 0))
 
         show_group(groups[0], 0)
+        self._place_panel_popup(self.gallery_win)
 
     def _stop_phonograph_playback(self) -> None:
         if self.phonograph_play_job:
@@ -5392,7 +5438,6 @@ class DesktopPet:
         self.phonograph_win.title("留声")
         self.phonograph_win.attributes("-topmost", True)
         self.phonograph_win.configure(bg=MENU_BG)
-        self.phonograph_win.geometry(f"+{self.x + self.display_size + 12}+{max(0, self.y - 20)}")
 
         outer = tk.Frame(self.phonograph_win, bg=MENU_BG, padx=12, pady=10)
         outer.pack()
@@ -5478,6 +5523,7 @@ class DesktopPet:
             bg=MENU_BG,
             fg=MENU_FG,
         ).pack(side=tk.LEFT)
+        self._place_panel_popup(self.phonograph_win)
 
     def _open_memories_menu(self) -> None:
         self._show_sub_menu(
@@ -5498,7 +5544,6 @@ class DesktopPet:
         self.panel_settings_win.title("系统设置")
         self.panel_settings_win.attributes("-topmost", True)
         self.panel_settings_win.configure(bg=MENU_BG)
-        self.panel_settings_win.geometry(f"+{self.x}+{self.y + self.display_size + 8}")
 
         frame = tk.Frame(self.panel_settings_win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
@@ -5565,6 +5610,7 @@ class DesktopPet:
             tk.Button(
                 diff_row, text=f"{level}{mark}", command=set_diff, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
             ).pack(side=tk.LEFT, padx=2)
+        self._place_panel_popup(self.panel_settings_win)
 
     def _open_rhyme_menu(self) -> None:
         self._show_sub_menu(
@@ -5616,7 +5662,6 @@ class DesktopPet:
         self.rhyme_fight_win.title("练习对战")
         self.rhyme_fight_win.attributes("-topmost", True)
         self.rhyme_fight_win.configure(bg=MENU_BG)
-        self.rhyme_fight_win.geometry(f"+{self.x + self.display_size + 16}+{self.y}")
         self.rhyme_fight_win.protocol("WM_DELETE_WINDOW", self._close_rhyme_fight)
 
         frame = tk.Frame(self.rhyme_fight_win, bg=MENU_BG, padx=12, pady=10)
@@ -5739,6 +5784,7 @@ class DesktopPet:
             fg=MENU_FG,
         ).pack(side=tk.LEFT, padx=2)
         refresh()
+        self._place_panel_popup(self.rhyme_fight_win)
         self.rhyme_fight_job = self.root.after(1500, enemy_turn)
 
     def _close_typing_game(self) -> None:
@@ -5788,7 +5834,6 @@ class DesktopPet:
         self.typing_game_win.title(f"打字 · {lang}")
         self.typing_game_win.attributes("-topmost", True)
         self.typing_game_win.configure(bg=MENU_BG)
-        self.typing_game_win.geometry(f"+{self.x + self.display_size + 12}+{max(0, self.y - 20)}")
         self.typing_game_win.protocol("WM_DELETE_WINDOW", self._close_typing_game)
 
         frame = tk.Frame(self.typing_game_win, bg=MENU_BG, padx=12, pady=10)
@@ -5904,6 +5949,7 @@ class DesktopPet:
         entry.focus_set()
         update_grade_ui()
         refresh_kb()
+        self._place_panel_popup(self.typing_game_win)
         tick_timer()
 
     def _close_vocab_game(self) -> None:
@@ -5952,11 +5998,6 @@ class DesktopPet:
         if lang == JAPANESE_LANG_LABEL and not _japanese_bank_available():
             self._show_toast("此功能暂不开放", "#ff8844")
             return
-        if self.mode == "free" and self._vocab_daily_remaining() <= 0:
-            self._show_toast("自由模式下背单词今日已达 3 次上限~", "#ff8844")
-            return
-        if self.mode == "free":
-            self._consume_vocab_daily()
         words = _load_vocab_bank(lang)
         if len(words) < 4:
             self._show_toast(f"{lang} 词库不足 4 条", "#ff8844")
@@ -5979,7 +6020,7 @@ class DesktopPet:
             and self.vocab_options_frame
         ):
             self.vocab_game_win.title(f"背单词 · {lang}")
-            self.vocab_game_win.geometry(f"+{self.x + self.display_size + 12}+{self.y + 40}")
+            self._place_panel_popup(self.vocab_game_win)
             self.vocab_game_win.lift()
             return
 
@@ -5989,7 +6030,6 @@ class DesktopPet:
         win.title(f"背单词 · {lang}")
         win.attributes("-topmost", True)
         win.configure(bg=MENU_BG)
-        win.geometry(f"+{self.x + self.display_size + 12}+{self.y + 40}")
         win.protocol("WM_DELETE_WINDOW", self._close_vocab_game)
 
         frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
@@ -6001,6 +6041,7 @@ class DesktopPet:
         self.vocab_status_label.pack(pady=4)
         self.vocab_options_frame = tk.Frame(frame, bg=MENU_BG)
         self.vocab_options_frame.pack(fill=tk.X)
+        self._place_panel_popup(win)
 
     def _vocab_next_word(self) -> None:
         words = getattr(self, "_vocab_pool", self.vocab_words)
@@ -6130,7 +6171,6 @@ class DesktopPet:
         self.leaderboard_win.title("持有者排名")
         self.leaderboard_win.attributes("-topmost", True)
         self.leaderboard_win.configure(bg=MENU_BG)
-        self.leaderboard_win.geometry(f"+{self.x + self.display_size + 12}+{max(0, self.y - 20)}")
 
         outer = tk.Frame(self.leaderboard_win, bg=MENU_BG, padx=12, pady=10)
         outer.pack()
@@ -6150,6 +6190,7 @@ class DesktopPet:
             tk.Label(list_wrap, text="暂无排名记录，先去玩游戏吧~", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(
                 anchor=tk.W
             )
+            self._place_panel_popup(self.leaderboard_win)
             return
 
         for bucket in ordered_buckets:
@@ -6175,6 +6216,7 @@ class DesktopPet:
                     fg="#666666",
                     bg=MENU_BG,
                 ).pack(anchor=tk.W)
+        self._place_panel_popup(self.leaderboard_win)
 
     def _open_about(self) -> None:
         self._hide_main_menu()
@@ -6185,7 +6227,6 @@ class DesktopPet:
         self.about_win.title("关于")
         self.about_win.attributes("-topmost", True)
         self.about_win.configure(bg=MENU_BG)
-        self.about_win.geometry(f"+{self.x}+{self.y + self.display_size + 8}")
         frame = tk.Frame(self.about_win, bg=MENU_BG, padx=14, pady=12)
         frame.pack()
         tk.Label(frame, text="关于 Vpet", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
@@ -6200,6 +6241,7 @@ class DesktopPet:
             tk.Label(frame, text=f"本机编号：{_format_pet_id(self.pet_id)}", font=PIXEL_FONT, fg="#aaaaaa", bg=MENU_BG).pack(
                 anchor=tk.W, pady=(8, 0)
             )
+        self._place_panel_popup(self.about_win)
 
     def _confirm_reset_settings(self) -> None:
         self._hide_main_menu()
@@ -6207,7 +6249,6 @@ class DesktopPet:
         win.title("重置确认")
         win.attributes("-topmost", True)
         win.configure(bg=MENU_BG)
-        win.geometry(f"+{self.x}+{self.y + self.display_size + 8}")
         frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
         tk.Label(
@@ -6231,6 +6272,7 @@ class DesktopPet:
         tk.Button(btn_row, text="取消", command=win.destroy, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(
             side=tk.LEFT, padx=4
         )
+        self._place_panel_popup(win)
 
     def _reset_all_settings(self) -> None:
         self._close_ai_chat()
@@ -6496,7 +6538,7 @@ class DesktopPet:
         tk.Label(inner, text=text, font=PIXEL_FONT, fg=color, bg="#111122").pack()
 
         toast_y = max(0, self.y - 36)
-        self.toast_win.geometry(f"+{self.x + self.display_size + 8}+{toast_y}")
+        self._place_popup(self.toast_win, self.x + self.display_size + 8, toast_y)
         self.root.after(duration_ms, self._hide_toast)
 
     def _hide_toast(self) -> None:
@@ -6652,6 +6694,8 @@ class DesktopPet:
             return
         if int(time.time() * 1000) - self.wink_fx_started_ms >= WINK_DURATION_MS:
             self.wink_fx_job = None
+            if self.state == "action" and self.action_name == "wink":
+                self._after_simple_expression()
             return
         size = self.wink_fx_canvas.winfo_width() or (self.display_size + 40)
         self.wink_fx_canvas.delete("all")
@@ -7370,21 +7414,7 @@ class DesktopPet:
         self._play_expression_pop()
         self._set_image(self.sprites.wink)
         self._show_wink_fx()
-        tok = self.interaction_token
-        self._schedule_action_end(
-            duration_ms=WINK_DURATION_MS,
-            callback=lambda t=tok: self._after_wink(t),
-        )
-
-    def _after_wink(self, tok: int) -> None:
-        if tok != self.interaction_token or self.action_name != "wink":
-            return
-        if self.dragging:
-            return
-        self._clear_all_action_fx()
-        self._cancel_action_end()
-        self._add_interact_mood()
-        self._finish_expression()
+        self._schedule_action_end(action="wink", callback=self._after_simple_expression)
 
     def _play_expression_sprite(self, name: str, sprite: ImageTk.PhotoImage, *, banter: bool = True) -> None:
         if self.dragging or self.state == "work":
@@ -7425,7 +7455,10 @@ class DesktopPet:
         self._schedule_action_end(action="yesno", callback=self._after_simple_expression)
 
     def _after_simple_expression(self) -> None:
-        if self.dragging or self.state != "action":
+        if self.state != "action":
+            return
+        if self.dragging:
+            self._defer_until_not_dragging(self._after_simple_expression)
             return
         self._clear_all_action_fx()
         self._cancel_action_end()
@@ -7653,9 +7686,8 @@ class DesktopPet:
                 return
             self.root.after(EXPOSE_GLITCH_REFRESH_MS, self._spawn_expose_glitch_round)
         else:
+            self._apply_expose_fail_penalty()
             self._show_speech_dialog("暴露失败…", auto_hide_ms=2200, color="#ff6666")
-            self.mood = max(0, self.mood - 1)
-            self._refresh_panel()
             self._finish_expose_session(cleared=False)
             return
 
@@ -8139,18 +8171,23 @@ class DesktopPet:
             if q_core in user_text or user_text.strip() == q_core:
                 return random.choice(answers)
         keyword_map: tuple[tuple[tuple[str, ...], int], ...] = (
-            (("食物", "喜欢吃", "最爱吃", "喜爱", "炙鳍"), 0),
-            (("你是谁", "叫什么", "名字"), 1),
-            (("工作", "在哪上班", "旧货店"), 2),
-            (("智能伴侣", "allmate", "金目", "伴侣"), 3),
-            (("梦想", "愿望", "希望"), 4),
-            (("多大", "年龄", "几岁"), 5),
-            (("颜色", "喜欢什么色"), 6),
-            (("讨厌", "不喜欢"), 7),
-            (("平时", "爱好", "爱做"), 8),
-            (("莱姆", "rhyme", "对战"), 9),
-            (("卖什么", "旧货"), 10),
-            (("口头禅", "常说"), 11),
+            (("你是谁", "叫什么", "名字", "苍叶", "aoba", "濑良垣", "主人公"), 0),
+            (("能力", "暴露", "魄", "声音", "操纵"), 1),
+            (("多高", "身高", "175"), 2),
+            (("血型",), 3),
+            (("生日", "星座", "金牛", "4月22", "四月"), 4),
+            (("职业", "工作", "兼职"), 5),
+            (("搭档", "伙伴", "莲", "蓮", "allmate", "智能伴侣"), 6),
+            (("夹克", "jacket", "蓝色", "衣服", "plain nuts"), 7),
+            (("身世", "人格", "婴儿", "三重", "定制", "棋子", "基因"), 8),
+            (("心意", "力量", "教会", "思念"), 9),
+            (("祖母", "多惠", "长大", "怎么长大"), 10),
+            (("住", "哪里", "碧岛", "旧居民区", "旧街区"), 11),
+            (("平时", "日常", "头痛", "耳机", "音乐", "莱姆音乐", "肋排"), 12),
+            (("莱姆", "rhyme", "对战", "战无不胜", "记忆", "封印"), 13),
+            (("另一个", "白色苍叶", "破坏", "哥哥生", "红雀"), 14),
+            (("真谛", "解放", "重生", "潜入", "拯救"), 15),
+            (("东江", "财阀", "黑色野心"), 16),
         )
         for keywords, idx in keyword_map:
             if any(k.lower() in text for k in keywords):
@@ -8547,6 +8584,10 @@ class DesktopPet:
     def _start_drag_move(self) -> None:
         self._stop_drag_move()
         self._end_drag_dizzy()
+        if self.state == "action" and self.action_name:
+            self._cancel_action_end()
+            self._clear_all_action_fx()
+            self.action_name = ""
         self.state = "drag"
         self.drag_move_start_ms = int(time.time() * 1000)
         self.drag_last_dir = ""
@@ -8874,7 +8915,7 @@ class DesktopPet:
         self.speech_type_idx = 0
         self.speech_type_ms = typewriter_ms if typewriter_ms is not None else TYPEWRITER_MS
         self.speech_on_complete = on_complete
-        self.speech_dialog.geometry(f"+{self.x}+{self.y + self.display_size + 8}")
+        self._place_panel_popup(self.speech_dialog)
         self._speech_type_next(auto_hide_ms)
 
     def _speech_type_next(self, auto_hide_ms: int | None) -> None:
@@ -8889,6 +8930,8 @@ class DesktopPet:
 
         char = self.speech_full_text[self.speech_type_idx]
         self.speech_label.config(text=self.speech_full_text[: self.speech_type_idx + 1])
+        if char == "\n" or self.speech_type_idx % 12 == 0:
+            self._place_panel_popup(self.speech_dialog)
         if char not in (" ", "\n") and self.action_name != "call":
             self._play_type_sound()
         self.speech_type_idx += 1
@@ -9727,7 +9770,6 @@ class DesktopPet:
         win.title("自定义工作")
         win.attributes("-topmost", True)
         win.configure(bg=MENU_BG)
-        win.geometry(f"+{self.x + self.display_size + 16}+{self.y}")
         win.protocol("WM_DELETE_WINDOW", self._close_work_custom_dialog)
 
         frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
@@ -9763,6 +9805,7 @@ class DesktopPet:
         tk.Button(frame, text="开始", command=confirm, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(anchor=tk.E)
         entry.bind("<Return>", lambda _e: confirm())
         entry.focus_set()
+        self._place_panel_popup(win)
 
     def _start_work_free(self) -> None:
         self._hide_main_menu()
@@ -9874,6 +9917,10 @@ class DesktopPet:
         self.work_encourage_job = self.root.after(delay, tick)
 
     def _work_overlay_should_show(self) -> bool:
+        if self.state != "work":
+            return False
+        if self.work_continuous:
+            return True
         cfg = self._work_mode_config()
         if cfg.get("show_props", True):
             return True
@@ -9881,22 +9928,97 @@ class DesktopPet:
             return True
         return False
 
-    def _work_stack_canvas_size(self, stack_count: int) -> tuple[int, int, int]:
-        pad = 40
-        cols = max(1, (stack_count + WORK_STACK_COLUMN_MAX - 1) // WORK_STACK_COLUMN_MAX) if stack_count else 1
-        rows = min(WORK_STACK_COLUMN_MAX, stack_count) if stack_count else 0
-        width = pad * 2 + WORK_PROP_SIZE + max(0, cols - 1) * WORK_STACK_COL_OFFSET
-        height = pad * 2 + WORK_PROP_SIZE + max(0, rows) * WORK_STACK_OFFSET
-        return width, height, cols
+    @staticmethod
+    def _work_stack_ring_positions(ring: int) -> list[tuple[int, int]]:
+        positions: list[tuple[int, int]] = []
+        for dx in range(-ring, ring + 1):
+            for dy in range(-ring, ring + 1):
+                if dx == 0 and dy == 0:
+                    continue
+                if max(abs(dx), abs(dy)) != ring:
+                    continue
+                positions.append((dx, dy))
 
-    def _work_box_xy(self, index: int, cols: int, pad: int, canvas_w: int, canvas_h: int) -> tuple[int, int]:
-        col = index // WORK_STACK_COLUMN_MAX
-        row = index % WORK_STACK_COLUMN_MAX
-        group_w = WORK_PROP_SIZE + max(0, cols - 1) * WORK_STACK_COL_OFFSET
-        start_x = (canvas_w - group_w) // 2 + WORK_PROP_SIZE // 2
-        x = start_x + col * WORK_STACK_COL_OFFSET
-        y = canvas_h - pad - WORK_PROP_SIZE - row * WORK_STACK_OFFSET
-        return x, y
+        def sort_key(p: tuple[int, int]) -> tuple[int, int]:
+            dx, dy = p
+            if dy == 0:
+                return 0, abs(dx)
+            if dx == 0 and dy < 0:
+                return 1, abs(dy)
+            return 2, abs(dx) + abs(dy)
+
+        positions.sort(key=sort_key)
+        return positions
+
+    def _work_stack_offsets(self, count: int) -> list[tuple[int, int]]:
+        if count <= 0:
+            return []
+        positions: list[tuple[int, int]] = []
+        ring = 1
+        while len(positions) < count:
+            for pos in self._work_stack_ring_positions(ring):
+                positions.append(pos)
+                if len(positions) >= count:
+                    return positions
+            ring += 1
+        return positions
+
+    def _work_stack_canvas_size(self, stack_count: int) -> tuple[int, int]:
+        pad = 40
+        step = WORK_STACK_OFFSET
+        offsets = self._work_stack_offsets(stack_count)
+        max_dx = max((abs(dx) for dx, _ in offsets), default=0)
+        max_dy_up = max((-dy for _, dy in offsets if dy < 0), default=0)
+        max_dy_down = max((dy for _, dy in offsets if dy > 0), default=0)
+        width = pad * 2 + WORK_PROP_SIZE + max_dx * step * 2
+        height = pad * 2 + WORK_PROP_SIZE + max_dy_up * step + max_dy_down * step
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        width = min(width, max(WORK_PROP_SIZE + pad * 2, sw - 16))
+        height = min(height, max(WORK_PROP_SIZE + pad * 2, sh - 16))
+        return width, height
+
+    def _work_box_xy(
+        self, index: int, offsets: list[tuple[int, int]], pad: int, canvas_w: int, canvas_h: int
+    ) -> tuple[int, int]:
+        flag_x = canvas_w // 2
+        flag_y = canvas_h - pad
+        dx, dy = offsets[index]
+        step = WORK_STACK_OFFSET
+        return flag_x + dx * step, flag_y + dy * step
+
+    def _hide_work_end_button(self) -> None:
+        if self.work_end_btn_win and self.work_end_btn_win.winfo_exists():
+            self.work_end_btn_win.destroy()
+        self.work_end_btn_win = None
+
+    def _end_continuous_work(self) -> None:
+        self._enable_free()
+
+    def _sync_work_end_button(self, overlay_x: int, overlay_y: int, flag_x: int, flag_y: int) -> None:
+        if not (self.work_continuous and self.state == "work"):
+            self._hide_work_end_button()
+            return
+        if not self.work_end_btn_win or not self.work_end_btn_win.winfo_exists():
+            self.work_end_btn_win = tk.Toplevel(self.root)
+            self.work_end_btn_win.overrideredirect(True)
+            self.work_end_btn_win.attributes("-topmost", True)
+            self.work_end_btn_win.configure(bg=MENU_BG)
+            tk.Button(
+                self.work_end_btn_win,
+                text="结束",
+                command=self._end_continuous_work,
+                font=PIXEL_FONT,
+                bg="#664444",
+                fg=MENU_FG,
+                relief=tk.FLAT,
+                padx=6,
+                pady=2,
+                cursor="hand2",
+            ).pack()
+        btn_x = overlay_x + flag_x + WORK_PROP_SIZE // 2 + 8
+        btn_y = overlay_y + flag_y - 28
+        self._place_popup(self.work_end_btn_win, btn_x, btn_y)
 
     def _bind_work_flag_drag(self) -> None:
         if not self.work_canvas:
@@ -9947,6 +10069,7 @@ class DesktopPet:
                 self.work_overlay = None
                 self.work_canvas = None
             self._update_work_start_box()
+            self._hide_work_end_button()
             return
         if not self.work_overlay or not self.work_overlay.winfo_exists():
             self._show_work_overlay()
@@ -9955,6 +10078,7 @@ class DesktopPet:
 
     def _hide_work_overlay(self) -> None:
         self._unbind_work_flag_drag()
+        self._hide_work_end_button()
         if self.work_overlay and self.work_overlay.winfo_exists():
             self.work_overlay.destroy()
         self.work_overlay = None
@@ -9964,7 +10088,7 @@ class DesktopPet:
 
     def _show_work_overlay(self) -> None:
         self._hide_work_overlay()
-        width, height, _ = self._work_stack_canvas_size(0)
+        width, height = self._work_stack_canvas_size(0)
         self.work_overlay = tk.Toplevel(self.root)
         self.work_overlay.overrideredirect(True)
         self.work_overlay.attributes("-topmost", False)
@@ -9989,22 +10113,25 @@ class DesktopPet:
         show_stack = cfg.get("show_stack", True)
         pad = 40
         stack_count = self.work_stack if show_stack else 0
-        width, height, cols = self._work_stack_canvas_size(stack_count)
-        group_w = WORK_PROP_SIZE + max(0, cols - 1) * WORK_STACK_COL_OFFSET
-        flag_x = (width - group_w) // 2 + WORK_PROP_SIZE // 2
+        offsets = self._work_stack_offsets(stack_count)
+        width, height = self._work_stack_canvas_size(stack_count)
+        flag_x = width // 2
         flag_y = height - pad
 
         self.work_canvas.config(width=width, height=height)
         self.work_canvas.delete("all")
         overlay_x = self.work_end_x + self.display_size // 2 - flag_x
         overlay_y = self.work_end_y - height + pad
+        overlay_x, overlay_y = self._smart_popup_pos(overlay_x, overlay_y, width, height)
         self.work_overlay.geometry(f"{width}x{height}+{overlay_x}+{overlay_y}")
-        if show_props:
+        show_flag = show_props or self.work_continuous
+        if show_flag:
             self.work_canvas.create_image(flag_x, flag_y, image=self.sprites.flag_img, anchor=tk.S)
         for i in range(stack_count):
-            x, y = self._work_box_xy(i, cols, pad, width, height)
+            x, y = self._work_box_xy(i, offsets, pad, width, height)
             self.work_canvas.create_image(x, y, image=self.sprites.box_img, anchor=tk.S)
 
+        self._sync_work_end_button(overlay_x, overlay_y, flag_x, flag_y)
         self._update_work_start_box()
         self.root.lift()
 
@@ -10017,6 +10144,7 @@ class DesktopPet:
         if show_props and self.work_has_start_box and not self.work_carrying:
             sx = self.work_start_x + self.display_size // 2 - half
             sy = self.work_start_y - pad
+            sx, sy = self._smart_popup_pos(sx, sy, size, size)
             if not self.work_start_box_win or not self.work_start_box_win.winfo_exists():
                 self.work_start_box_win = tk.Toplevel(self.root)
                 self.work_start_box_win.overrideredirect(True)
@@ -10281,7 +10409,6 @@ class DesktopPet:
         self.schedule_win.title("日程提醒")
         self.schedule_win.attributes("-topmost", True)
         self.schedule_win.configure(bg=MENU_BG)
-        self.schedule_win.geometry(f"+{self.x}+{self.y + self.display_size + 8}")
 
         frame = tk.Frame(self.schedule_win, bg=MENU_BG, padx=10, pady=8)
         frame.pack()
@@ -10383,12 +10510,12 @@ class DesktopPet:
 
         tk.Button(frame, text="添加", command=add_item, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(pady=4)
         refresh_list()
+        self._place_panel_popup(self.schedule_win)
 
     def _place_ai_chat(self) -> None:
         if not self.ai_chat_win or not self.ai_chat_win.winfo_exists():
             return
-        chat_y = max(0, self.y - 42)
-        self.ai_chat_win.geometry(f"+{self.x}+{chat_y}")
+        self._place_panel_popup(self.ai_chat_win)
 
     def _is_ai_chat_widget(self, widget: tk.Misc | None) -> bool:
         if widget is None or not self.ai_chat_win:
