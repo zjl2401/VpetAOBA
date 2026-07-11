@@ -267,6 +267,7 @@ VOCAB_OPTION_ERR = "#bb4444"
 VOCAB_OPTION_DIM = "#2a3344"
 
 WORK_ARRIVE_DIST = 18
+WORK_MIN_SPAN_DIST = 300
 WORK_TOTAL_MIN = 3
 WORK_TOTAL_MAX = 8
 WORK_BOX_TOTAL_DEFAULT = 5
@@ -276,8 +277,8 @@ WORK_PROP_SIZE = 104
 WORK_STACK_OFFSET = 22
 WORK_STACK_COLUMN_MAX = 6
 WORK_STACK_COL_OFFSET = 30
-WORK_MODE_BANTER_EVERY = 4
-WORK_MODE_BANTER_INTERVAL_MS = (90_000, 150_000)
+WORK_MODE_BANTER_COOLDOWN_MS = 30_000
+WORK_MODE_BANTER_INTERVAL_MS = (30_000, 90_000)
 WORK_MODE_BANTER: tuple[str, ...] = (
     "一起加油，努力工作！",
     "嘿咻嘿咻~ 货物交给我！",
@@ -330,8 +331,8 @@ MOOD_TIER_LABELS: list[tuple[int, str, str]] = [
     (25, "低落", "#ffaa44"),
     (0, "沮丧", "#ff4444"),
 ]
-WORK_MOVE_STEP = MOVE_STEP * 3
-WORK_MOVE_INTERVAL_MS = max(8, MOVE_INTERVAL_MS // 3)
+WORK_MOVE_STEP = MOVE_STEP * 2
+WORK_MOVE_INTERVAL_MS = max(28, MOVE_INTERVAL_MS // 2 + 8)
 GAME_NEAR_DIST = 72
 SHY_DOUBLE_CLICK_MS = 350
 MINI_PET_SIZE = 120
@@ -2525,7 +2526,7 @@ class SpriteSet:
         self.reload()
 
     @classmethod
-    def from_pack(cls, display_size: int, pack: dict) -> SpriteSet:
+    def from_pack(cls, display_size: int, pack: dict) -> "SpriteSet":
         ss = cls.__new__(cls)
         ss.display_size = display_size
         ss._apply_pack(pack)
@@ -2781,6 +2782,7 @@ class DesktopPet:
         self.work_continuous = False
         self.work_encourage_job: str | None = None
         self.work_boxes_since_banter = 0
+        self.work_banter_last_ms = 0
 
         self.drag_x = 0
         self.drag_y = 0
@@ -4044,7 +4046,6 @@ class DesktopPet:
                 (gather_label, self._enable_game),
                 ("打字 ▶", self._open_typing_lang_menu),
                 ("背单词 ▶", self._open_vocab_lang_menu),
-                ("刷新词库", self._reload_vocab),
                 ("持有者排名", self._open_leaderboard),
             ],
             offset_x=120,
@@ -4216,6 +4217,7 @@ class DesktopPet:
                 pass
             self.work_encourage_job = None
         self.work_boxes_since_banter = 0
+        self.work_banter_last_ms = 0
         self._hide_work_overlay()
         if self.work_start_box_win and self.work_start_box_win.winfo_exists():
             self.work_start_box_win.destroy()
@@ -4919,11 +4921,6 @@ class DesktopPet:
         created = self.pet_profile.get("created", "")
         extra = f"\n注册于 {created}" if created else ""
         self._show_toast(f"桌宠编号\n{_format_pet_id(self.pet_id)}{extra}", "#88ccff", duration_ms=4500)
-
-    def _reload_vocab(self) -> None:
-        self._hide_main_menu()
-        self.vocab_words = _load_vocab()
-        self._show_toast(f"词库已刷新，共 {len(self.vocab_words)} 条（word_banks）", "#88ccff")
 
     def _pick_vocab_word(self) -> dict[str, str] | None:
         if not self.vocab_words:
@@ -9792,11 +9789,23 @@ class DesktopPet:
 
         self.work_start_x = random.randint(margin, max_x)
         self.work_start_y = random.randint(margin, max_y)
-        for _ in range(20):
-            self.work_end_x = random.randint(margin, max_x)
-            self.work_end_y = random.randint(margin, max_y)
-            if self._dist_to(self.work_end_x + self.display_size // 2, self.work_end_y + self.display_size // 2) > 160:
-                break
+        start_cx = self.work_start_x + self.display_size // 2
+        start_cy = self.work_start_y + self.display_size // 2
+        best_end: tuple[float, int, int] | None = None
+        for _ in range(50):
+            end_x = random.randint(margin, max_x)
+            end_y = random.randint(margin, max_y)
+            dist = math.hypot(
+                end_x + self.display_size // 2 - start_cx,
+                end_y + self.display_size // 2 - start_cy,
+            )
+            if dist >= WORK_MIN_SPAN_DIST and (best_end is None or dist > best_end[0]):
+                best_end = (dist, end_x, end_y)
+        if best_end is not None:
+            self.work_end_x, self.work_end_y = best_end[1], best_end[2]
+        else:
+            self.work_end_x = margin if self.work_start_x > (margin + max_x) // 2 else max_x
+            self.work_end_y = margin if self.work_start_y > (margin + max_y) // 2 else max_y
 
         self.work_continuous = continuous
         self.work_total = max(WORK_TOTAL_SETTING_MIN, min(WORK_TOTAL_SETTING_MAX, int(total)))
@@ -9804,6 +9813,7 @@ class DesktopPet:
         self.work_delivered = 0
         self.work_stack = 0
         self.work_boxes_since_banter = 0
+        self.work_banter_last_ms = 0
         self.work_has_start_box = True
         self.work_carrying = False
         self.work_phase = "to_start"
@@ -9834,8 +9844,14 @@ class DesktopPet:
             return
         if self.state != "work":
             return
+        now_ms = int(time.time() * 1000)
+        if self.work_banter_last_ms and now_ms - self.work_banter_last_ms < WORK_MODE_BANTER_COOLDOWN_MS:
+            return
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            return
         text = random.choice(WORK_MODE_BANTER)
         self._show_speech_dialog(text, auto_hide_ms=4200, typewriter_ms=TYPEWRITER_MS)
+        self.work_banter_last_ms = now_ms
 
     def _schedule_work_mode_banter(self) -> None:
         if self.work_encourage_job:
@@ -9847,7 +9863,7 @@ class DesktopPet:
         if not self.work_continuous:
             return
         lo, hi = WORK_MODE_BANTER_INTERVAL_MS
-        delay = random.randint(lo, hi)
+        delay = max(WORK_MODE_BANTER_COOLDOWN_MS, random.randint(lo, hi))
 
         def tick() -> None:
             self.work_encourage_job = None
@@ -10091,11 +10107,6 @@ class DesktopPet:
                 self.stamina = min(100, self.stamina + 2)
                 self.mood = min(100, self.mood + 1)
                 self._refresh_panel()
-                if self.work_continuous:
-                    self.work_boxes_since_banter += 1
-                    if self.work_boxes_since_banter >= WORK_MODE_BANTER_EVERY:
-                        self.work_boxes_since_banter = 0
-                        self._maybe_work_mode_banter(force=True)
             if self.work_continuous:
                 self.work_has_start_box = True
                 self.work_phase = "to_start"
@@ -10610,7 +10621,7 @@ class DesktopPet:
             return random.choice(
                 [
                     "打字练习在面板→小游戏里！看释义敲单词~",
-                    "诶，来练练单词吧！词库可以刷新哦。",
+                    "诶，来练练单词吧！模式→游戏→背单词就行~",
                 ]
             )
         if any(k in user_text for k in ("单词", "背词", "词库", "学习")):

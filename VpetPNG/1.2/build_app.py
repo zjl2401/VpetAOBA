@@ -48,35 +48,58 @@ def _collect_data_args() -> list[str]:
 
 
 _RELEASE_LOCK_HINT = (
-    "无法更新 release 目录：请先右键系统托盘里的 Vpet 图标并「退出」，"
-    "关闭所有桌宠窗口后再运行 build_app.py"
+    "release/Vpet 仍被旧程序占用：已把完整新版放到 release/Vpet_new，"
+    "桌面快捷方式会指向该目录。退出托盘后可删除旧的 release/Vpet。"
 )
 
 
-def _prepare_release_dir(release_dir: Path) -> None:
-    if not release_dir.exists():
-        return
+def _try_clear_dir(target: Path) -> bool:
+    if not target.exists():
+        return True
     try:
-        shutil.rmtree(release_dir)
-        return
+        shutil.rmtree(target)
+        return True
     except OSError:
         pass
-    backup = release_dir.with_name(f"{release_dir.name}_old")
+    backup = target.with_name(f"{target.name}_old")
     if backup.exists():
         shutil.rmtree(backup, ignore_errors=True)
     try:
-        release_dir.rename(backup)
-        return
-    except OSError as exc:
-        raise SystemExit(_RELEASE_LOCK_HINT) from exc
+        target.rename(backup)
+        return True
+    except OSError:
+        return False
 
 
 def _deploy_tree(src_dir: Path, dst_dir: Path) -> None:
-    _prepare_release_dir(dst_dir)
-    try:
-        shutil.copytree(src_dir, dst_dir)
-    except FileExistsError:
-        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+    if not _try_clear_dir(dst_dir):
+        raise OSError(f"无法清空目录：{dst_dir}")
+    shutil.copytree(src_dir, dst_dir)
+
+
+def _publish_release(build_dir: Path, data_src: Path) -> tuple[Path, Path]:
+    release_root = ROOT / "release"
+    release_root.mkdir(parents=True, exist_ok=True)
+    app_name = EXE_NAME.removesuffix(".exe")
+    primary = release_root / app_name
+    staging = release_root / f"{app_name}_new"
+
+    _deploy_tree(build_dir, staging)
+    data_dst = staging / "data"
+    if data_src.is_dir():
+        _deploy_tree(data_src, data_dst)
+    else:
+        data_dst.mkdir(parents=True, exist_ok=True)
+
+    if _try_clear_dir(primary):
+        try:
+            staging.rename(primary)
+            return primary, primary / EXE_NAME
+        except OSError:
+            pass
+
+    print(_RELEASE_LOCK_HINT)
+    return staging, staging / EXE_NAME
 
 
 def _create_shortcut(exe_path: Path) -> None:
@@ -93,45 +116,59 @@ $Shortcut.Save()
 """
     subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True)
 
+    bat = DESKTOP / "启动 Vpet 桌宠.bat"
+    bat.write_text(f'@echo off\nchcp 65001 >nul\nstart "" "{exe_path}"\n', encoding="utf-8")
+    release_bat = exe_path.parent.parent / "启动桌宠.bat"
+    release_bat.write_text(
+        "@echo off\nchcp 65001 >nul\n"
+        f'start "" "{exe_path}"\n',
+        encoding="utf-8",
+    )
+
 
 def main() -> None:
+    deploy_only = len(sys.argv) > 1 and sys.argv[1] in ("--deploy-only", "--publish-only")
+
     try:
         import PyInstaller  # noqa: F401
     except ImportError:
         print("正在安装 PyInstaller …")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller", "pystray"])
 
-    icon = _ensure_icon()
-    if DIST.exists():
-        shutil.rmtree(DIST, ignore_errors=True)
-    if BUILD.exists():
-        shutil.rmtree(BUILD, ignore_errors=True)
+    if not deploy_only:
+        icon = _ensure_icon()
+        if DIST.exists():
+            shutil.rmtree(DIST, ignore_errors=True)
+        if BUILD.exists():
+            shutil.rmtree(BUILD, ignore_errors=True)
 
-    cmd = [
-        sys.executable,
-        "-m",
-        "PyInstaller",
-        "--noconfirm",
-        "--clean",
-        "--windowed",
-        "--name",
-        EXE_NAME.removesuffix(".exe"),
-        "--icon",
-        str(icon),
-        *_collect_data_args(),
-        "--hidden-import",
-        "pystray",
-        "--hidden-import",
-        "PIL.ImageTk",
-        "--hidden-import",
-        "pygame",
-        "--hidden-import",
-        "imageio_ffmpeg",
-        str(ROOT / "vpet_app.py"),
-    ]
-    print("执行打包命令：")
-    print(" ".join(f'"{part}"' if " " in part else part for part in cmd))
-    subprocess.check_call(cmd, cwd=ROOT)
+        cmd = [
+            sys.executable,
+            "-m",
+            "PyInstaller",
+            "--noconfirm",
+            "--clean",
+            "--windowed",
+            "--name",
+            EXE_NAME.removesuffix(".exe"),
+            "--icon",
+            str(icon),
+            *_collect_data_args(),
+            "--hidden-import",
+            "pystray",
+            "--hidden-import",
+            "PIL.ImageTk",
+            "--hidden-import",
+            "pygame",
+            "--hidden-import",
+            "imageio_ffmpeg",
+            str(ROOT / "vpet_app.py"),
+        ]
+        print("执行打包命令：")
+        print(" ".join(f'"{part}"' if " " in part else part for part in cmd))
+        subprocess.check_call(cmd, cwd=ROOT)
+    else:
+        print("跳过 PyInstaller，仅发布 dist 到 release …")
 
     exe_path = DIST / EXE_NAME.removesuffix(".exe") / EXE_NAME
     if not exe_path.exists():
@@ -139,16 +176,7 @@ def main() -> None:
     if not exe_path.exists():
         raise SystemExit(f"未找到输出文件：{DIST / EXE_NAME}")
 
-    release_dir = ROOT / "release" / EXE_NAME.removesuffix(".exe")
-    _deploy_tree(exe_path.parent, release_dir)
-    release_exe = release_dir / EXE_NAME
-
-    data_src = ROOT / "data"
-    data_dst = release_dir / "data"
-    if data_src.is_dir():
-        _deploy_tree(data_src, data_dst)
-    else:
-        data_dst.mkdir(parents=True, exist_ok=True)
+    release_dir, release_exe = _publish_release(exe_path.parent, ROOT / "data")
 
     _create_shortcut(release_exe)
     print(f"\n打包完成：{release_exe}")
