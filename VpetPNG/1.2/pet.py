@@ -556,7 +556,7 @@ OPERATION_GUIDE_TEXT = (
 
 ONCE_HINTS: dict[str, str] = {
     "operation_guide": OPERATION_GUIDE_TEXT,
-    "game_mode": "模式→游戏→采集：30 秒接食物！鼠标控制移动，Esc 可随时退出~",
+    "game_mode": "模式→游戏→采集：30 秒接食物！另有 +3s/-3s/晕眩像素，Esc 可随时退出~",
     "companion_bar": "智能伴侣已开启~ 金目会跟在左右两侧；游戏模式会跟紧你哦！",
     "music_mode": "音乐模式：自由模式下可听歌，桌宠与金目会有律动~",
     "rhyme_invite": "邀请对战需要联机服务器，目前可先「练习对战」体验！",
@@ -9514,13 +9514,32 @@ class DesktopPet:
     def _setup_game_overlay(self) -> None:
         pass
 
+    def _game_apply_time_delta(self, delta_ms: int) -> None:
+        self.game_start_ms += int(delta_ms)
+        left = self._game_time_left_ms()
+        if left <= 0:
+            self._finish_game()
+            return
+        sign = "+" if delta_ms > 0 else ""
+        sec = abs(delta_ms) // 1000
+        self._show_toast(f"时间 {sign}{sec}s", "#88ccff" if delta_ms > 0 else "#ff8844", duration_ms=900)
+        self._update_game_hud()
+
+    def _game_handle_special_catch(self, kind: str) -> None:
+        if kind == "time_plus":
+            self._game_apply_time_delta(GAME_TIME_ITEM_DELTA_MS)
+        elif kind == "time_minus":
+            self._game_apply_time_delta(-GAME_TIME_ITEM_DELTA_MS)
+        elif kind == "dizzy":
+            self._start_game_dizzy_stun()
+
     def _game_spawn_box(self) -> None:
         if self.mode != "game" or self._game_time_left_ms() <= 0:
             return
         sw = self.root.winfo_screenwidth()
         margin = GAME_BOX_SIZE
         bx = random.randint(margin, max(margin, sw - margin))
-        food_id = random.choice(list(FOODS.keys()))
+        kind, food_id = _pick_game_drop_kind()
         size = GAME_BOX_SIZE
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
@@ -9529,12 +9548,15 @@ class DesktopPet:
         win.wm_attributes("-transparentcolor", "magenta")
         canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
         canvas.pack()
-        px = max(4, size // 8)
-        draw_x = max(2, (size - px * 4) // 2)
-        draw_y = max(2, (size - px * 4) // 2)
-        _draw_pixel_food(canvas, food_id, draw_x, draw_y, px=px)
+        if kind == "food" and food_id:
+            px = max(4, size // 8)
+            draw_x = max(2, (size - px * 4) // 2)
+            draw_y = max(2, (size - px * 4) // 2)
+            _draw_pixel_food(canvas, food_id, draw_x, draw_y, px=px)
+        else:
+            _draw_game_special_item(canvas, kind, size)
         win.geometry(f"+{bx}+{-GAME_BOX_SIZE}")
-        self.game_boxes.append({"x": bx, "y": -GAME_BOX_SIZE, "win": win, "food_id": food_id})
+        self.game_boxes.append({"x": bx, "y": -GAME_BOX_SIZE, "win": win, "kind": kind, "food_id": food_id})
         self.game_spawn_job = self.root.after(self._game_spawn_ms, self._game_spawn_box)
 
     def _game_tick(self) -> None:
@@ -9545,12 +9567,13 @@ class DesktopPet:
             self._finish_game()
             return
 
-        mx = self.root.winfo_pointerx()
-        my = self.root.winfo_pointery()
-        self.x = mx - self.display_size // 2
-        self.y = my - self.display_size // 2
-        self._clamp_position()
-        self._place_window()
+        if not self.game_dizzy:
+            mx = self.root.winfo_pointerx()
+            my = self.root.winfo_pointery()
+            self.x = mx - self.display_size // 2
+            self.y = my - self.display_size // 2
+            self._clamp_position()
+            self._place_window()
         self.root.lift()
         self._update_game_hud()
 
@@ -9569,29 +9592,37 @@ class DesktopPet:
             box_cx = box["x"] + GAME_BOX_SIZE // 2
             box_cy = box["y"] + GAME_BOX_SIZE // 2
             dist = math.hypot(box_cx - pet_cx, box_cy - pet_cy)
-            if dist < GAME_NEAR_DIST:
+            kind = box.get("kind", "food")
+            if kind == "food" and dist < GAME_NEAR_DIST:
                 near_food = True
             if dist < self._game_catch_dist:
                 if win.winfo_exists():
                     win.destroy()
-                food_id = box.get("food_id", random.choice(list(FOODS.keys())))
-                self._add_food_to_inventory(food_id)
-                self.game_catches += 1
-                self.game_score += GAME_SCORE_PER_CATCH
-                if self.game_catches % 5 == 0:
-                    self.mood = min(100, self.mood + 1)
-                    self._refresh_panel()
+                if kind == "food":
+                    food_id = box.get("food_id") or random.choice(list(FOODS.keys()))
+                    self._add_food_to_inventory(food_id)
+                    self.game_catches += 1
+                    self.game_score += GAME_SCORE_PER_CATCH
+                    if self.game_catches % 5 == 0:
+                        self.mood = min(100, self.mood + 1)
+                        self._refresh_panel()
+                else:
+                    self._game_handle_special_catch(kind)
                 continue
             if box["y"] > sh + GAME_BOX_SIZE:
                 win.destroy()
-                self.game_misses += 1
-                self.game_score = max(0, self.game_score - GAME_PENALTY_MISS)
+                if kind == "food":
+                    self.game_misses += 1
+                    self.game_score = max(0, self.game_score - GAME_PENALTY_MISS)
                 continue
             remaining.append(box)
 
         self.game_boxes = remaining
         self.game_near_food = near_food
-        self._set_image(self.sprites.happy if near_food else self.sprites.stand)
+        if self.game_dizzy:
+            self._set_image(self.sprites.stand)
+        else:
+            self._set_image(self.sprites.happy if near_food else self.sprites.stand)
         self.game_tick_job = self.root.after(GAME_TICK_MS, self._game_tick)
 
     def _open_work_menu(self) -> None:
