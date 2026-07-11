@@ -200,6 +200,12 @@ MOOD_HAPPY_THRESHOLD = 95
 MOOD_AFTER_HAPPY = 85
 TOAST_DURATION_MS = 2500
 PANEL_AUTO_CLOSE_MS = 5000
+PANEL_BAR_W = 168
+PANEL_BAR_H = 18
+PANEL_STAT_ICON = 22
+PANEL_FOOD_ICON_PX = 4
+PANEL_FOOD_CANVAS = 46
+PANEL_FOOD_COLS = 2
 
 SLEEP_STAMINA_THRESHOLD = 25
 SLEEP_WAKE_STAMINA = 65
@@ -2330,6 +2336,49 @@ def _mood_tier_label(mood: int) -> tuple[str, str]:
         if mood >= threshold:
             return label, color
     return MOOD_TIER_LABELS[-1][1], MOOD_TIER_LABELS[-1][2]
+
+
+def _draw_stamina_pixel_icon(canvas: tk.Canvas, size: int) -> None:
+    canvas.delete("all")
+    px = max(3, size // 7)
+    ox = (size - px * 5) // 2
+    oy = (size - px * 6) // 2
+    canvas.create_rectangle(ox + px, oy, ox + px * 4, oy + px, fill="#aaffaa", outline="")
+    canvas.create_rectangle(ox + px * 2, oy, ox + px * 3, oy + px * 6, fill="#44cc44", outline="")
+    canvas.create_rectangle(ox, oy + px * 2, ox + px * 5, oy + px * 3, fill="#66dd66", outline="")
+    canvas.create_rectangle(ox + px, oy + px * 4, ox + px * 4, oy + px * 5, fill="#338833", outline="")
+
+
+def _draw_mood_pixel_icon(canvas: tk.Canvas, size: int, *, fill: str = "#ff6688") -> None:
+    canvas.delete("all")
+    px = max(3, size // 7)
+    cx, cy = size // 2, size // 2 + px // 2
+    light = "#ff99bb" if fill == "#ff6688" else fill
+    canvas.create_rectangle(cx - px * 2, cy - px, cx, cy + px, fill=light, outline="")
+    canvas.create_rectangle(cx, cy - px, cx + px * 2, cy + px, fill=light, outline="")
+    canvas.create_rectangle(cx - px, cy - px * 2, cx + px, cy - px, fill=fill, outline="")
+    canvas.create_rectangle(cx - px, cy, cx + px, cy + px * 2, fill=fill, outline="")
+
+
+def _draw_panel_bar(canvas: tk.Canvas, value: int, color: str, *, width: int = PANEL_BAR_W, height: int = PANEL_BAR_H) -> None:
+    canvas.delete("all")
+    px = 4
+    segments = max(1, width // px)
+    filled = max(0, min(segments, int(round(segments * value / 100))))
+    bg = "#2a2a2a"
+    border = "#555555"
+    canvas.create_rectangle(0, 0, width, height, fill=bg, outline=border, width=1)
+    for i in range(segments):
+        x0 = i * px + 1
+        x1 = min(width - 1, x0 + px - 1)
+        if i >= filled:
+            chunk = "#333333" if i % 2 == 0 else "#2e2e2e"
+        else:
+            chunk = color if i % 2 == 0 else color
+            if i % 3 == 1:
+                r, g, b = _hex_to_rgb(color)
+                chunk = f"#{min(255, r + 22):02x}{min(255, g + 22):02x}{min(255, b + 22):02x}"
+        canvas.create_rectangle(x0, 2, x1, height - 2, fill=chunk, outline="")
 
 
 def _draw_pixel_food(canvas: tk.Canvas, food_id: str, x: int, y: int, px: int = 4) -> None:
@@ -6302,15 +6351,32 @@ class DesktopPet:
 
         tk.Label(frame, text="面板", font=PIXEL_FONT, fg=PIXEL_COLOR, bg="#1a1a1a").pack(anchor=tk.W)
 
-        self.stamina_bar = tk.Canvas(frame, width=160, height=16, bg="#333333", highlightthickness=0)
-        self.stamina_bar.pack(pady=(8, 4))
-        self.mood_bar = tk.Canvas(frame, width=160, height=16, bg="#333333", highlightthickness=0)
-        self.mood_bar.pack(pady=(0, 4))
+        stamina_row = tk.Frame(frame, bg="#1a1a1a")
+        stamina_row.pack(fill=tk.X, pady=(8, 4))
+        self.stamina_icon_canvas = tk.Canvas(
+            stamina_row, width=PANEL_STAT_ICON, height=PANEL_STAT_ICON, bg="#1a1a1a", highlightthickness=0
+        )
+        self.stamina_icon_canvas.pack(side=tk.LEFT, padx=(0, 6))
+        stat_col = tk.Frame(stamina_row, bg="#1a1a1a")
+        stat_col.pack(side=tk.LEFT, fill=tk.X)
+        self.stamina_bar = tk.Canvas(stat_col, width=PANEL_BAR_W, height=PANEL_BAR_H, bg="#1a1a1a", highlightthickness=0)
+        self.stamina_bar.pack(anchor=tk.W)
+        self.stamina_label = tk.Label(stat_col, text="", font=PIXEL_FONT, fg=MENU_FG, bg="#1a1a1a")
+        self.stamina_label.pack(anchor=tk.W, pady=(2, 0))
 
-        self.stamina_label = tk.Label(frame, text="", font=PIXEL_FONT, fg=MENU_FG, bg="#1a1a1a")
-        self.stamina_label.pack(anchor=tk.W)
-        self.mood_label = tk.Label(frame, text="", font=PIXEL_FONT, fg=MENU_FG, bg="#1a1a1a")
-        self.mood_label.pack(anchor=tk.W)
+        mood_row = tk.Frame(frame, bg="#1a1a1a")
+        mood_row.pack(fill=tk.X, pady=(0, 4))
+        self.mood_icon_canvas = tk.Canvas(
+            mood_row, width=PANEL_STAT_ICON, height=PANEL_STAT_ICON, bg="#1a1a1a", highlightthickness=0
+        )
+        self.mood_icon_canvas.pack(side=tk.LEFT, padx=(0, 6))
+        mood_col = tk.Frame(mood_row, bg="#1a1a1a")
+        mood_col.pack(side=tk.LEFT, fill=tk.X)
+        self.mood_bar = tk.Canvas(mood_col, width=PANEL_BAR_W, height=PANEL_BAR_H, bg="#1a1a1a", highlightthickness=0)
+        self.mood_bar.pack(anchor=tk.W)
+        self.mood_label = tk.Label(mood_col, text="", font=PIXEL_FONT, fg=MENU_FG, bg="#1a1a1a")
+        self.mood_label.pack(anchor=tk.W, pady=(2, 0))
+
         self.backpack_icons_frame = tk.Frame(frame, bg="#1a1a1a")
         self.backpack_icons_frame.pack(anchor=tk.W, pady=(6, 0))
         tk.Label(self.backpack_icons_frame, text="🎒 食物", font=PIXEL_FONT, fg="#ffcc66", bg="#1a1a1a").pack(
@@ -6327,24 +6393,25 @@ class DesktopPet:
         if not self.panel_win or not self.panel_win.winfo_exists():
             return
         self.panel_win.update_idletasks()
-        pw = max(self.panel_win.winfo_width(), 180)
-        ph = max(self.panel_win.winfo_height(), 120)
+        pw = max(self.panel_win.winfo_width(), 220)
+        ph = max(self.panel_win.winfo_height(), 140)
         px, py = self._panel_popup_pos(pw, ph)
         self.panel_win.geometry(f"+{px}+{py}")
 
     def _draw_bar(self, canvas: tk.Canvas, value: int, color: str) -> None:
-        canvas.delete("all")
-        width = int(160 * value / 100)
-        canvas.create_rectangle(0, 0, 160, 16, fill="#333333", outline="")
-        canvas.create_rectangle(0, 0, width, 16, fill=color, outline="")
+        _draw_panel_bar(canvas, value, color)
 
     def _refresh_panel(self) -> None:
         if not self.panel_win or not self.panel_win.winfo_exists():
             return
-        self._draw_bar(self.stamina_bar, self.stamina, "#44aa44")
-        self._draw_bar(self.mood_bar, self.mood, "#4488ff")
-        self.stamina_label.config(text=f"体力  {self.stamina}")
+        if self.stamina_icon_canvas and self.stamina_icon_canvas.winfo_exists():
+            _draw_stamina_pixel_icon(self.stamina_icon_canvas, PANEL_STAT_ICON)
         mood_label, mood_color = _mood_tier_label(self.mood)
+        if self.mood_icon_canvas and self.mood_icon_canvas.winfo_exists():
+            _draw_mood_pixel_icon(self.mood_icon_canvas, PANEL_STAT_ICON, fill=mood_color)
+        self._draw_bar(self.stamina_bar, self.stamina, "#44aa44")
+        self._draw_bar(self.mood_bar, self.mood, mood_color)
+        self.stamina_label.config(text=f"体力  {self.stamina}")
         self.mood_label.config(text=f"心情  {self.mood}  {mood_label}", fg=mood_color)
         if self.backpack_grid and self.backpack_grid.winfo_exists():
             for w in self.backpack_grid.winfo_children():
@@ -6355,16 +6422,18 @@ class DesktopPet:
                 key=lambda item: (item[1]["mood"], item[1]["stamina"]),
                 reverse=True,
             )
+            pad = max(2, (PANEL_FOOD_CANVAS - PANEL_FOOD_ICON_PX * 5) // 2)
             for food_id, info in food_items:
                 count = self.food_inventory.get(food_id, 0)
                 if count <= 0:
                     continue
-                cell = tk.Frame(self.backpack_grid, bg="#1a1a1a", padx=3, pady=2)
-                cell.grid(row=col // 3, column=col % 3, sticky=tk.NW, padx=2, pady=2)
-                icon = tk.Canvas(cell, width=22, height=24, bg="#1a1a1a", highlightthickness=0)
+                cell = tk.Frame(self.backpack_grid, bg="#1a1a1a", padx=4, pady=3)
+                cell.grid(row=col // PANEL_FOOD_COLS, column=col % PANEL_FOOD_COLS, sticky=tk.NW, padx=4, pady=3)
+                icon = tk.Canvas(cell, width=PANEL_FOOD_CANVAS, height=PANEL_FOOD_CANVAS, bg="#252525", highlightthickness=0)
                 icon.pack()
-                _draw_pixel_food(icon, food_id, 2, 2, px=2)
-                tk.Label(cell, text=f"{info['label']}×{count}", font=PIXEL_FONT, fg="#ffcc66", bg="#1a1a1a").pack()
+                icon.create_rectangle(0, 0, PANEL_FOOD_CANVAS, PANEL_FOOD_CANVAS, fill="#252525", outline="#444444")
+                _draw_pixel_food(icon, food_id, pad, pad, px=PANEL_FOOD_ICON_PX)
+                tk.Label(cell, text=f"{info['label']} ×{count}", font=PIXEL_FONT, fg="#ffcc66", bg="#1a1a1a").pack()
                 tk.Label(
                     cell,
                     text=f"体+{info['stamina']} 心+{info['mood']}",
