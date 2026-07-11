@@ -1,0 +1,334 @@
+{
+  "words": [
+    {
+      "word": "平凡",
+      "meaning": "旧货店店员，桌宠主角",
+      "hint": "角色名"
+    },
+    {
+      "word": "旧货店",
+      "meaning": "平凡工作的地方",
+      "hint": "场景"
+    },
+    {
+      "word": "Rhyme",
+      "meaning": "节奏感、韵律",
+      "hint": "音乐"
+    },
+    {
+      "word": "Allmate",
+      "meaning": "智能伴侣",
+      "hint": "伙伴"
+    },
+    {
+      "word": "Midnight",
+      "meaning": "午夜",
+      "hint": "时间"
+    },
+    {
+      "word": "Clear",
+      "meaning": "晴朗、清楚",
+      "hint": "天气/状态"
+    },
+    {
+      "word": "Connection",
+      "meaning": "连接、羁绊",
+      "hint": "关系"
+    },
+    {
+      "word": "Stroll",
+      "meaning": "漫步、闲逛",
+      "hint": "模式"
+    },
+    {
+      "word": "Follow",
+      "meaning": "跟随",
+      "hint": "模式"
+    },
+    {
+      "word": "Squat",
+      "meaning": "下蹲",
+      "hint": "动作"
+    },
+    {
+      "word": "Rhythm",
+      "meaning": "节奏、律动",
+      "hint": "音乐"
+    },
+    {
+      "word": "Pixel",
+      "meaning": "像素",
+      "hint": "风格"
+    },
+    {
+      "word": "Companion",
+      "meaning": "同伴、伴侣",
+      "hint": "智能伴侣"
+    },
+    {
+      "word": "Schedule",
+      "meaning": "日程、安排",
+      "hint": "提醒"
+    },
+    {
+      "word": "Mood",
+      "meaning": "心情",
+      "hint": "状态"
+    },
+    {
+      "word": "Stamina",
+      "meaning": "体力",
+      "hint": "状态"
+    },
+    {
+      "word": "Remind",
+      "meaning": "提醒",
+      "hint": "日程"
+    },
+    {
+      "word": "Gather",
+      "meaning": "收集、聚集",
+      "hint": "游戏"
+    },
+    {
+      "word": "Catch",
+      "meaning": "接住、捕捉",
+      "hint": "游戏"
+    },
+    {
+      "word": "Practice",
+      "meaning": "练习",
+      "hint": "学习"
+    },
+    {
+      "word": "Memory",
+      "meaning": "记忆",
+      "hint": "背单词"
+    },
+    {
+      "word": "Typing",
+      "meaning": "打字",
+      "hint": "小游戏"
+    },
+    {
+      "word": "Hello",
+      "meaning": "你好",
+      "hint": "打招呼"
+    },
+    {
+      "word": "Thanks",
+      "meaning": "谢谢",
+      "hint": "礼貌"
+    },
+    {
+      "word": "Dream",
+      "meaning": "梦想、梦境",
+      "hint": "睡眠"
+    },
+    {
+      "word": "Rain",
+      "meaning": "雨",
+      "hint": "伤心特效"
+    },
+    {
+      "word": "Star",
+      "meaning": "星星",
+      "hint": "点赞特效"
+    },
+    {
+      "word": "Work",
+      "meaning": "工作",
+      "hint": "搬箱子"
+    },
+    {
+      "word": "Game",
+      "meaning": "游戏",
+      "hint": "接食物"
+    },
+    {
+      "word": "Music",
+      "meaning": "音乐",
+      "hint": "听歌模式"
+    },
+    {
+      "word": "Free",
+      "meaning": "自由",
+      "hint": "模式"
+    },
+    {
+      "word": "Quiet",
+      "meaning": "安静、睡眠",
+      "hint": "模式"
+    },
+    {
+      "word": "Happy",
+      "meaning": "开心",
+      "hint": "表情"
+    },
+    {
+      "word": "Shy",
+      "meaning": "害羞",
+      "hint": "表情"
+    },
+    {
+      "word": "Idea",
+      "meaning": "主意、灵感",
+      "hint": "表情"
+    },
+    {
+      "word": "Wink",
+      "meaning": "眨眼",
+      "hint": "表情"
+    },
+    {
+      "word": "Kick",
+      "meaning": "踢",
+      "hint": "侧踢"
+    },
+    {
+      "word": "Eat",
+      "meaning": "吃",
+      "hint": "喂食"
+    },
+    {
+      "word": "Sleep",
+      "meaning": "睡觉",
+      "hint": "休息"
+    },
+    {
+      "word": "Call",
+      "meaning": "打电话",
+      "hint": "互动"
+    },
+    {
+      "word": "词库素材文件夹",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "================",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "把视频相关文本放进此文件夹",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "程序启动或「刷新词库」时会自动合并进词库",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "支持格式：",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "srt",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "vtt",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "ass",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "字幕文件（推荐：从视频导出字幕后放入",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "txt",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "纯文本",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "每行一个词或一句话",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "json",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "格式：{\"words\":[{\"word\":\"词\",\"meaning\":\"释义\",\"hint\":\"来源\"}]}",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "从视频提取字幕（需本机安装",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "ffmpeg）：",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "ffmpeg",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "-i",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "你的视频.mp4",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "-map",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "0:s:0",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "字幕.srt",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "进阶：运行同目录上一级的",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "extract_vocab.py",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "可批量扫描并生成",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    },
+    {
+      "word": "vocab.json",
+      "meaning": "来自视频素材",
+      "hint": "README"
+    }
+  ]
+}
