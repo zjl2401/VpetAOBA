@@ -1,0 +1,28 @@
+{
+  "pet_id": 0,
+  "created": "2026-07-11 12:52",
+  "records": {
+    "gather": [
+      {
+        "ts": "2026-07-11 15:23:28",
+        "pet_id": 0,
+        "catches": 27,
+        "misses": 0,
+        "score": 270,
+        "difficulty": "中",
+        "food": {
+          "tea": 3,
+          "bread": 3,
+          "apple": 3,
+          "donut": 6,
+          "onigiri": 1,
+          "cake": 5,
+          "candy": 2,
+          "meat": 1,
+          "berry": 1,
+          "fish": 2
+        }
+      }
+    ]
+  }
+}
