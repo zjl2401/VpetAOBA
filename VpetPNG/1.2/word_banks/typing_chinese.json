@@ -1,0 +1,21 @@
+{
+  "source": "built-in",
+  "items": [
+    {"display": "你好", "target": "nihao"},
+    {"display": "谢谢", "target": "xiexie"},
+    {"display": "桌宠", "target": "zhuochong"},
+    {"display": "平凡", "target": "pingfan"},
+    {"display": "旧货店", "target": "jiuhuodian"},
+    {"display": "音乐", "target": "yinyue"},
+    {"display": "自由", "target": "ziyou"},
+    {"display": "跟随", "target": "gensui"},
+    {"display": "睡眠", "target": "shuimian"},
+    {"display": "采集", "target": "caiji"},
+    {"display": "日记", "target": "riji"},
+    {"display": "日程", "target": "richeng"},
+    {"display": "开心", "target": "kaixin"},
+    {"display": "伤心", "target": "shangxin"},
+    {"display": "工作", "target": "gongzuo"},
+    {"display": "故障", "target": "guzhang"}
+  ]
+}
