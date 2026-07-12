@@ -108,31 +108,160 @@
         "score": 11,
         "grade": "B",
         "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 10:25:42",
+        "pet_id": 0,
+        "lang": "日语",
+        "jp_mode": "romaji",
+        "score": 5,
+        "grade": "C",
+        "difficulty": "中"
       }
     ],
     "vocab_daily_date": "2026-07-11",
     "vocab_daily_count": 3,
-    "music": [
+    "vocab": [
       {
-        "ts": "2026-07-12 03:27:09",
+        "ts": "2026-07-12 05:10:35",
         "pet_id": 0,
-        "score": 0,
-        "max_combo": 0,
-        "perfect": 0,
-        "great": 0,
-        "good": 0,
-        "miss": 24,
-        "grade": "D",
-        "accuracy": 0.0,
-        "track": "crystalline",
+        "lang": "英语",
+        "word": "analyze",
+        "correct": true,
+        "streak_clear": 0,
         "difficulty": "中"
-      }
-    ],
-    "rhyme": [
+      },
       {
-        "ts": "2026-07-12 03:32:15",
+        "ts": "2026-07-12 05:10:39",
         "pet_id": 0,
-        "won": true,
+        "lang": "英语",
+        "word": "desert",
+        "correct": false,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 05:10:44",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "athlete",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 05:10:48",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "code",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 05:10:52",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "brake",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 05:11:07",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "divine",
+        "correct": false,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 05:11:14",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "consider",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 05:11:22",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "appropriate",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 05:11:24",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "analyze",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 05:11:27",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "dash",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 05:11:41",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "count",
+        "correct": true,
+        "streak_clear": 5,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 10:26:24",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "confess",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 10:26:29",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "brand",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 10:26:32",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "access",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 10:26:36",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "ambiguous",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-12 10:26:39",
+        "pet_id": 0,
+        "lang": "英语",
+        "word": "crew",
+        "correct": true,
+        "streak_clear": 5,
         "difficulty": "中"
       }
     ]

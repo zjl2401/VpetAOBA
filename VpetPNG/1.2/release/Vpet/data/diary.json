@@ -1,11 +1,115 @@
 {
   "entries": [
     {
-      "id": "8559bdeb-8f8b-42e3-a102-9867e98248e0",
+      "id": "7b4d89a4-4ca2-4707-8596-aa5eb56240b2",
       "date": "2026-07-12",
-      "time": "03:32",
-      "text": "练习对战：胜利",
+      "time": "10:26",
+      "text": "背单词正确：crew",
+      "mood": 94,
+      "auto": true
+    },
+    {
+      "id": "0478223a-e48d-401f-a1b6-b53b7489b5f1",
+      "date": "2026-07-12",
+      "time": "10:26",
+      "text": "背单词正确：ambiguous",
+      "mood": 91,
+      "auto": true
+    },
+    {
+      "id": "8737c8c5-151e-49ee-8907-f37f36ee2041",
+      "date": "2026-07-12",
+      "time": "10:26",
+      "text": "背单词正确：access",
       "mood": 88,
+      "auto": true
+    },
+    {
+      "id": "0320eeb0-162b-4a58-8342-3c4178d30102",
+      "date": "2026-07-12",
+      "time": "10:26",
+      "text": "背单词正确：brand",
+      "mood": 85,
+      "auto": true
+    },
+    {
+      "id": "d9bc60b7-ffbb-40f5-844d-5cf30f2aa86f",
+      "date": "2026-07-12",
+      "time": "10:26",
+      "text": "背单词正确：confess",
+      "mood": 82,
+      "auto": true
+    },
+    {
+      "id": "dde34974-18f7-40cf-b5b2-383b95bd4a8e",
+      "date": "2026-07-12",
+      "time": "05:11",
+      "text": "背单词正确：count",
+      "mood": 97,
+      "auto": true
+    },
+    {
+      "id": "3a397bd3-7db0-4a26-9313-e34b6894f6b6",
+      "date": "2026-07-12",
+      "time": "05:11",
+      "text": "背单词正确：dash",
+      "mood": 94,
+      "auto": true
+    },
+    {
+      "id": "45c2fe42-0f37-4958-9ee1-8ac23d297fcd",
+      "date": "2026-07-12",
+      "time": "05:11",
+      "text": "背单词正确：analyze",
+      "mood": 91,
+      "auto": true
+    },
+    {
+      "id": "571cbe95-57fc-4146-a54c-f98602a18d05",
+      "date": "2026-07-12",
+      "time": "05:11",
+      "text": "背单词正确：appropriate",
+      "mood": 88,
+      "auto": true
+    },
+    {
+      "id": "4f137e9d-cc17-4ebc-a58a-9fe15aed9eff",
+      "date": "2026-07-12",
+      "time": "05:11",
+      "text": "背单词正确：consider",
+      "mood": 85,
+      "auto": true
+    },
+    {
+      "id": "78bdbf45-8ea9-4c13-ac91-8a13950a3cf0",
+      "date": "2026-07-12",
+      "time": "05:10",
+      "text": "背单词正确：brake",
+      "mood": 82,
+      "auto": true
+    },
+    {
+      "id": "f1c4befe-0413-4a05-9989-a08aa9949540",
+      "date": "2026-07-12",
+      "time": "05:10",
+      "text": "背单词正确：code",
+      "mood": 79,
+      "auto": true
+    },
+    {
+      "id": "800a5580-4e63-4add-bd5f-dbfaf2a3992b",
+      "date": "2026-07-12",
+      "time": "05:10",
+      "text": "背单词正确：athlete",
+      "mood": 76,
+      "auto": true
+    },
+    {
+      "id": "44609f4f-9146-4894-8f16-f189f2d83f44",
+      "date": "2026-07-12",
+      "time": "05:10",
+      "text": "背单词正确：analyze",
+      "mood": 73,
       "auto": true
     },
     {

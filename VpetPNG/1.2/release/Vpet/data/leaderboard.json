@@ -17,21 +17,21 @@
       "ts": "2026-07-11 22:03:53"
     }
   ],
-  "music": [
+  "vocab:英语": [
     {
       "pet_id": 0,
-      "best_score": 0,
-      "best_combo": 0,
-      "best_grade": "D",
-      "attempts": 1,
-      "ts": "2026-07-12 03:27:09"
+      "total_correct": 14,
+      "best_streak": 5,
+      "ts": "2026-07-12 05:11:41"
     }
   ],
-  "rhyme": [
+  "typing:日语": [
     {
       "pet_id": 0,
-      "wins": 1,
-      "ts": "2026-07-12 03:32:15"
+      "best_score": 5,
+      "best_grade": "C",
+      "attempts": 1,
+      "ts": "2026-07-12 10:25:42"
     }
   ]
 }

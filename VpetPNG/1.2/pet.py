@@ -6,6 +6,7 @@ import json
 import math
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 from ctypes import wintypes
@@ -50,9 +52,11 @@ MINIPET_DIR = ASSETS_DIR / "minipet"
 AUDIO_ASSET_DIR = ASSETS_DIR / "audio"
 GALLERY_DIR = BUNDLE_DIR / "gallery"
 GALLERY_CONFIG_FILE = GALLERY_DIR / "gallery.json"
-GALLERY_THUMB_SIZE = 96
-GALLERY_PREVIEW_SIZE = 280
+GALLERY_THUMB_SIZE = 72
+GALLERY_PREVIEW_SIZE = 160
 GALLERY_COLS = 3
+GALLERY_WIN_W = 360
+GALLERY_SCROLL_H = 200
 GALLERY_ARROW_ZONE = 0.28
 
 DEFAULT_GALLERY_GROUPS: tuple[dict, ...] = (
@@ -255,12 +259,14 @@ PET_SUBMENU_GAP_Y = 6
 PET_SPEECH_GAP = 6
 PET_MENU_FOLLOW_MS = 320
 PET_SPEECH_FOLLOW_MS = 180
-PANEL_BAR_W = 168
-PANEL_BAR_H = 18
+PANEL_BAR_W = 140
+PANEL_BAR_H = 16
 PANEL_STAT_ICON = 22
 PANEL_FOOD_ICON_PX = 4
 PANEL_FOOD_CANVAS = 46
 PANEL_FOOD_COLS = 2
+PANEL_BACKPACK_W = 280
+PANEL_BACKPACK_H = 220
 
 SLEEP_STAMINA_THRESHOLD = 25
 SLEEP_WAKE_STAMINA = 65
@@ -315,16 +321,18 @@ GAME_DIZZY_LINES: tuple[str, ...] = (
     "别扔了…我晕…",
     "像是被像素砸中了脑袋…",
 )
-GAME_CLEAR_W = 340
-GAME_CLEAR_H = 240
-GAME_CLEAR_MS = 70
-GAME_CLEAR_HOLD_MS = 2600
+GAME_CLEAR_W = 320
+GAME_CLEAR_H = 220
+GAME_CLEAR_MS = 80
+GAME_CLEAR_HOLD_MS = 1800
+GAME_CLEAR_FRAMES = 16
 VOCAB_CLEAR_STREAK = 5
 VOCAB_CORRECT_ADVANCE_MS = 120
-VOCAB_WRONG_ADVANCE_MS = 850
+VOCAB_WRONG_ADVANCE_MS = 1400
 VOCAB_OPTION_OK = "#3a9a4a"
 VOCAB_OPTION_ERR = "#bb4444"
 VOCAB_OPTION_DIM = "#2a3344"
+RHYME_SPECIAL_COOLDOWN_MS = 10000  # 必杀冷却 10 秒
 
 WORK_ARRIVE_DIST = 18
 WORK_MIN_SPAN_DIST = 300
@@ -516,6 +524,7 @@ APP_CONFIG_FILE = DATA_DIR / "app_config.json"
 PET_PROFILE_FILE = DATA_DIR / "pet_profile.json"
 DIARY_FILE = DATA_DIR / "diary.json"
 VOCAB_FILE = DATA_DIR / "vocab.json"
+VOCAB_NOTEBOOK_FILE = DATA_DIR / "vocab_notebook.json"
 WORD_BANKS_DIR = BUNDLE_DIR / "word_banks"
 PET_ID_REGISTRY_FILE = DATA_DIR / "pet_id_registry.json"
 LEADERBOARD_FILE = DATA_DIR / "leaderboard.json"
@@ -534,11 +543,13 @@ RHYTHM_LANE_COLORS = ("#66ccff", "#88ffaa", "#ffcc66", "#ff88cc")
 RHYTHM_W = 420
 RHYTHM_H = 600
 RHYTHM_TRAVEL_MS = 1400
+RHYTHM_SPEED_TRAVEL_MS: dict[str, int] = {"慢": 1800, "中": 1400, "快": 1000}
 RHYTHM_HIT_PERFECT_MS = 55
 RHYTHM_HIT_GREAT_MS = 110
 RHYTHM_HIT_GOOD_MS = 170
 RHYTHM_BPM = 120  # 仅作音频分析失败时的回退
-RHYTHM_CHART_CACHE_VER = 4
+RHYTHM_CHART_CACHE_VER = 5  # v5：含长按长音
+RHYTHM_HOLD_RELEASE_MS = 180  # 长音尾部松键判定窗
 RHYTHM_ANALYZE_MAX_SEC = 75.0  # 用前 N 秒估 BPM/相位，再铺满全曲
 RHYTHM_TICK_MS = 33  # ~30fps，减轻卡顿
 RHYTHM_PLAY_CAP_MS = 0  # 默认：0 = 不截断；开局可选 90s
@@ -598,7 +609,6 @@ FEEDBACK_XHS_ID = "444225910"
 FEEDBACK_XHS_URL = f"https://www.xiaohongshu.com/user/profile/{FEEDBACK_XHS_ID}"
 FEEDBACK_BILI_UID = "696083047"
 FEEDBACK_BILI_URL = f"https://space.bilibili.com/{FEEDBACK_BILI_UID}"
-FEEDBACK_QQ_GROUP = ""  # 预留：QQ 群号
 FEEDBACK_NOTE = (
     "写邮件或留言时，建议尽量包含：\n"
     "· 问题现象（卡顿、闪退、界面错位、无法点击等）\n"
@@ -701,7 +711,7 @@ GUIDE_TOPICS: dict[str, dict] = {
         "body": (
             "入口：模式 → 游戏 ▶\n\n"
             "· 采集：约 30 秒接下落食物入库存；另有 +3s / -3s / 晕眩特殊物\n"
-            "· 打字：30 秒限时，中/英（日语视词库）；开始后可直接输入，C~S 评级\n"
+            "· 打字：30 秒限时；日语可选假名或罗马音（罗马音为纯字母全称）；开始后输入框自动获焦\n"
             "· 背单词：英/中选择释义，无次数限制，可随时退出\n"
             "· 音乐：四轨节奏（D F J K），选曲后可选全曲或 90 秒\n"
             "· 持有者排名：各游戏按桌宠编号排行（需编号版）\n\n"
@@ -742,7 +752,7 @@ GUIDE_TOPICS: dict[str, dict] = {
         "title": "系统 · 快捷键 · 难度",
         "body": (
             "【系统菜单】\n"
-            "· 操作说明（本手册）· 回忆（画廊 / 留声）· 我的（日记 / 日程）\n"
+            "· 操作说明（本手册）· 回忆（画廊 / 留声）· 我的（日记 / 日程 / 天气预报）\n"
             "· 设置（字体、体型、难度、声音等）· 对话（AI / 普通问答）\n"
             "· 重置 / 问题反馈 / 关于 / 退出\n\n"
             "【快捷键 Ctrl+Shift+】\n"
@@ -791,7 +801,9 @@ FIRST_PLAY_GUIDES: dict[str, dict] = {
         "body": (
             "四轨节奏玩法：音符下落到判定线时按下对应键。\n\n"
             "· 按键：D  F  J  K（左→右四轨）\n"
+            "· 短音：到线时点按；长音：到线时长按，尾部松键\n"
             "· 判定：Perfect / Great / Good / Miss\n"
+            "· 右上角「设置」可调流速（即时）与谱面难度（下局生效）\n"
             "· 按准确率评级 D~S，界面有进度条\n"
             "· 曲子可选 AI Catch / Crystalline / your reply\n"
             "· 开局可选「全曲」或「90 秒」\n"
@@ -818,6 +830,7 @@ FIRST_PLAY_GUIDES: dict[str, dict] = {
         "body": (
             "面板 → 莱姆 → 练习对战：本地回合制切磋。\n\n"
             "· 攻击 / 防御 / 必杀等按钮进行对战\n"
+            "· 必杀有冷却时间，放完需等待后再用\n"
             "· 邀请对战需联机服务，暂可先练习\n"
             "· 胜利会计入持有者排名"
         ),
@@ -833,7 +846,7 @@ OPERATION_GUIDE_TEXT = (
 ONCE_HINTS: dict[str, str] = {
     "operation_guide": OPERATION_GUIDE_TEXT,
     "game_mode": "采集：移动接食物，注意 ±3s 与晕眩物，Esc 可退出~",
-    "rhythm_game": "音乐：D F J K 打节奏 · aicatch · Esc 退出~",
+    "rhythm_game": "音乐：D F J K · 长音需长按 · 右上可调流速 · Esc 退出~",
     "companion_bar": "智能伴侣已开启~ 金目会跟在左右两侧；游戏模式会跟紧你哦！",
     "music_mode": "音乐漫步：边走边听，不会触发动作；再点一次可关闭音乐~",
     "rhyme_invite": "邀请对战需要联机服务器，目前可先「练习对战」体验！",
@@ -941,6 +954,51 @@ def _pack_web_link(
     link.bind("<Button-1>", _open)
     link.bind("<Enter>", lambda _e: link.config(fg="#99ccff"))
     link.bind("<Leave>", lambda _e: link.config(fg="#66aaff"))
+
+
+def _make_scrollable_frame(
+    parent: tk.Misc,
+    *,
+    width: int,
+    height: int,
+    bg: str = MENU_BG,
+) -> tuple[tk.Frame, tk.Frame, tk.Canvas]:
+    """返回 (外层容器, 可滚动内层, canvas)。内层用于放置内容。"""
+    wrap = tk.Frame(parent, bg=bg)
+    canvas = tk.Canvas(wrap, width=width, height=height, bg=bg, highlightthickness=0)
+    scroll = tk.Scrollbar(wrap, orient=tk.VERTICAL, command=canvas.yview)
+    canvas.configure(yscrollcommand=scroll.set)
+    scroll.pack(side=tk.RIGHT, fill=tk.Y)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    inner = tk.Frame(canvas, bg=bg)
+    win_id = canvas.create_window((0, 0), window=inner, anchor=tk.NW)
+
+    def _sync_scroll(_event=None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+        try:
+            canvas.itemconfigure(win_id, width=max(canvas.winfo_width(), 1))
+        except Exception:
+            pass
+
+    def _on_canvas_cfg(event: tk.Event) -> None:
+        canvas.itemconfigure(win_id, width=max(event.width, 1))
+
+    def _on_wheel(event: tk.Event) -> None:
+        delta = int(-1 * (event.delta / 120)) if event.delta else 0
+        if delta:
+            canvas.yview_scroll(delta, "units")
+
+    inner.bind("<Configure>", _sync_scroll)
+    canvas.bind("<Configure>", _on_canvas_cfg)
+
+    def _bind_wheel(widget: tk.Misc) -> None:
+        widget.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _on_wheel))
+        widget.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+
+    _bind_wheel(canvas)
+    _bind_wheel(inner)
+    wrap.after_idle(_sync_scroll)
+    return wrap, inner, canvas
 
 
 FOODS: dict[str, dict] = {
@@ -1141,6 +1199,8 @@ VOCAB_BANK_FILES: dict[str, str] = {
     "日语": "japanese.json",
 }
 JAPANESE_LANG_LABEL = "日语"
+JP_TYPING_MODE_KANA = "kana"
+JP_TYPING_MODE_ROMAJI = "romaji"
 
 STATE_MULTI_CLICK: dict[str, tuple[str, ...]] = {
     "stand": ("嗯？戳我干嘛~", "在呢在呢！", "诶嘿嘿~"),
@@ -1610,6 +1670,9 @@ def _compute_drag_handle(display_size: int) -> tuple[int, int, int, int]:
 
 
 _type_sound = None
+_type_sound_channel = None
+_type_sound_last_ms = 0
+TYPE_SOUND_MIN_GAP_MS = 28
 _eat_sound = None
 _reminder_sound = None
 _pygame_mixer_ready = False
@@ -1632,7 +1695,7 @@ def _init_pygame_mixer() -> bool:
 
         if not pygame.mixer.get_init():
             pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-            pygame.mixer.set_num_channels(16)
+            pygame.mixer.set_num_channels(24)
         _pygame_mixer_ready = True
         return True
     except Exception:
@@ -1690,6 +1753,32 @@ def _resolve_type_cache_wav() -> Path | None:
     return None
 
 
+def _load_type_tick_from_wav(wav: Path):
+    """从 type_cache.wav 只取前一小段做按键音，避免整段 ~1s 叠播卡死。"""
+    import pygame
+
+    full = pygame.mixer.Sound(str(wav))
+    try:
+        arr = pygame.sndarray.array(full)
+        length = max(0.05, float(full.get_length()))
+        cut = max(1, int(len(arr) * (TYPE_TICK_SEC / length)))
+        short = arr[:cut].copy()
+        # 末端淡出
+        fade = max(1, cut // 5)
+        if short.ndim == 1:
+            for i in range(fade):
+                short[cut - fade + i] = int(short[cut - fade + i] * (1.0 - i / fade))
+        else:
+            for i in range(fade):
+                short[cut - fade + i] = (short[cut - fade + i] * (1.0 - i / fade)).astype(short.dtype)
+        snd = pygame.sndarray.make_sound(short)
+        snd.set_volume(0.85)
+        return snd
+    except Exception:
+        full.set_volume(0.85)
+        return full
+
+
 def _get_type_sound():
     global _type_sound
     if _type_sound is not False and _type_sound is not None:
@@ -1702,9 +1791,12 @@ def _get_type_sound():
             return _type_sound
         wav = _resolve_type_cache_wav()
         if wav is not None:
-            snd = pygame.mixer.Sound(str(wav))
-            snd.set_volume(0.85)
-            _type_sound = snd
+            try:
+                _type_sound = _load_type_tick_from_wav(wav)
+            except Exception:
+                snd = pygame.mixer.Sound(str(wav))
+                snd.set_volume(0.85)
+                _type_sound = snd
         else:
             _type_sound = False
     except Exception:
@@ -1905,25 +1997,8 @@ def _draw_fight_fighter_icon(canvas: tk.Canvas, size: int, *, side: str = "playe
 
 
 def _spawn_game_clear_particles(width: int, height: int, accent: str) -> list[dict]:
-    cx, cy = width // 2, height // 2 - 8
-    palette = (accent, "#ffcc44", "#ff88cc", "#88ccff", "#ffffff", "#66ffaa")
-    particles: list[dict] = []
-    for _ in range(28):
-        ang = random.uniform(0, math.pi * 2)
-        spd = random.uniform(1.8, 5.2)
-        particles.append(
-            {
-                "x": cx + random.uniform(-16, 16),
-                "y": cy + random.uniform(-10, 10),
-                "vx": math.cos(ang) * spd,
-                "vy": math.sin(ang) * spd - random.uniform(0.5, 2.5),
-                "color": random.choice(palette),
-                "size": random.randint(4, 8),
-                "life": random.randint(18, 42),
-                "spin": random.uniform(-0.35, 0.35),
-            }
-        )
-    return particles
+    # 保留空接口，通关动画已改为简洁静态展示
+    return []
 
 
 def _draw_pixel_ring(canvas: tk.Canvas, cx: int, cy: int, radius: int, px: int, color: str) -> None:
@@ -1951,126 +2026,45 @@ def _draw_game_clear_frame(
     hero_grade: str | None = None,
     hero_color: str | None = None,
 ) -> None:
+    """简洁通关结算：纯色底板 + 评级/标题 + 副标题，无粒子/射线/多层光环。"""
+    del particles  # 不再使用粒子
     canvas.delete("all")
-    pulse = 0.5 + 0.5 * math.sin(phase * 0.28)
-    glow = 0.55 + 0.45 * math.sin(phase * 0.18 + 1.2)
-    band_px = 8
+    canvas.create_rectangle(0, 0, width, height, fill="#0e1420", outline="")
+    canvas.create_rectangle(8, 8, width - 8, height - 8, outline="#243048", width=2)
 
-    for row in range(0, height, band_px):
-        t = row / max(1, height)
-        band = int(10 + 18 * t + 8 * math.sin(phase * 0.12 + t * 5))
-        r = min(255, max(0, band))
-        g = min(255, max(0, band + 8))
-        b = min(255, max(0, band + 22))
-        canvas.create_rectangle(0, row, width, row + band_px, fill=f"#{r:02x}{g:02x}{b:02x}", outline="")
-
-    cx, cy = width // 2, height // 2 - 6
-    ray_color = hero_color or accent
-    ray_px = 5
-    for i in range(16):
-        ang = (i / 16) * math.pi * 2 + phase * 0.11
-        inner = 28 + 8 * math.sin(phase * 0.2 + i)
-        outer = inner + 34 + 14 * pulse
-        x1 = cx + math.cos(ang) * inner
-        y1 = cy + math.sin(ang) * inner
-        x2 = cx + math.cos(ang) * outer
-        y2 = cy + math.sin(ang) * outer
-        ray = ray_color if i % 2 == 0 else "#4466aa"
-        steps = max(4, int(outer - inner) // ray_px)
-        for s in range(steps):
-            t = s / max(1, steps - 1)
-            x = int(x1 + (x2 - x1) * t) - ray_px // 2
-            y = int(y1 + (y2 - y1) * t) - ray_px // 2
-            canvas.create_rectangle(x, y, x + ray_px, y + ray_px, fill=ray, outline="")
-
-    if not hero_grade:
-        ring_r = 52 + int(6 * math.sin(phase * 0.25))
-        _draw_pixel_ring(canvas, cx, cy, ring_r, 4, accent)
-        _draw_pixel_ring(canvas, cx, cy, ring_r + 12, 3, "#334466")
-
-    alive: list[dict] = []
-    for p in particles:
-        p["x"] += p["vx"]
-        p["y"] += p["vy"]
-        p["vy"] += 0.11
-        p["vx"] *= 0.985
-        p["life"] -= 1
-        if p["life"] <= 0:
-            continue
-        alive.append(p)
-        px = max(4, p["size"])
-        _draw_pixel_star(canvas, int(p["x"]), int(p["y"]), px=px, color=p["color"])
-    particles[:] = alive
-    if phase % 7 == 0 and len(particles) < 36:
-        particles.extend(_spawn_game_clear_particles(width, height, hero_color or accent)[:4])
-
-    if hero_grade:
-        grade_color = hero_color or accent
-        pulse_grade = 0.5 + 0.5 * math.sin(phase * 0.32)
-        glow_grade = 0.6 + 0.4 * math.sin(phase * 0.22 + 0.8)
-
-        for ring, thick in ((78, 4), (62, 5), (48, 6)):
-            rr = ring + int(10 * pulse_grade)
-            ring_fill = grade_color if thick >= 5 else "#223355"
-            _draw_pixel_ring(canvas, cx, cy - 14, rr, thick, ring_fill)
-
-        canvas.create_text(cx, cy - 58, text="★ 评级 ★", fill="#ffcc44", font=("Courier New", 11, "bold"))
-        grade_font = ("Courier New", 64, "bold")
-        gy = cy - 16
-        for ox, oy in ((-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2)):
-            canvas.create_text(cx + ox, gy + oy, text=hero_grade, fill="#060612", font=grade_font)
-        canvas.create_text(cx, gy, text=hero_grade, fill=grade_color, font=grade_font)
-
-        tier_label = TYPING_GRADE_LABELS.get(hero_grade, "")
-        if tier_label:
-            canvas.create_text(cx, gy + 44, text=f"— {tier_label} —", fill=grade_color, font=("Courier New", 14, "bold"))
-
-        if title:
-            canvas.create_text(cx, gy + 68, text=title, fill="#e8eeff", font=("Courier New", 13, "bold"))
-        sub_lines = subtitle.split("\n") if subtitle else []
-        for i, line in enumerate(sub_lines[:2]):
-            canvas.create_text(cx, gy + 90 + i * 18, text=line, fill="#a8b8dd", font=PIXEL_FONT)
-
-        bar_max = width - 80
-        bar_w = int(bar_max * min(1.0, phase / 22))
-        bar_y = height - 28
-        canvas.create_rectangle(40, bar_y, 40 + bar_max, bar_y + 10, fill="#141e30", outline="")
-        if bar_w > 0:
-            canvas.create_rectangle(40, bar_y, 40 + bar_w, bar_y + 10, fill=grade_color, outline="")
-        canvas.create_text(
-            cx,
-            height - 12,
-            text=f"GRADE {hero_grade}",
-            fill=f"#{int(120 * glow_grade):02x}{int(170 * glow_grade):02x}{int(255 * glow_grade):02x}",
-            font=("Courier New", 9, "bold"),
-        )
+    cx = width // 2
+    grade_color = hero_color or accent
+    # 轻微淡入：前几帧只画底板
+    if phase < 2:
         return
 
-    banner_w = int((width - 48) * min(1.0, phase / 10))
-    bx0 = cx - banner_w // 2
-    bx1 = cx + banner_w // 2
-    by0, by1 = cy - 38, cy + 16
-    canvas.create_rectangle(bx0, by0, bx1, by1, fill="#0c1424", outline=accent, width=3)
-    canvas.create_rectangle(bx0 + 4, by0 + 4, bx1 - 4, by1 - 4, outline="#223355", width=2)
+    if hero_grade:
+        canvas.create_text(cx, 36, text="评级", fill="#8899bb", font=PIXEL_FONT)
+        canvas.create_text(
+            cx,
+            92,
+            text=hero_grade,
+            fill=grade_color,
+            font=("Courier New", 56, "bold"),
+        )
+        tier_label = TYPING_GRADE_LABELS.get(hero_grade, "")
+        y = 136
+        if tier_label:
+            canvas.create_text(cx, y, text=tier_label, fill=grade_color, font=("Courier New", 12, "bold"))
+            y += 22
+        if title and title != f"评级 {hero_grade}":
+            canvas.create_text(cx, y, text=title, fill="#e8eeff", font=("Courier New", 12, "bold"))
+            y += 20
+        sub_lines = [ln for ln in (subtitle.split("\n") if subtitle else []) if ln.strip()]
+        for i, line in enumerate(sub_lines[:3]):
+            canvas.create_text(cx, y + i * 18, text=line, fill="#a8b8dd", font=PIXEL_FONT)
+        return
 
-    stamp = "★ CLEAR ★"
-    canvas.create_text(cx, by0 - 12, text=stamp, fill="#ffcc44", font=("Courier New", 11, "bold"))
-    title_font = ("Courier New", 18, "bold")
-    for ox, oy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
-        canvas.create_text(cx + ox, cy - 8 + oy, text=title, fill="#001122", font=title_font)
-    canvas.create_text(cx, cy - 8, text=title, fill=accent, font=title_font)
-
-    sub_lines = subtitle.split("\n") if subtitle else []
+    canvas.create_text(cx, 48, text="通关", fill="#8899bb", font=PIXEL_FONT)
+    canvas.create_text(cx, 92, text=title, fill=accent, font=("Courier New", 18, "bold"))
+    sub_lines = [ln for ln in (subtitle.split("\n") if subtitle else []) if ln.strip()]
     for i, line in enumerate(sub_lines[:3]):
-        canvas.create_text(cx, cy + 22 + i * 18, text=line, fill="#c8d8ff", font=PIXEL_FONT)
-
-    bar_max = width - 80
-    bar_w = int(bar_max * min(1.0, phase / 22))
-    bar_y = height - 28
-    canvas.create_rectangle(40, bar_y, 40 + bar_max, bar_y + 10, fill="#141e30", outline="")
-    if bar_w > 0:
-        canvas.create_rectangle(40, bar_y, 40 + bar_w, bar_y + 10, fill=accent, outline="")
-    canvas.create_text(cx, height - 12, text="COMPLETE", fill=f"#{int(120 * glow):02x}{int(170 * glow):02x}{int(255 * glow):02x}", font=("Courier New", 9, "bold"))
+        canvas.create_text(cx, 128 + i * 18, text=line, fill="#c8d8ff", font=PIXEL_FONT)
 
 
 def _draw_dizzy_sticker(canvas: tk.Canvas, size: int, phase: int) -> None:
@@ -2371,6 +2365,9 @@ def _load_app_config() -> dict:
         "display_size": DEFAULT_SIZE,
         "display_preset": "中",
         "difficulty": "中",
+        "rhythm_speed": "中",
+        "rhythm_chart_diff": "中",
+        "weather_city": "北京",
         "seen_hints": {},
         "work_mode": {"show_props": True, "show_stack": True},
     }
@@ -2387,6 +2384,171 @@ def _load_app_config() -> dict:
 
 def _save_app_config(config: dict) -> None:
     APP_CONFIG_FILE.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+# —— 天气预报（Open-Meteo，无需 API Key）——
+WEATHER_CITIES: dict[str, tuple[float, float]] = {
+    "北京": (39.9042, 116.4074),
+    "上海": (31.2304, 121.4737),
+    "广州": (23.1291, 113.2644),
+    "深圳": (22.5431, 114.0579),
+    "杭州": (30.2741, 120.1551),
+    "成都": (30.5728, 104.0668),
+    "重庆": (29.5630, 106.5516),
+    "武汉": (30.5928, 114.3055),
+    "西安": (34.3416, 108.9398),
+    "南京": (32.0603, 118.7969),
+    "天津": (39.3434, 117.3616),
+    "长沙": (28.2282, 112.9388),
+    "青岛": (36.0671, 120.3826),
+    "厦门": (24.4798, 118.0894),
+    "香港": (22.3193, 114.1694),
+    "台北": (25.0330, 121.5654),
+}
+WEATHER_W = 440
+WEATHER_H = 520
+_WEATHER_ICON_CACHE: dict[tuple[str, int], ImageTk.PhotoImage] = {}
+
+
+def _weather_code_info(code: int) -> tuple[str, str]:
+    """返回 (中文描述, 图标键)。"""
+    c = int(code)
+    if c == 0:
+        return "晴朗", "sunny"
+    if c in (1, 2):
+        return "多云", "partly"
+    if c == 3:
+        return "阴天", "cloudy"
+    if c in (45, 48):
+        return "有雾", "fog"
+    if c in (51, 53, 55, 56, 57):
+        return "毛毛雨", "drizzle"
+    if c in (61, 63, 65, 66, 67, 80, 81, 82):
+        return "降雨", "rain"
+    if c in (71, 73, 75, 77, 85, 86):
+        return "降雪", "snow"
+    if c in (95, 96, 99):
+        return "雷暴", "storm"
+    return "未知", "cloudy"
+
+
+def _draw_pixel_weather_icon(kind: str, px: int = 48) -> Image.Image:
+    """程序生成像素天气图标（NEAREST 放大，偏复古）。"""
+    base = 16
+    scale = max(1, px // base)
+    img = Image.new("RGBA", (base, base), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    sky = (40, 56, 96, 255)
+    sun = (255, 210, 72, 255)
+    cloud = (220, 228, 240, 255)
+    cloud_d = (160, 176, 200, 255)
+    rain = (110, 180, 255, 255)
+    snow = (240, 248, 255, 255)
+    fog = (180, 190, 200, 180)
+    bolt = (255, 230, 90, 255)
+
+    def px_rect(x0, y0, x1, y1, fill) -> None:
+        d.rectangle([x0, y0, x1, y1], fill=fill)
+
+    if kind == "sunny":
+        px_rect(6, 6, 10, 10, sun)
+        for x, y in ((3, 3), (8, 2), (12, 3), (2, 8), (13, 8), (3, 12), (8, 13), (12, 12)):
+            px_rect(x, y, x, y, sun)
+    elif kind == "partly":
+        px_rect(3, 3, 6, 6, sun)
+        px_rect(5, 8, 13, 11, cloud)
+        px_rect(7, 6, 11, 8, cloud)
+        px_rect(4, 9, 6, 11, cloud_d)
+    elif kind == "cloudy":
+        px_rect(2, 8, 13, 12, cloud)
+        px_rect(4, 5, 11, 8, cloud)
+        px_rect(3, 10, 6, 12, cloud_d)
+        px_rect(10, 9, 13, 12, cloud_d)
+    elif kind == "fog":
+        for y in (5, 8, 11):
+            px_rect(2, y, 13, y + 1, fog)
+    elif kind in ("drizzle", "rain"):
+        px_rect(3, 4, 12, 8, cloud)
+        px_rect(5, 2, 10, 4, cloud)
+        step = 2 if kind == "drizzle" else 1
+        for i, x in enumerate(range(4, 13, step + 1)):
+            y0 = 9 + (i % 2)
+            px_rect(x, y0, x, y0 + (1 if kind == "drizzle" else 3), rain)
+    elif kind == "snow":
+        px_rect(3, 4, 12, 8, cloud)
+        px_rect(5, 2, 10, 4, cloud)
+        for x, y in ((4, 10), (7, 11), (10, 10), (5, 13), (9, 13)):
+            px_rect(x, y, x, y, snow)
+            px_rect(x - 1, y, x + 1, y, snow)
+            px_rect(x, y - 1, x, y + 1, snow)
+    elif kind == "storm":
+        px_rect(2, 3, 13, 8, cloud_d)
+        px_rect(4, 1, 11, 3, cloud)
+        px_rect(7, 8, 9, 10, bolt)
+        px_rect(5, 10, 8, 11, bolt)
+        px_rect(6, 11, 7, 14, bolt)
+        for x in (3, 6, 10):
+            px_rect(x, 9, x, 12, rain)
+    else:
+        px_rect(4, 6, 11, 11, cloud)
+
+    # 淡底色方块，更像像素贴图
+    out = Image.new("RGBA", (base, base), (*sky[:3], 40))
+    out.alpha_composite(img)
+    return out.resize((base * scale, base * scale), Image.NEAREST)
+
+
+def _weather_icon_photo(kind: str, px: int = 48) -> ImageTk.PhotoImage:
+    key = (kind, int(px))
+    photo = _WEATHER_ICON_CACHE.get(key)
+    if photo is None:
+        photo = ImageTk.PhotoImage(_draw_pixel_weather_icon(kind, px))
+        _WEATHER_ICON_CACHE[key] = photo
+    return photo
+
+
+def _fetch_open_meteo_weather(lat: float, lon: float, *, days: int = 7) -> dict:
+    params = urllib.parse.urlencode(
+        {
+            "latitude": f"{lat:.4f}",
+            "longitude": f"{lon:.4f}",
+            "current": "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,apparent_temperature",
+            "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+            "timezone": "auto",
+            "forecast_days": max(1, min(7, int(days))),
+        }
+    )
+    url = f"https://api.open-meteo.com/v1/forecast?{params}"
+    req = urllib.request.Request(url, headers={"User-Agent": "VpetWeather/1.2"})
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("天气数据格式异常")
+    return data
+
+
+def _geocode_city_name(name: str) -> tuple[str, float, float] | None:
+    q = (name or "").strip()
+    if not q:
+        return None
+    if q in WEATHER_CITIES:
+        lat, lon = WEATHER_CITIES[q]
+        return q, lat, lon
+    params = urllib.parse.urlencode({"name": q, "count": 1, "language": "zh", "format": "json"})
+    url = f"https://geocoding-api.open-meteo.com/v1/search?{params}"
+    req = urllib.request.Request(url, headers={"User-Agent": "VpetWeather/1.2"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    results = data.get("results") if isinstance(data, dict) else None
+    if not results:
+        return None
+    hit = results[0]
+    label = str(hit.get("name") or q)
+    admin = hit.get("admin1") or hit.get("country")
+    if admin and str(admin) not in label:
+        label = f"{label}·{admin}"
+    return label[:18], float(hit["latitude"]), float(hit["longitude"])
 
 
 def _format_pet_id(pet_id: int) -> str:
@@ -2619,6 +2781,7 @@ def _events_to_rhythm_notes(
     difficulty: str,
     duration_ms: int,
     seed: int,
+    bpm: float | None = None,
 ) -> list[dict]:
     dens = {"低": 0.72, "中": 0.82, "高": 0.94}.get(str(difficulty), 0.82)
     chord_p = {"低": 0.04, "中": 0.09, "高": 0.14}.get(str(difficulty), 0.09)
@@ -2656,7 +2819,106 @@ def _events_to_rhythm_notes(
             notes.append({"t": int(t), "lane": lane, "hit": False, "missed": False})
         last_t = t
     notes.sort(key=lambda n: (int(n["t"]), int(n["lane"])))
-    return notes
+    return _annotate_rhythm_hold_notes(notes, difficulty=difficulty, bpm=bpm, seed=seed + 17)
+
+
+def _rhythm_travel_ms_for(speed: str | None) -> int:
+    return int(RHYTHM_SPEED_TRAVEL_MS.get(str(speed or "中"), RHYTHM_TRAVEL_MS))
+
+
+def _rhythm_hold_tail_judgment(delta_ms: int) -> tuple[str, int]:
+    ad = abs(int(delta_ms))
+    if ad <= RHYTHM_HIT_PERFECT_MS:
+        return "Perfect", 300
+    if ad <= RHYTHM_HIT_GREAT_MS:
+        return "Great", 200
+    if ad <= RHYTHM_HOLD_RELEASE_MS:
+        return "Good", 100
+    return "Miss", 0
+
+
+def _normalize_rhythm_note(n: dict) -> dict:
+    t = int(n.get("t", 0))
+    end = int(n.get("end", t) or t)
+    if end < t:
+        end = t
+    hold = bool(n.get("hold")) or (end - t >= 220)
+    return {
+        "t": t,
+        "end": end,
+        "lane": int(n.get("lane", 0)) % RHYTHM_LANES,
+        "hold": hold,
+        "hit": False,
+        "missed": False,
+        "holding": False,
+        "head_hit": False,
+        "tail_done": False,
+    }
+
+
+def _annotate_rhythm_hold_notes(
+    notes: list[dict],
+    *,
+    difficulty: str,
+    bpm: float | None,
+    seed: int,
+) -> list[dict]:
+    """把部分点按音符升级为长按长音（不与同轨后续音符冲突）。"""
+    if not notes:
+        return []
+    rng = random.Random(seed)
+    hold_p = {"低": 0.10, "中": 0.16, "高": 0.22}.get(str(difficulty), 0.16)
+    beat = 60000.0 / float(bpm if bpm and bpm > 0 else RHYTHM_BPM)
+    hold_lens = [int(beat), int(beat * 1.5), int(beat * 2.0), int(beat * 2.5)]
+    raw = sorted((_normalize_rhythm_note(n) for n in notes), key=lambda n: (n["t"], n["lane"]))
+    # 按轨道找下一音时刻，决定能否拉长
+    next_t_by_lane: dict[int, list[int]] = {i: [] for i in range(RHYTHM_LANES)}
+    for n in raw:
+        next_t_by_lane[int(n["lane"])].append(int(n["t"]))
+    cursor = {i: 0 for i in range(RHYTHM_LANES)}
+    out: list[dict] = []
+    occupied_until = [-1] * RHYTHM_LANES
+    for n in raw:
+        lane = int(n["lane"])
+        t = int(n["t"])
+        cursor[lane] += 1
+        # 已有显式长音
+        if n["hold"] and n["end"] > t + 200:
+            if t < occupied_until[lane]:
+                n["hold"] = False
+                n["end"] = t
+            else:
+                occupied_until[lane] = int(n["end"])
+            out.append(n)
+            continue
+        # 随机升级
+        nxt = None
+        idx = cursor[lane]
+        times = next_t_by_lane[lane]
+        if idx < len(times):
+            nxt = times[idx]
+        if t < occupied_until[lane]:
+            n["hold"] = False
+            n["end"] = t
+            out.append(n)
+            continue
+        if rng.random() < hold_p:
+            length = rng.choice(hold_lens)
+            end = t + length
+            if nxt is not None:
+                end = min(end, int(nxt) - 140)
+            if end - t >= 260:
+                n["hold"] = True
+                n["end"] = int(end)
+                occupied_until[lane] = int(end)
+            else:
+                n["hold"] = False
+                n["end"] = t
+        else:
+            n["hold"] = False
+            n["end"] = t
+        out.append(n)
+    return out
 
 
 def _analyze_wav_beat_events(wav_path: Path, duration_ms: int) -> tuple[float, list[tuple[int, str]]]:
@@ -2746,7 +3008,8 @@ def _build_rhythm_chart_random(duration_ms: int, difficulty: str, *, bpm: float 
         if rng.random() < 0.08:
             step = beat * 1.5
         t += step
-    return notes
+    seed_h = int(seed if seed is not None else rng.randint(1, 10**9))
+    return _annotate_rhythm_hold_notes(notes, difficulty=difficulty, bpm=use_bpm, seed=seed_h + 31)
 
 
 def _build_rhythm_chart_from_wav(
@@ -2778,7 +3041,7 @@ def _build_rhythm_chart_from_wav(
                 bpm = float(data.get("bpm", RHYTHM_BPM))
                 end_t = max(4000, int(duration_ms) - 2200)
                 notes = [
-                    {"t": int(n["t"]), "lane": int(n["lane"]), "hit": False, "missed": False}
+                    _normalize_rhythm_note(n)
                     for n in raw
                     if isinstance(n, dict) and int(n.get("t", 0)) <= end_t
                 ]
@@ -2791,7 +3054,9 @@ def _build_rhythm_chart_from_wav(
         full_ms = max(duration_ms, _get_wav_duration_ms(wav_path) or duration_ms)
         bpm, events = _analyze_wav_beat_events(wav_path, full_ms)
         seed = abs(hash((str(wav_path.resolve()), difficulty, wav_sig))) % (10**9)
-        notes_full = _events_to_rhythm_notes(events, difficulty=difficulty, duration_ms=full_ms, seed=seed)
+        notes_full = _events_to_rhythm_notes(
+            events, difficulty=difficulty, duration_ms=full_ms, seed=seed, bpm=bpm
+        )
         try:
             payload = {
                 "ver": RHYTHM_CHART_CACHE_VER,
@@ -2799,7 +3064,15 @@ def _build_rhythm_chart_from_wav(
                 "difficulty": difficulty,
                 "bpm": bpm,
                 "wav_sig": wav_sig,
-                "notes": [{"t": int(n["t"]), "lane": int(n["lane"])} for n in notes_full],
+                "notes": [
+                    {
+                        "t": int(n["t"]),
+                        "lane": int(n["lane"]),
+                        "end": int(n.get("end", n["t"])),
+                        "hold": bool(n.get("hold")),
+                    }
+                    for n in notes_full
+                ],
             }
             cache_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         except Exception:
@@ -3103,6 +3376,12 @@ def _key_for_char(ch: str) -> str | None:
 
 
 def _draw_typing_keyboard(canvas: tk.Canvas, width: int, height: int, highlight: str | None, phase: int) -> None:
+    # 仅在高亮键变化时全量重绘；动画相位变化不重绘，减轻打字卡顿
+    prev = getattr(canvas, "_kb_last_hl", object())
+    if prev == highlight and getattr(canvas, "_kb_drawn", False):
+        return
+    canvas._kb_last_hl = highlight
+    canvas._kb_drawn = True
     canvas.delete("all")
     px = max(2, width // 48)
     gap = px
@@ -3112,8 +3391,7 @@ def _draw_typing_keyboard(canvas: tk.Canvas, width: int, height: int, highlight:
         for ch in row:
             fill = "#444466"
             if highlight and ch == highlight:
-                glow = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(phase * 0.35))
-                fill = f"#{int(0x44 + 0x44 * glow):02x}{int(0x88 + 0x77 * glow):02x}{int(0xff * glow):02x}"
+                fill = "#66aaff"
             canvas.create_rectangle(x0, y0, x0 + px * 3, y0 + px * 3, fill=fill, outline="#666688")
             canvas.create_text(x0 + px * 1.5, y0 + px * 1.5, text=ch, fill="#eeeeee", font=("Courier New", max(7, px * 2), "bold"))
             x0 += px * 3 + gap
@@ -3187,18 +3465,42 @@ def _parse_subtitle_text(text: str) -> list[str]:
     return lines
 
 
+_BANK_JSON_CACHE: dict[str, tuple[float, int, dict | list]] = {}
+_TYPING_BANK_CACHE: dict[str, list[dict[str, str]]] = {}
+_VOCAB_BANK_CACHE: dict[str, list[dict[str, str]]] = {}
+
+
 def _read_bank_json(filename: str) -> dict | list | None:
     path = WORD_BANKS_DIR / filename
     if not path.exists():
         return None
     try:
+        st = path.stat()
+        key = str(path.resolve())
+        sig = (st.st_mtime, st.st_size)
+        cached = _BANK_JSON_CACHE.get(key)
+        if cached and cached[0] == sig[0] and cached[1] == sig[1]:
+            return cached[2]
         data = json.loads(path.read_text(encoding="utf-8"))
+        _BANK_JSON_CACHE[key] = (sig[0], sig[1], data)
         return data
     except Exception:
         return None
 
 
+def _sanitize_en_vocab_meaning(meaning: str) -> str:
+    """去掉释义括号/方括号里的英文（避免背单词选项泄题）。"""
+    m = str(meaning or "")
+    m = re.sub(r"[（(][^）)]*[A-Za-z][^）)]*[）)]", "", m)
+    m = re.sub(r"\[[^\]]*[A-Za-z][^\]]*\]", "", m)
+    m = re.sub(r"(?i)English word:\s*\S+", "", m)
+    m = re.sub(r"\s{2,}", " ", m).strip(" ；;，,、 ")
+    return m or "常用词汇"
+
+
 def _load_vocab_bank(lang: str) -> list[dict[str, str]]:
+    if lang in _VOCAB_BANK_CACHE:
+        return _VOCAB_BANK_CACHE[lang]
     fname = VOCAB_BANK_FILES.get(lang)
     if not fname:
         return []
@@ -3209,18 +3511,25 @@ def _load_vocab_bank(lang: str) -> list[dict[str, str]]:
     result: list[dict[str, str]] = []
     for item in items:
         if isinstance(item, dict) and item.get("word"):
+            meaning = str(item.get("meaning", ""))
+            if lang == "英语":
+                meaning = _sanitize_en_vocab_meaning(meaning)
             result.append(
                 {
                     "word": str(item["word"]),
-                    "meaning": str(item.get("meaning", "")),
+                    "meaning": meaning,
                     "hint": str(item.get("hint", "")),
                     "lang": str(item.get("lang", lang)),
                 }
             )
+    _VOCAB_BANK_CACHE[lang] = result
     return result
 
 
-def _load_typing_bank(lang: str) -> list[tuple[str, str]]:
+def _load_typing_bank(lang: str) -> list[dict[str, str]]:
+    """返回 [{display, target, romaji?}, ...]。日语 target 为假名，romaji 可作替代答案。"""
+    if lang in _TYPING_BANK_CACHE:
+        return _TYPING_BANK_CACHE[lang]
     fname = TYPING_BANK_FILES.get(lang)
     if not fname:
         return []
@@ -3228,12 +3537,16 @@ def _load_typing_bank(lang: str) -> list[tuple[str, str]]:
     if data is None:
         return []
     items = data if isinstance(data, list) else data.get("items", [])
-    pool: list[tuple[str, str]] = []
+    pool: list[dict[str, str]] = []
     for item in items:
         if isinstance(item, (list, tuple)) and len(item) >= 2:
-            pool.append((str(item[0]), str(item[1])))
+            pool.append({"display": str(item[0]), "target": str(item[1])})
         elif isinstance(item, dict) and item.get("display") and item.get("target"):
-            pool.append((str(item["display"]), str(item["target"])))
+            entry = {"display": str(item["display"]), "target": str(item["target"])}
+            if item.get("romaji"):
+                entry["romaji"] = str(item["romaji"])
+            pool.append(entry)
+    _TYPING_BANK_CACHE[lang] = pool
     return pool
 
 
@@ -3241,6 +3554,59 @@ def _japanese_bank_available() -> bool:
     typing = _load_typing_bank(JAPANESE_LANG_LABEL)
     vocab = _load_vocab_bank(JAPANESE_LANG_LABEL)
     return len(typing) >= 4 or len(vocab) >= 4
+
+
+def _romaji_letters_only(text: str) -> str:
+    """罗马音答案：仅保留 a-z，去掉空格/连字符/长音符号等。"""
+    return "".join(ch for ch in str(text).lower() if "a" <= ch <= "z")
+
+
+def _kana_to_hiragana(text: str) -> str:
+    out: list[str] = []
+    for ch in text:
+        code = ord(ch)
+        if 0x30A1 <= code <= 0x30F6:  # 片假名 → 平假名
+            out.append(chr(code - 0x60))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _kana_to_katakana(text: str) -> str:
+    out: list[str] = []
+    for ch in text:
+        code = ord(ch)
+        if 0x3041 <= code <= 0x3096:  # 平假名 → 片假名
+            out.append(chr(code + 0x60))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _jp_typing_prompt_meaning(display: str) -> str:
+    """从 display（如 后天（あさって））取出中文提示。"""
+    s = str(display or "").strip()
+    if "（" in s and s.endswith("）"):
+        return s.rsplit("（", 1)[0].strip() or s
+    if "(" in s and s.endswith(")"):
+        return s.rsplit("(", 1)[0].strip() or s
+    return s
+
+
+def _filter_jp_typing_pool(pool: list[dict[str, str]], jp_mode: str) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    for it in pool:
+        kana = str(it.get("target", "") or "").strip()
+        roma = _romaji_letters_only(it.get("romaji", "") or "")
+        if jp_mode == JP_TYPING_MODE_ROMAJI:
+            if len(roma) < 2:
+                continue
+            result.append({**it, "romaji": roma, "target": kana or it.get("target", "")})
+        else:
+            if not kana:
+                continue
+            result.append({**it, "romaji": roma})
+    return result
 
 
 def _load_vocab() -> list[dict[str, str]]:
@@ -3261,6 +3627,95 @@ def _save_vocab(words: list[dict[str, str]]) -> None:
     VOCAB_FILE.write_text(
         json.dumps({"words": words}, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+
+def _empty_vocab_notebook() -> dict[str, list[dict[str, str]]]:
+    return {"中文": [], "英语": [], "日语": []}
+
+
+def _load_vocab_notebook() -> dict[str, list[dict[str, str]]]:
+    data = _empty_vocab_notebook()
+    if not VOCAB_NOTEBOOK_FILE.exists():
+        return data
+    try:
+        raw = json.loads(VOCAB_NOTEBOOK_FILE.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return data
+        for lang in data:
+            rows = raw.get(lang, [])
+            if not isinstance(rows, list):
+                continue
+            cleaned: list[dict[str, str]] = []
+            seen: set[str] = set()
+            for item in rows:
+                if not isinstance(item, dict):
+                    continue
+                word = str(item.get("word", "")).strip()
+                if not word or word in seen:
+                    continue
+                seen.add(word)
+                cleaned.append(
+                    {
+                        "word": word,
+                        "meaning": str(item.get("meaning", "")),
+                        "hint": str(item.get("hint", "")),
+                        "lang": str(item.get("lang", lang)),
+                    }
+                )
+            data[lang] = cleaned
+    except Exception:
+        pass
+    return data
+
+
+def _save_vocab_notebook(book: dict[str, list[dict[str, str]]]) -> None:
+    payload = _empty_vocab_notebook()
+    for lang in payload:
+        rows = book.get(lang, []) if isinstance(book, dict) else []
+        payload[lang] = rows if isinstance(rows, list) else []
+    VOCAB_NOTEBOOK_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _add_vocab_notebook_item(lang: str, item: dict) -> bool:
+    """答错加入生词本。已存在则更新词义，返回是否为新增。"""
+    if lang not in ("中文", "英语", "日语"):
+        return False
+    word = str(item.get("word", "")).strip()
+    if not word:
+        return False
+    book = _load_vocab_notebook()
+    rows = book.get(lang, [])
+    for row in rows:
+        if row.get("word") == word:
+            row["meaning"] = str(item.get("meaning", row.get("meaning", "")))
+            row["hint"] = str(item.get("hint", row.get("hint", "")))
+            row["lang"] = lang
+            _save_vocab_notebook(book)
+            return False
+    rows.append(
+        {
+            "word": word,
+            "meaning": str(item.get("meaning", "")),
+            "hint": str(item.get("hint", "")),
+            "lang": lang,
+        }
+    )
+    book[lang] = rows
+    _save_vocab_notebook(book)
+    return True
+
+
+def _remove_vocab_notebook_item(lang: str, word: str) -> None:
+    book = _load_vocab_notebook()
+    rows = [r for r in book.get(lang, []) if r.get("word") != word]
+    book[lang] = rows
+    _save_vocab_notebook(book)
+
+
+def _clear_vocab_notebook_lang(lang: str) -> None:
+    book = _load_vocab_notebook()
+    book[lang] = []
+    _save_vocab_notebook(book)
 
 
 def _mood_tier_label(mood: int) -> tuple[str, str]:
@@ -3796,6 +4251,9 @@ class DesktopPet:
         self.rhythm_flash: dict[int, int] = {}
         self.rhythm_track_id = DEFAULT_MUSIC_TRACK
         self.rhythm_grade_bar: tk.Canvas | None = None
+        self.rhythm_keys_down: set[int] = set()
+        self.rhythm_settings_win: tk.Toplevel | None = None
+        self.rhythm_travel_ms = RHYTHM_TRAVEL_MS
 
         self.drag_x = 0
         self.drag_y = 0
@@ -3826,6 +4284,10 @@ class DesktopPet:
         self._pet_speech_follow_ms = 0
         self._pet_menu_follow_job: str | None = None
         self.panel_win: tk.Toplevel | None = None
+        self.panel_backpack_win: tk.Toplevel | None = None
+        self.backpack_icons_frame: tk.Frame | None = None
+        self.backpack_grid: tk.Frame | None = None
+        self.backpack_scroll_inner: tk.Frame | None = None
         self.speech_dialog: tk.Toplevel | None = None
         self.toast_win: tk.Toplevel | None = None
         self.countdown_win: tk.Toplevel | None = None
@@ -3875,10 +4337,9 @@ class DesktopPet:
         self.bg_music_playing = False
         self.bg_music_paused_for_call = False
         self.music_config = _load_music_config()
-        self.root.after(200, _ensure_all_music_track_wavs)
+        self.root.after(200, lambda: threading.Thread(target=_ensure_all_music_track_wavs, daemon=True).start())
         self.music_settings_win: tk.Toplevel | None = None
         self.sound_settings_win: tk.Toplevel | None = None
-        self.backpack_icons_frame: tk.Frame | None = None
         self.sleep_zzz_win: tk.Toplevel | None = None
         self.sleep_zzz_canvas: tk.Canvas | None = None
         self.zzz_phase = 0
@@ -3985,6 +4446,9 @@ class DesktopPet:
         self.about_win: tk.Toplevel | None = None
         self.feedback_win: tk.Toplevel | None = None
         self.diary_win: tk.Toplevel | None = None
+        self.weather_win: tk.Toplevel | None = None
+        self.weather_photos: list[ImageTk.PhotoImage] = []
+        self._weather_fetch_token = 0
         self.gallery_win: tk.Toplevel | None = None
         self.gallery_photos: list[ImageTk.PhotoImage] = []
         self.phonograph_win: tk.Toplevel | None = None
@@ -3995,6 +4459,7 @@ class DesktopPet:
         self.typing_game_win: tk.Toplevel | None = None
         self._typing_mood_cache: dict[str, ImageTk.PhotoImage] = {}
         self.vocab_game_win: tk.Toplevel | None = None
+        self.vocab_notebook_win: tk.Toplevel | None = None
         self.vocab_word_label: tk.Label | None = None
         self.vocab_status_label: tk.Label | None = None
         self.vocab_options_frame: tk.Frame | None = None
@@ -5624,6 +6089,7 @@ class DesktopPet:
                 (gather_label, self._enable_game),
                 ("打字 ▶", self._open_typing_lang_menu),
                 ("背单词 ▶", self._open_vocab_lang_menu),
+                ("生词本 ▶", self._open_vocab_notebook_menu),
                 (rhythm_label, self._open_music_game_menu),
                 ("持有者排名", self._open_leaderboard),
             ],
@@ -5661,10 +6127,19 @@ class DesktopPet:
             ("英语", lambda: self._start_typing_game("英语")),
         ]
         if _japanese_bank_available():
-            items.append(("日语", lambda: self._start_typing_game("日语")))
+            items.append(("日语 ▶", self._open_typing_jp_mode_menu))
         else:
             items.append(("日语（未开放）", lambda: self._show_toast("此功能暂不开放", "#ff8844")))
         self._show_sub_menu(items, offset_x=180)
+
+    def _open_typing_jp_mode_menu(self) -> None:
+        self._show_sub_menu(
+            [
+                ("平假名/片假名", lambda: self._start_typing_game(JAPANESE_LANG_LABEL, jp_mode=JP_TYPING_MODE_KANA)),
+                ("罗马音", lambda: self._start_typing_game(JAPANESE_LANG_LABEL, jp_mode=JP_TYPING_MODE_ROMAJI)),
+            ],
+            offset_x=300,
+        )
 
     def _open_vocab_lang_menu(self) -> None:
         items: list[tuple[str, callable]] = [
@@ -5676,6 +6151,101 @@ class DesktopPet:
         else:
             items.append(("日语（未开放）", lambda: self._show_toast("此功能暂不开放", "#ff8844")))
         self._show_sub_menu(items, offset_x=180)
+
+    def _open_vocab_notebook_menu(self) -> None:
+        book = _load_vocab_notebook()
+        items: list[tuple[str, callable]] = []
+        for lang in ("中文", "英语", "日语"):
+            n = len(book.get(lang, []))
+            items.append((f"{lang}（{n}）", lambda L=lang: self._open_vocab_notebook(L)))
+        self._show_sub_menu(items, offset_x=180)
+
+    def _close_vocab_notebook(self) -> None:
+        if self.vocab_notebook_win and self.vocab_notebook_win.winfo_exists():
+            self.vocab_notebook_win.destroy()
+        self.vocab_notebook_win = None
+
+    def _open_vocab_notebook(self, lang: str) -> None:
+        self._hide_main_menu()
+        self._close_vocab_notebook()
+        book = _load_vocab_notebook()
+        rows = list(book.get(lang, []))
+        win = tk.Toplevel(self.root)
+        self.vocab_notebook_win = win
+        win.title(f"生词本 · {lang}")
+        win.attributes("-topmost", True)
+        win.configure(bg=MENU_BG)
+        win.protocol("WM_DELETE_WINDOW", self._close_vocab_notebook)
+        frame = tk.Frame(win, bg=MENU_BG, padx=10, pady=8)
+        frame.pack(fill=tk.BOTH, expand=True)
+        tk.Label(frame, text=f"生词本 · {lang}（{len(rows)}）", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(
+            anchor=tk.W
+        )
+        tk.Label(
+            frame,
+            text="答错会自动收录；复习答对后移出。",
+            font=PIXEL_FONT,
+            fg="#888888",
+            bg=MENU_BG,
+        ).pack(anchor=tk.W, pady=(2, 6))
+
+        btns = tk.Frame(frame, bg=MENU_BG)
+        btns.pack(fill=tk.X, pady=(0, 6))
+
+        def review() -> None:
+            if not rows:
+                self._show_toast("生词本是空的", "#ff8844")
+                return
+            self._close_vocab_notebook()
+            self._open_vocab_game(lang, pool=rows, from_notebook=True)
+
+        def clear_all() -> None:
+            _clear_vocab_notebook_lang(lang)
+            self._show_toast(f"已清空{lang}生词本", "#88ccff")
+            self._open_vocab_notebook(lang)
+
+        tk.Button(btns, text="复习", command=review, font=PIXEL_FONT, bg="#334466", fg="#ffcc66", relief=tk.FLAT).pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        tk.Button(btns, text="清空", command=clear_all, font=PIXEL_FONT, bg="#553333", fg="#ffaaaa", relief=tk.FLAT).pack(
+            side=tk.LEFT
+        )
+
+        scroll_wrap, inner, _canvas = _make_scrollable_frame(frame, width=320, height=260, bg=MENU_BG)
+        scroll_wrap.pack(fill=tk.BOTH, expand=True)
+        if not rows:
+            tk.Label(inner, text="（暂无生词）", font=PIXEL_FONT, fg="#666666", bg=MENU_BG).pack(anchor=tk.W, pady=8)
+        else:
+            for item in rows:
+                row = tk.Frame(inner, bg=MENU_BG)
+                row.pack(fill=tk.X, pady=3)
+                txt = f"{item.get('word', '')}\n{item.get('meaning', '')}"
+                tk.Label(
+                    row,
+                    text=txt,
+                    font=PIXEL_FONT,
+                    fg=MENU_FG,
+                    bg=MENU_BG,
+                    justify=tk.LEFT,
+                    wraplength=240,
+                    anchor=tk.W,
+                ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+                def remove_one(w=str(item.get("word", "")), L=lang) -> None:
+                    _remove_vocab_notebook_item(L, w)
+                    self._open_vocab_notebook(L)
+
+                tk.Button(
+                    row,
+                    text="删",
+                    command=remove_one,
+                    font=PIXEL_FONT,
+                    bg="#444444",
+                    fg=MENU_FG,
+                    relief=tk.FLAT,
+                    padx=4,
+                ).pack(side=tk.RIGHT, padx=(4, 0))
+        self._place_panel_popup(win)
 
     def _toggle_music_mode(self) -> None:
         self._toggle_music_interact()
@@ -5712,10 +6282,13 @@ class DesktopPet:
             self.schedule_win = None
         for attr in (
             "diary_win",
+            "weather_win",
             "gallery_win",
+            "panel_backpack_win",
             "phonograph_win",
             "typing_game_win",
             "vocab_game_win",
+            "vocab_notebook_win",
             "panel_settings_win",
             "about_win",
             "feedback_win",
@@ -6214,7 +6787,7 @@ class DesktopPet:
                 hero_color=meta["hero_color"],
             )
             meta["phase"] += 1
-            if meta["phase"] < 38:
+            if meta["phase"] < GAME_CLEAR_FRAMES:
                 self.game_clear_job = self.root.after(GAME_CLEAR_MS, tick)
             else:
                 self.game_clear_job = self.root.after(hold_ms, finish)
@@ -6559,6 +7132,7 @@ class DesktopPet:
             [
                 ("日记", self._open_diary_manager),
                 ("日程提醒", self._open_schedule_manager),
+                ("天气预报", self._open_weather_forecast),
             ]
         )
         self._show_sub_menu(items, offset_x=120)
@@ -6681,6 +7255,227 @@ class DesktopPet:
         refresh_list()
         self._place_panel_popup(self.diary_win)
 
+    def _open_weather_forecast(self) -> None:
+        self._hide_main_menu()
+        if self.weather_win and self.weather_win.winfo_exists():
+            self._close_weather_forecast()
+            return
+
+        self.weather_win = tk.Toplevel(self.root)
+        self.weather_win.title("天气预报")
+        self.weather_win.attributes("-topmost", True)
+        self.weather_win.configure(bg="#1a2030")
+        self.weather_win.geometry(f"{WEATHER_W}x{WEATHER_H}")
+        self.weather_win.protocol("WM_DELETE_WINDOW", self._close_weather_forecast)
+        self.weather_photos = []
+
+        frame = tk.Frame(self.weather_win, bg="#1a2030", padx=10, pady=8)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        head = tk.Frame(frame, bg="#1a2030")
+        head.pack(fill=tk.X)
+        title_icon = _weather_icon_photo("sunny", 32)
+        self.weather_photos.append(title_icon)
+        tk.Label(head, image=title_icon, bg="#1a2030").pack(side=tk.LEFT)
+        tk.Label(head, text=" 天气预报", font=PIXEL_FONT, fg="#88ccff", bg="#1a2030").pack(side=tk.LEFT)
+
+        city_row = tk.Frame(frame, bg="#1a2030")
+        city_row.pack(fill=tk.X, pady=(8, 4))
+        tk.Label(city_row, text="城市", font=PIXEL_FONT, fg="#c8d8ff", bg="#1a2030").pack(side=tk.LEFT)
+        city_var = tk.StringVar(value=str(self.app_config.get("weather_city") or "北京"))
+        city_entry = tk.Entry(city_row, textvariable=city_var, width=12, font=PIXEL_FONT)
+        city_entry.pack(side=tk.LEFT, padx=6)
+
+        canvas = tk.Canvas(frame, width=WEATHER_W - 24, height=WEATHER_H - 150, bg="#121826", highlightthickness=0)
+        canvas.pack(fill=tk.BOTH, expand=True, pady=(4, 6))
+        status = tk.Label(frame, text="正在获取天气…", font=PIXEL_FONT, fg="#a8b8dd", bg="#1a2030")
+        status.pack(anchor=tk.W)
+
+        preset_row = tk.Frame(frame, bg="#1a2030")
+        preset_row.pack(fill=tk.X, pady=(2, 0))
+
+        def pick_city(name: str) -> None:
+            city_var.set(name)
+            load_weather()
+
+        for name in ("北京", "上海", "广州", "杭州", "成都", "深圳"):
+            tk.Button(
+                preset_row,
+                text=name,
+                command=lambda n=name: pick_city(n),
+                font=("Courier New", 9, "bold"),
+                bg="#2a3450",
+                fg="#dde8ff",
+                relief=tk.FLAT,
+                padx=4,
+            ).pack(side=tk.LEFT, padx=2)
+
+        def render(payload: dict, city_label: str) -> None:
+            if not self.weather_win or not self.weather_win.winfo_exists():
+                return
+            canvas.delete("all")
+            self.weather_photos = [title_icon]
+            w = WEATHER_W - 24
+            canvas.create_rectangle(0, 0, w, WEATHER_H, fill="#121826", outline="")
+            for i in range(0, w, 8):
+                canvas.create_line(i, 0, i, WEATHER_H, fill="#161e30")
+            cur = payload.get("current") or {}
+            daily = payload.get("daily") or {}
+            code = int(cur.get("weather_code", 3) or 3)
+            desc, kind = _weather_code_info(code)
+            icon = _weather_icon_photo(kind, 64)
+            self.weather_photos.append(icon)
+            temp = cur.get("temperature_2m")
+            feels = cur.get("apparent_temperature")
+            hum = cur.get("relative_humidity_2m")
+            wind = cur.get("wind_speed_10m")
+            canvas.create_image(56, 58, image=icon)
+            canvas.create_text(120, 28, text=city_label, fill="#88ccff", font=PIXEL_FONT, anchor="w")
+            canvas.create_text(
+                120,
+                56,
+                text=f"{temp:.0f}°C  {desc}" if isinstance(temp, (int, float)) else desc,
+                fill="#ffffff",
+                font=("Courier New", 14, "bold"),
+                anchor="w",
+            )
+            detail_bits = []
+            if isinstance(feels, (int, float)):
+                detail_bits.append(f"体感 {feels:.0f}°")
+            if isinstance(hum, (int, float)):
+                detail_bits.append(f"湿度 {hum:.0f}%")
+            if isinstance(wind, (int, float)):
+                detail_bits.append(f"风 {wind:.0f} km/h")
+            canvas.create_text(
+                120,
+                82,
+                text="  ·  ".join(detail_bits) if detail_bits else "—",
+                fill="#a8b8dd",
+                font=("Courier New", 10, "bold"),
+                anchor="w",
+            )
+            deco = _weather_icon_photo(kind, 24)
+            self.weather_photos.append(deco)
+            canvas.create_image(w - 36, 36, image=deco)
+
+            canvas.create_text(12, 118, text="未来七日", fill="#66aaff", font=PIXEL_FONT, anchor="w")
+            canvas.create_line(12, 132, w - 12, 132, fill="#2a3a58")
+
+            times = daily.get("time") or []
+            codes = daily.get("weather_code") or []
+            tmax = daily.get("temperature_2m_max") or []
+            tmin = daily.get("temperature_2m_min") or []
+            pop = daily.get("precipitation_probability_max") or []
+            n = min(7, len(times), len(codes), len(tmax), len(tmin))
+            if n <= 0:
+                canvas.create_text(w // 2, 220, text="暂无预报数据", fill="#ff8866", font=PIXEL_FONT)
+                status.config(text="数据不完整", fg="#ff8866")
+                return
+            col_w = (w - 16) // n
+            weekdays = "一二三四五六日"
+            for i in range(n):
+                x = 8 + i * col_w + col_w // 2
+                y0 = 150
+                try:
+                    dt = datetime.strptime(str(times[i])[:10], "%Y-%m-%d")
+                    day_lab = "今天" if i == 0 else f"周{weekdays[dt.weekday()]}"
+                    md = dt.strftime("%m/%d")
+                except Exception:
+                    day_lab, md = f"D{i+1}", ""
+                d_code = int(codes[i] or 3)
+                d_desc, d_kind = _weather_code_info(d_code)
+                d_icon = _weather_icon_photo(d_kind, 32)
+                self.weather_photos.append(d_icon)
+                canvas.create_rectangle(
+                    x - col_w // 2 + 2,
+                    y0 - 8,
+                    x + col_w // 2 - 2,
+                    y0 + 168,
+                    fill="#1a2438" if i % 2 == 0 else "#162032",
+                    outline="#2a3a58",
+                )
+                canvas.create_text(x, y0 + 8, text=day_lab, fill="#c8d8ff", font=("Courier New", 9, "bold"))
+                canvas.create_text(x, y0 + 24, text=md, fill="#7788aa", font=("Courier New", 8, "bold"))
+                canvas.create_image(x, y0 + 54, image=d_icon)
+                hi = tmax[i]
+                lo = tmin[i]
+                temp_txt = ""
+                if isinstance(hi, (int, float)) and isinstance(lo, (int, float)):
+                    temp_txt = f"{hi:.0f}/{lo:.0f}°"
+                canvas.create_text(x, y0 + 88, text=temp_txt, fill="#ffffff", font=("Courier New", 9, "bold"))
+                canvas.create_text(x, y0 + 108, text=d_desc, fill="#88aacc", font=("Courier New", 8, "bold"))
+                p = pop[i] if i < len(pop) else None
+                if isinstance(p, (int, float)):
+                    canvas.create_text(x, y0 + 128, text=f"雨{p:.0f}%", fill="#66ccff", font=("Courier New", 8, "bold"))
+            updated = datetime.now().strftime("%H:%M:%S")
+            status.config(text=f"已更新 {updated} · 数据来源 Open-Meteo", fg="#88ffaa")
+
+        def load_weather() -> None:
+            name = city_var.get().strip() or "北京"
+            self.app_config["weather_city"] = name
+            _save_app_config(self.app_config)
+            status.config(text="正在获取天气…", fg="#a8b8dd")
+            canvas.delete("all")
+            canvas.create_text((WEATHER_W - 24) // 2, 160, text="读取中…", fill="#8899bb", font=PIXEL_FONT)
+            token = getattr(self, "_weather_fetch_token", 0) + 1
+            self._weather_fetch_token = token
+
+            def worker() -> None:
+                err = ""
+                payload = None
+                label = name
+                try:
+                    geo = _geocode_city_name(name)
+                    if not geo:
+                        raise ValueError(f"找不到城市「{name}」")
+                    label, lat, lon = geo
+                    payload = _fetch_open_meteo_weather(lat, lon)
+                except Exception as e:
+                    err = str(e) or "获取失败"
+
+                def apply() -> None:
+                    if token != getattr(self, "_weather_fetch_token", 0):
+                        return
+                    if not self.weather_win or not self.weather_win.winfo_exists():
+                        return
+                    if payload is None:
+                        canvas.delete("all")
+                        canvas.create_text(
+                            (WEATHER_W - 24) // 2,
+                            160,
+                            text=f"获取失败\n{err[:48]}",
+                            fill="#ff8866",
+                            font=PIXEL_FONT,
+                            justify=tk.CENTER,
+                        )
+                        status.config(text="请检查网络后重试", fg="#ff8866")
+                        return
+                    render(payload, label)
+
+                self.root.after(0, apply)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        tk.Button(
+            city_row, text="查询", command=load_weather, font=PIXEL_FONT, bg="#3a5080", fg="#ffffff"
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            city_row, text="刷新", command=load_weather, font=PIXEL_FONT, bg="#2a4058", fg="#dde8ff"
+        ).pack(side=tk.LEFT)
+        city_entry.bind("<Return>", lambda _e: load_weather())
+        self._place_panel_popup(self.weather_win)
+        load_weather()
+
+    def _close_weather_forecast(self) -> None:
+        self._weather_fetch_token = getattr(self, "_weather_fetch_token", 0) + 1
+        if self.weather_win and self.weather_win.winfo_exists():
+            try:
+                self.weather_win.destroy()
+            except Exception:
+                pass
+        self.weather_win = None
+        self.weather_photos = []
+
     def _open_gallery(self) -> None:
         self._hide_main_menu()
         if self.gallery_win and self.gallery_win.winfo_exists():
@@ -6695,21 +7490,24 @@ class DesktopPet:
         self.gallery_win.title("画廊")
         self.gallery_win.attributes("-topmost", True)
         self.gallery_win.configure(bg=MENU_BG)
+        self.gallery_win.geometry(f"{GALLERY_WIN_W}x{GALLERY_PREVIEW_SIZE + GALLERY_SCROLL_H + 110}")
 
-        outer = tk.Frame(self.gallery_win, bg=MENU_BG, padx=12, pady=10)
-        outer.pack()
+        outer = tk.Frame(self.gallery_win, bg=MENU_BG, padx=8, pady=8)
+        outer.pack(fill=tk.BOTH, expand=True)
         tk.Label(outer, text="画廊", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
         tk.Label(
             outer,
-            text="立绘一览 · 有多张差分的合并一栏，大图区可切换",
-            font=PIXEL_FONT,
+            text="小窗浏览 · 列表可滚动 · 大图可切换差分",
+            font=("Courier New", 9),
             fg="#888888",
             bg=MENU_BG,
-        ).pack(anchor=tk.W, pady=(2, 8))
+        ).pack(anchor=tk.W, pady=(2, 6))
 
-        preview_box = tk.Frame(outer, bg="#1a1a2e", padx=8, pady=8)
-        preview_box.pack(fill=tk.X, pady=(0, 10))
-        preview_stage = tk.Frame(preview_box, bg="#1a1a2e", width=GALLERY_PREVIEW_SIZE + 40, height=GALLERY_PREVIEW_SIZE + 16)
+        preview_box = tk.Frame(outer, bg="#1a1a2e", padx=6, pady=6)
+        preview_box.pack(fill=tk.X, pady=(0, 6))
+        preview_stage = tk.Frame(
+            preview_box, bg="#1a1a2e", width=GALLERY_PREVIEW_SIZE + 32, height=GALLERY_PREVIEW_SIZE + 12
+        )
         preview_stage.pack()
         preview_stage.pack_propagate(False)
         preview_img = tk.Label(preview_stage, bg="#1a1a2e")
@@ -6726,7 +7524,7 @@ class DesktopPet:
         preview_arrow_l = tk.Label(
             preview_stage,
             text="◀",
-            font=("Courier New", 18, "bold"),
+            font=("Courier New", 16, "bold"),
             fg="#88ccff",
             bg="#1a1a2e",
             cursor="hand2",
@@ -6734,13 +7532,13 @@ class DesktopPet:
         preview_arrow_r = tk.Label(
             preview_stage,
             text="▶",
-            font=("Courier New", 18, "bold"),
+            font=("Courier New", 16, "bold"),
             fg="#88ccff",
             bg="#1a1a2e",
             cursor="hand2",
         )
         preview_caption = tk.Label(preview_box, text="", font=PIXEL_FONT, fg=PIXEL_COLOR, bg="#1a1a2e")
-        preview_caption.pack(pady=(6, 0))
+        preview_caption.pack(pady=(4, 0))
 
         preview_state = {"group": None, "index": 0}
 
@@ -6831,8 +7629,10 @@ class DesktopPet:
         self.gallery_win.bind("<Left>", lambda _e: step_variant(-1))
         self.gallery_win.bind("<Right>", lambda _e: step_variant(1))
 
-        grid_wrap = tk.Frame(outer, bg=MENU_BG)
-        grid_wrap.pack()
+        scroll_wrap, grid_wrap, _canvas = _make_scrollable_frame(
+            outer, width=GALLERY_WIN_W - 36, height=GALLERY_SCROLL_H, bg=MENU_BG
+        )
+        scroll_wrap.pack(fill=tk.BOTH, expand=True)
 
         if not groups:
             tk.Label(grid_wrap, text="暂无可用立绘", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack()
@@ -6842,7 +7642,7 @@ class DesktopPet:
 
         for i, group in enumerate(groups):
             row, col = divmod(i, GALLERY_COLS)
-            cell = tk.Frame(grid_wrap, bg=MENU_BG, padx=4, pady=4)
+            cell = tk.Frame(grid_wrap, bg=MENU_BG, padx=3, pady=3)
             cell.grid(row=row, column=col, sticky=tk.N)
             thumb_wrap = tk.Frame(cell, bg=MENU_BG)
             thumb_wrap.pack()
@@ -6858,13 +7658,15 @@ class DesktopPet:
                 tk.Label(
                     thumb_wrap,
                     text=f"×{file_count}",
-                    font=PIXEL_FONT,
+                    font=("Courier New", 8),
                     fg="#ffffff",
                     bg="#4488ff",
-                    padx=3,
+                    padx=2,
                 ).place(relx=1.0, rely=1.0, anchor=tk.SE)
             thumb_lbl.bind("<Button-1>", lambda _e, g=group: show_group(g, 0))
-            tk.Label(cell, text=str(group["title"]), font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(pady=(2, 0))
+            tk.Label(cell, text=str(group["title"]), font=("Courier New", 9), fg=MENU_FG, bg=MENU_BG).pack(
+                pady=(2, 0)
+            )
 
         show_group(groups[0], 0)
         self._place_panel_popup(self.gallery_win)
@@ -7264,6 +8066,7 @@ class DesktopPet:
             "blocking": False,
             "log": "对手：来切磋一下吧！",
             "over": False,
+            "special_ready_ms": 0,
         }
 
         self.rhyme_fight_win = tk.Toplevel(self.root)
@@ -7294,10 +8097,32 @@ class DesktopPet:
 
         btn_row = tk.Frame(frame, bg=MENU_BG)
         btn_row.pack(fill=tk.X)
+        special_btn = tk.Button(
+            btn_row,
+            text="必杀",
+            font=PIXEL_FONT,
+            bg="#884444",
+            fg=MENU_FG,
+            activebackground="#aa5555",
+        )
+
+        def special_left_ms() -> int:
+            return max(0, int(state["special_ready_ms"]) - int(time.time() * 1000))
+
+        def refresh_special_btn() -> None:
+            if state["over"] or not special_btn.winfo_exists():
+                return
+            left = special_left_ms()
+            if left > 0:
+                sec = (left + 999) // 1000
+                special_btn.config(text=f"必杀 {sec}s", state=tk.DISABLED, bg="#553333", fg="#888888")
+            else:
+                special_btn.config(text="必杀", state=tk.NORMAL, bg="#884444", fg=MENU_FG)
 
         def refresh() -> None:
             hp_label.config(text=f"你 {state['player_hp']} HP    对手 {state['enemy_hp']} HP  [{self.difficulty}]")
             log_label.config(text=state["log"])
+            refresh_special_btn()
 
         def end_fight(won: bool) -> None:
             if state["over"]:
@@ -7324,11 +8149,29 @@ class DesktopPet:
                 refresh()
                 self.root.after(1600, self._close_rhyme_fight)
 
+        def start_special_cooldown() -> None:
+            state["special_ready_ms"] = int(time.time() * 1000) + RHYME_SPECIAL_COOLDOWN_MS
+            refresh_special_btn()
+
+            def tick_cd() -> None:
+                if state["over"] or not self.rhyme_fight_win or not self.rhyme_fight_win.winfo_exists():
+                    return
+                refresh_special_btn()
+                if special_left_ms() > 0:
+                    self.root.after(200, tick_cd)
+
+            self.root.after(200, tick_cd)
+
         def player_attack(*, special: bool = False) -> None:
             if state["over"]:
                 return
             mult = self._fight_player_mult
             if special:
+                if special_left_ms() > 0:
+                    state["log"] = f"必杀冷却中（{ (special_left_ms() + 999) // 1000 }s）"
+                    refresh()
+                    return
+                start_special_cooldown()
                 if random.random() < 0.28:
                     state["log"] = "必杀落空！"
                     refresh()
@@ -7383,14 +8226,8 @@ class DesktopPet:
         tk.Button(
             btn_row, text="防御", command=player_block, font=PIXEL_FONT, bg=MENU_BG, fg=MENU_FG
         ).pack(side=tk.LEFT, padx=2)
-        tk.Button(
-            btn_row,
-            text="必杀",
-            command=lambda: player_attack(special=True),
-            font=PIXEL_FONT,
-            bg="#884444",
-            fg=MENU_FG,
-        ).pack(side=tk.LEFT, padx=2)
+        special_btn.config(command=lambda: player_attack(special=True))
+        special_btn.pack(side=tk.LEFT, padx=2)
         refresh()
         self._place_panel_popup(self.rhyme_fight_win)
         self.rhyme_fight_job = self.root.after(1500, enemy_turn)
@@ -7430,9 +8267,16 @@ class DesktopPet:
             except Exception:
                 pass
             self.rhythm_job = None
+        if getattr(self, "rhythm_settings_win", None) and self.rhythm_settings_win.winfo_exists():
+            try:
+                self.rhythm_settings_win.destroy()
+            except Exception:
+                pass
+        self.rhythm_settings_win = None
         if self.rhythm_win and self.rhythm_win.winfo_exists():
             try:
                 self.rhythm_win.unbind("<KeyPress>")
+                self.rhythm_win.unbind("<KeyRelease>")
             except Exception:
                 pass
             self.rhythm_win.destroy()
@@ -7442,6 +8286,7 @@ class DesktopPet:
         self.rhythm_active = False
         self.rhythm_notes = []
         self.rhythm_flash = {}
+        self.rhythm_keys_down = set()
         self.rhythm_judgment = ""
         self.rhythm_bg_ready = False
         self.rhythm_scan_i = 0
@@ -7524,23 +8369,55 @@ class DesktopPet:
         if cap > 0:
             duration_ms = min(cap, duration_ms)
         duration_ms = max(20000, duration_ms)
-        self._show_toast("正在根据音乐生成谱面…", "#88ccff", duration_ms=1600)
-        try:
-            self.root.update_idletasks()
-        except Exception:
-            pass
-        notes, bpm, src = _build_rhythm_chart_from_wav(
-            wav, duration_ms, self.difficulty, track_id=str(track["id"])
-        )
+        self._show_toast("正在根据音乐生成谱面…", "#88ccff", duration_ms=2200)
+        difficulty = str(self.app_config.get("rhythm_chart_diff") or self.difficulty)
+        if difficulty not in ("低", "中", "高"):
+            difficulty = "中"
+        track_id = str(track["id"])
+        token = getattr(self, "rhythm_chart_token", 0) + 1
+        self.rhythm_chart_token = token
+
+        def worker() -> None:
+            try:
+                notes, bpm, src = _build_rhythm_chart_from_wav(
+                    wav, duration_ms, difficulty, track_id=track_id
+                )
+            except Exception:
+                notes = _build_rhythm_chart_random(duration_ms, difficulty)
+                bpm, src = float(RHYTHM_BPM), "random"
+            self.root.after(
+                0,
+                lambda n=notes, b=bpm, s=src: self._start_rhythm_ui_after_chart(
+                    token, track, wav, duration_ms, cap, n, b, s
+                ),
+            )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _start_rhythm_ui_after_chart(
+        self,
+        token: int,
+        track: dict,
+        wav: Path,
+        duration_ms: int,
+        cap: int,
+        notes: list,
+        bpm: float,
+        src: str,
+    ) -> None:
+        if token != getattr(self, "rhythm_chart_token", 0) or self._closing:
+            return
         self.rhythm_notes = notes
         self.rhythm_chart_bpm = bpm
         self.rhythm_chart_source = src
+        sec = duration_ms // 1000
+        mode_tag = "90秒" if cap > 0 else "全曲"
         if src == "beat":
-            self._show_toast(f"节拍谱 · 约 {bpm:.0f} BPM", "#88ffaa", duration_ms=1400)
+            self._show_toast(f"节拍谱 · {bpm:.0f}BPM · {mode_tag}{sec}s", "#88ffaa", duration_ms=1600)
         elif src == "cache":
-            self._show_toast(f"节拍谱（缓存）· 约 {bpm:.0f} BPM", "#88ffaa", duration_ms=1200)
+            self._show_toast(f"节拍谱（缓存）· {bpm:.0f}BPM · {mode_tag}{sec}s", "#88ffaa", duration_ms=1400)
         else:
-            self._show_toast("音频分析失败，已用随机谱", "#ff8844", duration_ms=1600)
+            self._show_toast(f"随机谱 · {mode_tag}{sec}s", "#ff8844", duration_ms=1600)
         self.rhythm_score = 0
         self.rhythm_combo = 0
         self.rhythm_max_combo = 0
@@ -7550,8 +8427,11 @@ class DesktopPet:
         self.rhythm_miss = 0
         self.rhythm_judgment = ""
         self.rhythm_flash = {}
+        self.rhythm_keys_down = set()
+        self.rhythm_travel_ms = _rhythm_travel_ms_for(self.app_config.get("rhythm_speed", "中"))
         self.rhythm_end_ms = duration_ms
         self.rhythm_active = True
+        self.rhythm_wav_path = wav
         self.rhythm_track_id = str(track["id"])
         self.rhythm_bg_ready = False
         self.rhythm_grade_dirty_ms = 0
@@ -7566,6 +8446,21 @@ class DesktopPet:
 
         top = tk.Frame(self.rhythm_win, bg="#101018")
         top.pack(fill=tk.X, padx=8, pady=(6, 0))
+        hdr = tk.Frame(top, bg="#101018")
+        hdr.pack(fill=tk.X)
+        tk.Button(
+            hdr,
+            text="设置",
+            command=self._open_rhythm_settings,
+            font=PIXEL_FONT,
+            bg="#2a2a44",
+            fg="#dddddd",
+            activebackground="#3a3a55",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            padx=8,
+            pady=2,
+        ).pack(side=tk.RIGHT)
         self.rhythm_grade_bar = tk.Canvas(
             top, width=RHYTHM_W - 16, height=RHYTHM_GRADE_BAR_H, bg="#101018", highlightthickness=0
         )
@@ -7576,6 +8471,7 @@ class DesktopPet:
         )
         self.rhythm_canvas.pack()
         self.rhythm_win.bind("<KeyPress>", self._rhythm_on_key)
+        self.rhythm_win.bind("<KeyRelease>", self._rhythm_on_key_release)
         try:
             self.rhythm_win.focus_force()
         except Exception:
@@ -7599,6 +8495,100 @@ class DesktopPet:
         self.rhythm_start_ms = int(time.time() * 1000)
         self._mark_hint_seen("rhythm_game")
         self._rhythm_tick()
+
+    def _get_rhythm_travel_ms(self) -> int:
+        return int(getattr(self, "rhythm_travel_ms", None) or _rhythm_travel_ms_for(self.app_config.get("rhythm_speed", "中")))
+
+    def _open_rhythm_settings(self) -> None:
+        if not self.rhythm_active or not self.rhythm_win or not self.rhythm_win.winfo_exists():
+            return
+        old = getattr(self, "rhythm_settings_win", None)
+        if old is not None:
+            try:
+                if old.winfo_exists():
+                    old.lift()
+                    old.focus_force()
+                    return
+            except Exception:
+                pass
+        win = tk.Toplevel(self.rhythm_win)
+        self.rhythm_settings_win = win
+        win.title("音乐设置")
+        win.attributes("-topmost", True)
+        win.configure(bg="#181828")
+        win.resizable(False, False)
+        frame = tk.Frame(win, bg="#181828", padx=14, pady=12)
+        frame.pack()
+        tk.Label(frame, text="音乐设置", font=PIXEL_FONT, fg="#88ccff", bg="#181828").pack(anchor=tk.W)
+        tk.Label(
+            frame,
+            text="流速即时生效 · 谱面难度下局生效",
+            font=PIXEL_FONT,
+            fg="#888899",
+            bg="#181828",
+        ).pack(anchor=tk.W, pady=(4, 10))
+
+        speed_var = tk.StringVar(value=str(self.app_config.get("rhythm_speed", "中")))
+        diff_var = tk.StringVar(value=str(self.app_config.get("rhythm_chart_diff", "中")))
+
+        def row(label: str, var: tk.StringVar, options: tuple[str, ...], on_pick) -> None:
+            box = tk.Frame(frame, bg="#181828")
+            box.pack(fill=tk.X, pady=4)
+            tk.Label(box, text=label, font=PIXEL_FONT, fg="#dddddd", bg="#181828", width=8, anchor=tk.W).pack(
+                side=tk.LEFT
+            )
+            for opt in options:
+                tk.Radiobutton(
+                    box,
+                    text=opt,
+                    variable=var,
+                    value=opt,
+                    command=lambda o=opt: on_pick(o),
+                    font=PIXEL_FONT,
+                    fg="#dddddd",
+                    bg="#181828",
+                    activebackground="#181828",
+                    activeforeground="#ffffff",
+                    selectcolor="#2a2a44",
+                    highlightthickness=0,
+                ).pack(side=tk.LEFT, padx=4)
+
+        def set_speed(v: str) -> None:
+            self.app_config["rhythm_speed"] = v
+            self.rhythm_travel_ms = _rhythm_travel_ms_for(v)
+            _save_app_config(self.app_config)
+            self._show_toast(f"流速：{v}", "#88ccff", duration_ms=900)
+
+        def set_diff(v: str) -> None:
+            self.app_config["rhythm_chart_diff"] = v
+            _save_app_config(self.app_config)
+            self._show_toast(f"谱面难度：{v}（下局生效）", "#88ffaa", duration_ms=1200)
+
+        row("流速", speed_var, ("慢", "中", "快"), set_speed)
+        row("谱面", diff_var, ("低", "中", "高"), set_diff)
+        tk.Label(
+            frame,
+            text="长音：到线时长按，尾部松键",
+            font=PIXEL_FONT,
+            fg="#888899",
+            bg="#181828",
+        ).pack(anchor=tk.W, pady=(10, 6))
+        tk.Button(
+            frame,
+            text="关闭",
+            command=win.destroy,
+            font=PIXEL_FONT,
+            bg="#2a2a44",
+            fg="#dddddd",
+            relief=tk.FLAT,
+            padx=10,
+            pady=4,
+        ).pack(anchor=tk.E)
+        win.protocol("WM_DELETE_WINDOW", win.destroy)
+        try:
+            win.geometry(f"+{self.rhythm_win.winfo_rootx() + 40}+{self.rhythm_win.winfo_rooty() + 60}")
+        except Exception:
+            pass
 
     def _refresh_rhythm_grade_bar(self, *, force: bool = False) -> None:
         bar = getattr(self, "rhythm_grade_bar", None)
@@ -7626,6 +8616,39 @@ class DesktopPet:
     def _rhythm_now_ms(self) -> int:
         return int(time.time() * 1000) - self.rhythm_start_ms
 
+    def _rhythm_apply_judgment(self, judge: str, pts: int) -> None:
+        if judge == "Miss":
+            self.rhythm_combo = 0
+            self.rhythm_miss += 1
+            self.rhythm_judgment = "Miss"
+            self._refresh_rhythm_grade_bar()
+            return
+        self.rhythm_judgment = judge
+        self.rhythm_combo += 1
+        self.rhythm_max_combo = max(self.rhythm_max_combo, self.rhythm_combo)
+        bonus = min(50, self.rhythm_combo // 4 * 5)
+        self.rhythm_score += pts + bonus
+        if judge == "Perfect":
+            self.rhythm_perfect += 1
+        elif judge == "Great":
+            self.rhythm_great += 1
+        else:
+            self.rhythm_good += 1
+        self._refresh_rhythm_grade_bar()
+
+    def _rhythm_note_is_hold(self, note: dict) -> bool:
+        t = int(note.get("t", 0))
+        end = int(note.get("end", t) or t)
+        return bool(note.get("hold")) and end - t >= 220
+
+    def _rhythm_complete_hold_tail(self, note: dict, judge: str, pts: int) -> None:
+        note["holding"] = False
+        note["tail_done"] = True
+        note["hit"] = True
+        lane = int(note["lane"])
+        self.rhythm_flash[lane] = self._rhythm_now_ms() + 120
+        self._rhythm_apply_judgment(judge, pts)
+
     def _rhythm_on_key(self, event: tk.Event) -> None:
         if not self.rhythm_active:
             return
@@ -7633,13 +8656,17 @@ class DesktopPet:
         if key not in RHYTHM_KEYS:
             return
         lane = RHYTHM_KEYS.index(key)
+        if lane in self.rhythm_keys_down:
+            return
+        self.rhythm_keys_down.add(lane)
         now = self._rhythm_now_ms()
         best = None
         best_abs = RHYTHM_HIT_GOOD_MS + 1
-        # 只扫描即将到达/刚过线的音符
         start = max(0, getattr(self, "rhythm_scan_i", 0) - 8)
         for note in self.rhythm_notes[start:]:
             if note["lane"] != lane or note["hit"] or note["missed"]:
+                continue
+            if note.get("head_hit") or note.get("holding"):
                 continue
             t = int(note["t"])
             if t > now + RHYTHM_HIT_GOOD_MS + 40:
@@ -7657,20 +8684,47 @@ class DesktopPet:
         judge, pts = _rhythm_hit_judgment(delta)
         if judge == "Miss":
             return
-        note["hit"] = True
         self.rhythm_flash[lane] = now + 120
-        self.rhythm_judgment = judge
-        self.rhythm_combo += 1
-        self.rhythm_max_combo = max(self.rhythm_max_combo, self.rhythm_combo)
-        bonus = min(50, self.rhythm_combo // 4 * 5)
-        self.rhythm_score += pts + bonus
-        if judge == "Perfect":
-            self.rhythm_perfect += 1
-        elif judge == "Great":
-            self.rhythm_great += 1
+        if self._rhythm_note_is_hold(note):
+            note["head_hit"] = True
+            note["holding"] = True
+            # 头部给一半分，尾部再给一半
+            self._rhythm_apply_judgment(judge, max(50, pts // 2))
         else:
-            self.rhythm_good += 1
-        self._refresh_rhythm_grade_bar()
+            note["hit"] = True
+            self._rhythm_apply_judgment(judge, pts)
+
+    def _rhythm_on_key_release(self, event: tk.Event) -> None:
+        if not self.rhythm_active:
+            return
+        key = (event.keysym or "").lower()
+        if key not in RHYTHM_KEYS:
+            return
+        lane = RHYTHM_KEYS.index(key)
+        self.rhythm_keys_down.discard(lane)
+        now = self._rhythm_now_ms()
+        start = max(0, getattr(self, "rhythm_scan_i", 0) - 8)
+        for note in self.rhythm_notes[start:]:
+            if int(note["lane"]) != lane:
+                continue
+            if note["hit"] or note["missed"]:
+                continue
+            if not (note.get("holding") and note.get("head_hit")):
+                continue
+            end = int(note.get("end", note["t"]))
+            if now < end - RHYTHM_HOLD_RELEASE_MS:
+                note["holding"] = False
+                note["missed"] = True
+                self._rhythm_apply_judgment("Miss", 0)
+                return
+            judge, pts = _rhythm_hold_tail_judgment(now - end)
+            if judge == "Miss":
+                note["holding"] = False
+                note["missed"] = True
+                self._rhythm_apply_judgment("Miss", 0)
+            else:
+                self._rhythm_complete_hold_tail(note, judge, max(50, pts // 2))
+            return
 
     def _rhythm_tick(self) -> None:
         if not self.rhythm_active or not self.rhythm_canvas or not self.rhythm_win:
@@ -7679,37 +8733,52 @@ class DesktopPet:
             self._close_rhythm_game(resume=True)
             return
         now = self._rhythm_now_ms()
-        # 顺序扫描漏判，避免每帧扫全表
         i = getattr(self, "rhythm_scan_i", 0)
         notes = self.rhythm_notes
         nlen = len(notes)
-        while i < nlen:
-            note = notes[i]
+        for j in range(i, nlen):
+            note = notes[j]
             if note["hit"] or note["missed"]:
-                i += 1
                 continue
             t = int(note["t"])
-            if now - t > RHYTHM_HIT_GOOD_MS:
-                note["missed"] = True
-                self.rhythm_combo = 0
-                self.rhythm_miss += 1
-                self.rhythm_judgment = "Miss"
-                i += 1
-                self._refresh_rhythm_grade_bar()
+            end = int(note.get("end", t) or t)
+            hold = self._rhythm_note_is_hold(note)
+
+            if hold and note.get("head_hit") and not note.get("tail_done"):
+                if now > end + RHYTHM_HOLD_RELEASE_MS:
+                    if note.get("holding") and int(note["lane"]) in self.rhythm_keys_down:
+                        self._rhythm_complete_hold_tail(note, "Perfect", 150)
+                    else:
+                        note["holding"] = False
+                        note["missed"] = True
+                        self._rhythm_apply_judgment("Miss", 0)
                 continue
-            break
+
+            if not note.get("head_hit") and now - t > RHYTHM_HIT_GOOD_MS:
+                note["missed"] = True
+                note["holding"] = False
+                self._rhythm_apply_judgment("Miss", 0)
+                continue
+
+            if t > now + RHYTHM_HIT_GOOD_MS + 240 and not note.get("head_hit"):
+                break
+
+        while i < nlen and (notes[i]["hit"] or notes[i]["missed"]):
+            i += 1
         self.rhythm_scan_i = i
 
         music_done = False
-        try:
-            import pygame
+        # 不以 mixer.get_busy() 提前结束：长 wav 常会误报空闲，导致全曲/90s 中途截停
+        if now < self.rhythm_end_ms - 1200 and now > 2500:
+            try:
+                import pygame
 
-            if pygame.mixer.get_init() and not pygame.mixer.music.get_busy() and now > 800:
-                music_done = True
-        except Exception:
-            music_done = now >= self.rhythm_end_ms + 800
-
-        # 90 秒等截断模式：到时停曲并结束
+                if pygame.mixer.get_init() and not pygame.mixer.music.get_busy():
+                    start_sec = max(0.0, now / 1000.0)
+                    pygame.mixer.music.play(0, start=start_sec)
+                    self._apply_music_volume()
+            except Exception:
+                pass
         if now >= self.rhythm_end_ms:
             try:
                 import pygame
@@ -7720,8 +8789,7 @@ class DesktopPet:
                 pass
             music_done = True
 
-        all_done = i >= nlen
-        if music_done or (all_done and now >= self.rhythm_end_ms) or now >= self.rhythm_end_ms + 2000:
+        if music_done or now >= self.rhythm_end_ms + 800:
             self._close_rhythm_game(resume=True, finished=True)
             return
 
@@ -7741,6 +8809,7 @@ class DesktopPet:
         track = _music_track(getattr(self, "rhythm_track_id", DEFAULT_MUSIC_TRACK))
         grade = _rhythm_grade(self.rhythm_perfect, self.rhythm_great, self.rhythm_good, self.rhythm_miss)
         acc = _rhythm_accuracy_pct(self.rhythm_perfect, self.rhythm_great, self.rhythm_good, self.rhythm_miss)
+        travel = max(400, self._get_rhythm_travel_ms())
 
         if not getattr(self, "rhythm_bg_ready", False):
             c.delete("all")
@@ -7760,39 +8829,63 @@ class DesktopPet:
         mode_tag = "90s" if int(getattr(self, "rhythm_play_cap_ms", 0) or 0) > 0 else "全曲"
         bpm = getattr(self, "rhythm_chart_bpm", None)
         bpm_tag = f"  {bpm:.0f}BPM" if bpm else ""
+        speed_tag = str(self.app_config.get("rhythm_speed", "中"))
         c.create_text(
             w // 2,
             32,
-            text=f"得分 {self.rhythm_score}  连击 {self.rhythm_combo}  评级 {grade}  {acc:.0f}%  {mode_tag}{bpm_tag} {left_s}s",
+            text=f"得分 {self.rhythm_score}  连击 {self.rhythm_combo}  评级 {grade}  {acc:.0f}%  {mode_tag}{bpm_tag} {speed_tag} {left_s}s",
             fill="#dddddd",
             font=PIXEL_FONT,
             tags=("dyn",),
         )
         for i in range(RHYTHM_LANES):
             flash_until = self.rhythm_flash.get(i, 0)
-            fill = RHYTHM_LANE_COLORS[i] if now <= flash_until else "#2a2a44"
+            fill = RHYTHM_LANE_COLORS[i] if now <= flash_until or i in self.rhythm_keys_down else "#2a2a44"
             try:
                 c.itemconfigure(f"hit{i}", fill=fill)
             except Exception:
                 pass
 
-        # 只画窗口内即将落下的音符
-        appear_ahead = RHYTHM_TRAVEL_MS + 80
+        def y_at(ms: int) -> int:
+            appear = int(ms) - travel
+            progress = (now - appear) / travel
+            return top + int((hit_y - top) * min(1.35, max(0.0, progress)))
+
+        appear_ahead = travel + 80
         for note in self.rhythm_notes[getattr(self, "rhythm_scan_i", 0) :]:
             if note["hit"] or note["missed"]:
                 continue
             t = int(note["t"])
-            if t - now > appear_ahead:
+            end = int(note.get("end", t) or t)
+            hold = self._rhythm_note_is_hold(note)
+            holding = bool(note.get("holding"))
+            if not holding and t - now > appear_ahead:
                 break
-            appear = t - RHYTHM_TRAVEL_MS
-            if now < appear or now > t + RHYTHM_HIT_GOOD_MS:
+            if not holding and now < t - travel:
                 continue
-            progress = (now - appear) / RHYTHM_TRAVEL_MS
-            y = top + int((hit_y - top) * min(1.25, max(0.0, progress)))
+            if not holding and not hold and now > t + RHYTHM_HIT_GOOD_MS:
+                continue
+            if hold and not holding and now > end + RHYTHM_HIT_GOOD_MS:
+                continue
+
             i = int(note["lane"])
             x0 = pad_x + i * lane_w + 8
             x1 = x0 + lane_w - 22
-            c.create_rectangle(x0, y - 10, x1, y + 10, fill=RHYTHM_LANE_COLORS[i], outline="#ffffff", tags=("dyn",))
+            col = RHYTHM_LANE_COLORS[i]
+            if hold:
+                y_head = hit_y if holding and now >= t else y_at(t)
+                y_tail = y_at(end)
+                body_top = min(y_head, y_tail)
+                body_bot = max(y_head, y_tail)
+                if body_bot - body_top < 8:
+                    body_bot = body_top + 8
+                body_col = "#445566" if not holding else col
+                c.create_rectangle(x0 + 6, body_top, x1 - 6, body_bot, fill=body_col, outline="", tags=("dyn",))
+                c.create_rectangle(x0, y_head - 10, x1, y_head + 10, fill=col, outline="#ffffff", width=2, tags=("dyn",))
+                c.create_rectangle(x0 + 2, y_tail - 7, x1 - 2, y_tail + 7, fill=col, outline="#ffffff", tags=("dyn",))
+            else:
+                y = y_at(t)
+                c.create_rectangle(x0, y - 10, x1, y + 10, fill=col, outline="#ffffff", tags=("dyn",))
         if self.rhythm_judgment:
             jcol = {
                 "Perfect": "#ffee88",
@@ -7810,6 +8903,10 @@ class DesktopPet:
                 pass
             self.typing_game_job = None
         if self.typing_game_win and self.typing_game_win.winfo_exists():
+            try:
+                self.typing_game_win.grab_release()
+            except Exception:
+                pass
             self.typing_game_win.destroy()
         self.typing_game_win = None
         self._typing_mood_cache.clear()
@@ -7825,33 +8922,54 @@ class DesktopPet:
         self._typing_mood_cache[grade] = photo
         return photo
 
-    def _start_typing_game(self, lang: str) -> None:
+    def _start_typing_game(self, lang: str, *, jp_mode: str | None = None) -> None:
         self._hide_main_menu()
         if lang == JAPANESE_LANG_LABEL and not _japanese_bank_available():
             self._show_toast("此功能暂不开放", "#ff8844")
             return
         pool = _load_typing_bank(lang)
+        if lang == JAPANESE_LANG_LABEL:
+            mode = jp_mode or JP_TYPING_MODE_KANA
+            pool = _filter_jp_typing_pool(pool, mode)
         if not pool:
             self._show_toast("该语言词库为空", "#ff8844")
             return
+        mode_for_game = jp_mode if lang == JAPANESE_LANG_LABEL else None
 
         def start() -> None:
-            self._start_game_countdown(lambda: self._begin_typing_game(lang))
+            self._start_game_countdown(lambda: self._begin_typing_game(lang, jp_mode=mode_for_game))
 
         def after_guide() -> None:
             self._request_mode_switch(start)
 
         self._ensure_first_play_guide("typing", after_guide)
 
-    def _begin_typing_game(self, lang: str) -> None:
+    def _begin_typing_game(self, lang: str, *, jp_mode: str | None = None) -> None:
         pool = _load_typing_bank(lang)
+        if lang == JAPANESE_LANG_LABEL:
+            jp_mode = jp_mode or JP_TYPING_MODE_KANA
+            pool = _filter_jp_typing_pool(pool, jp_mode)
+        else:
+            jp_mode = None
+        if not pool:
+            self._show_toast("该语言词库为空", "#ff8844")
+            self._resume_idle_after_activity()
+            return
         self._close_typing_game(resume=False)
+        try:
+            _get_type_sound()
+        except Exception:
+            pass
         end_ms = int(time.time() * 1000) + TYPING_GAME_MS
-        state = {"score": 0, "typed": "", "phase": 0, "done": False}
-        display, target = random.choice(pool)
+        state = {"score": 0, "typed": "", "phase": 0, "done": False, "kb_tick": 0, "jp_mode": jp_mode}
+        item0 = random.choice(pool)
+
+        mode_title = lang
+        if lang == JAPANESE_LANG_LABEL:
+            mode_title = "日语·罗马音" if jp_mode == JP_TYPING_MODE_ROMAJI else "日语·假名"
 
         self.typing_game_win = tk.Toplevel(self.root)
-        self.typing_game_win.title(f"打字 · {lang}")
+        self.typing_game_win.title(f"打字 · {mode_title}")
         self.typing_game_win.attributes("-topmost", True)
         self.typing_game_win.configure(bg=MENU_BG)
         self.typing_game_win.protocol("WM_DELETE_WINDOW", self._close_typing_game)
@@ -7862,34 +8980,71 @@ class DesktopPet:
         mood_row.pack(fill=tk.X, pady=(0, 6))
         mood_label = tk.Label(mood_row, bg=MENU_BG)
         mood_label.pack()
-        tk.Label(frame, text=f"打字 · {lang}（30s）", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+        tk.Label(frame, text=f"打字 · {mode_title}（30s）", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
         grade_bar = tk.Canvas(frame, width=300, height=TYPING_GRADE_BAR_H, bg=MENU_BG, highlightthickness=0)
         grade_bar.pack(fill=tk.X, pady=(4, 6))
         timer_label = tk.Label(frame, text="30s", font=PIXEL_FONT, fg="#ffcc44", bg=MENU_BG)
         timer_label.pack(anchor=tk.W)
         score_label = tk.Label(frame, text="得分 0  评级 D", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
         score_label.pack(anchor=tk.W)
-        word_label = tk.Label(frame, text=f"输入：{display}", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
+        word_label = tk.Label(frame, text="", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG, wraplength=320, justify=tk.LEFT)
         word_label.pack(anchor=tk.W, pady=(6, 4))
         kb = tk.Canvas(frame, width=300, height=92, bg="#222233", highlightthickness=0)
         kb.pack(pady=4)
-        hint = tk.Label(frame, text="请对照键盘输入（支持拼音/英文）", font=PIXEL_FONT, fg="#888888", bg=MENU_BG)
+        if lang == JAPANESE_LANG_LABEL and jp_mode == JP_TYPING_MODE_ROMAJI:
+            hint_text = "请输入纯字母罗马音全称（例：asatte / konnichiwa）"
+        elif lang == JAPANESE_LANG_LABEL:
+            hint_text = "请输入平假名或片假名（例：あさって / アサッテ）"
+        elif lang == "中文":
+            hint_text = "可输拼音，或用输入法直接打汉字"
+        else:
+            hint_text = "请对照键盘输入英文"
+        hint = tk.Label(frame, text=hint_text, font=PIXEL_FONT, fg="#888888", bg=MENU_BG, wraplength=320, justify=tk.LEFT)
         hint.pack(anchor=tk.W)
-        entry = tk.Entry(frame, width=28, font=PIXEL_FONT)
-        entry.pack(pady=4)
+        entry_wrap = tk.Frame(frame, bg="#88ccff", padx=2, pady=2)
+        entry_wrap.pack(fill=tk.X, pady=6)
+        entry = tk.Entry(
+            entry_wrap,
+            width=28,
+            font=PIXEL_FONT,
+            bg="#1a1a22",
+            fg="#ffffff",
+            insertbackground="#88ffaa",
+            relief=tk.FLAT,
+        )
+        entry.pack(fill=tk.X, ipady=4)
         result = tk.Label(frame, text="", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
         result.pack(pady=2)
 
-        def next_word() -> None:
-            d, t = random.choice(pool)
-            state["display"] = d
-            state["target"] = t.lower()
+        def apply_item(it: dict[str, str]) -> None:
+            display = str(it.get("display", ""))
+            kana = str(it.get("target", "") or "").strip()
+            roma = _romaji_letters_only(it.get("romaji", "") or "")
+            meaning = _jp_typing_prompt_meaning(display)
+            state["display"] = display
+            state["meaning"] = meaning
+            state["kana"] = kana
+            state["romaji"] = roma
             state["typed"] = ""
-            word_label.config(text=f"输入：{d}")
+            if jp_mode == JP_TYPING_MODE_ROMAJI:
+                state["target"] = roma
+                state["target_l"] = roma
+                word_label.config(text=f"提示：{meaning}\n请输入罗马音：{roma}")
+            elif jp_mode == JP_TYPING_MODE_KANA:
+                state["target"] = kana
+                state["target_l"] = _kana_to_hiragana(kana)
+                state["target_kata"] = _kana_to_katakana(kana)
+                word_label.config(text=f"提示：{meaning}\n请输入假名：{kana}")
+            else:
+                state["target"] = str(it.get("target", ""))
+                state["target_l"] = state["target"].lower()
+                word_label.config(text=f"输入：{display}")
             entry.delete(0, tk.END)
 
-        state["display"] = display
-        state["target"] = target.lower()
+        def next_word() -> None:
+            apply_item(random.choice(pool))
+
+        apply_item(item0)
 
         def update_grade_ui() -> None:
             grade = _typing_grade(state["score"])
@@ -7900,7 +9055,16 @@ class DesktopPet:
             mood_label.image = photo
 
         def refresh_kb() -> None:
-            nxt = state["target"][len(state["typed"])] if len(state["typed"]) < len(state["target"]) else None
+            nxt = None
+            typed = state["typed"]
+            if jp_mode == JP_TYPING_MODE_ROMAJI:
+                guide = state.get("romaji") or ""
+            elif jp_mode == JP_TYPING_MODE_KANA:
+                guide = ""
+            else:
+                guide = state.get("target_l") or ""
+            if guide and len(typed) < len(guide) and (not typed or str(typed).isascii()):
+                nxt = guide[len(typed)]
             hk = _key_for_char(nxt) if nxt else None
             _draw_typing_keyboard(kb, 300, 92, hk, state["phase"])
             state["phase"] += 1
@@ -7909,10 +9073,20 @@ class DesktopPet:
             if state["done"]:
                 return
             state["done"] = True
+            try:
+                self.typing_game_win.grab_release()
+            except Exception:
+                pass
             grade = _typing_grade(state["score"])
             self._save_game_record(
                 "typing",
-                {"lang": lang, "score": state["score"], "grade": grade, "difficulty": self.difficulty},
+                {
+                    "lang": lang,
+                    "jp_mode": jp_mode or "",
+                    "score": state["score"],
+                    "grade": grade,
+                    "difficulty": self.difficulty,
+                },
             )
             self.mood = min(100, self.mood + min(5, state["score"] // 4))
             self._refresh_panel()
@@ -7922,7 +9096,7 @@ class DesktopPet:
             grade_color = grade_colors.get(grade, "#88ccff")
             self._show_game_clear(
                 title=f"得分 {state['score']}",
-                subtitle=f"{lang} · 打字练习",
+                subtitle=f"{mode_title} · 打字练习",
                 accent=grade_color,
                 hero_grade=grade,
                 hero_color=grade_color,
@@ -7935,11 +9109,10 @@ class DesktopPet:
                 return
             left = max(0, end_ms - int(time.time() * 1000))
             timer_label.config(text=f"{left // 1000}s")
-            refresh_kb()
             if left <= 0:
                 finish_game()
                 return
-            self.typing_game_job = self.root.after(120, tick_timer)
+            self.typing_game_job = self.root.after(200, tick_timer)
 
         def on_keypress(event: tk.Event) -> None:
             if state["done"]:
@@ -7947,19 +9120,47 @@ class DesktopPet:
             if event.char and event.char.isprintable():
                 self._play_type_sound()
 
+        def _normalize_typed(raw: str) -> str:
+            return raw.strip().replace(" ", "").replace("　", "")
+
         def on_type(_event=None) -> None:
             if state["done"]:
                 return
-            raw = entry.get()
-            state["typed"] = raw.lower().strip()
-            tgt = state["target"]
-            if state["typed"] == tgt or raw.strip() == state["display"]:
+            raw = _normalize_typed(entry.get())
+            if jp_mode == JP_TYPING_MODE_ROMAJI:
+                typed = _romaji_letters_only(raw)
+                state["typed"] = typed
+                tgt = state.get("romaji", "")
+                ok = bool(tgt) and typed == tgt
+                prefix_ok = bool(tgt) and typed and tgt.startswith(typed)
+            elif jp_mode == JP_TYPING_MODE_KANA:
+                typed = raw
+                state["typed"] = typed
+                hira = _kana_to_hiragana(typed)
+                ok = typed in (state.get("target", ""), state.get("target_kata", "")) or hira == state.get(
+                    "target_l", ""
+                )
+                prefix_ok = bool(typed) and (
+                    state.get("target", "").startswith(typed)
+                    or state.get("target_kata", "").startswith(typed)
+                    or state.get("target_l", "").startswith(hira)
+                )
+            else:
+                state["typed"] = raw.lower() if raw.isascii() else raw
+                tgt = state["target"]
+                tgt_l = state.get("target_l", tgt.lower())
+                ok = raw == tgt or state["typed"] == tgt_l or raw == state.get("display")
+                prefix_ok = bool(state["typed"]) and (
+                    tgt.startswith(raw) or tgt_l.startswith(state["typed"])
+                )
+
+            if ok:
                 state["score"] += 1
                 update_grade_ui()
                 result.config(text="正确！", fg="#88dd88")
                 next_word()
-            elif not tgt.startswith(state["typed"]) and state["typed"]:
-                result.config(text="不对哦~", fg="#ffaa44")
+            elif raw:
+                result.config(text="" if prefix_ok else "不对哦~", fg="#ffaa44" if not prefix_ok else MENU_FG)
             else:
                 result.config(text="", fg=MENU_FG)
             refresh_kb()
@@ -7971,16 +9172,19 @@ class DesktopPet:
             if state["done"] or not self.typing_game_win or not self.typing_game_win.winfo_exists():
                 return
             try:
-                self.typing_game_win.lift()
-                self.typing_game_win.focus_force()
-                entry.focus_force()
+                entry.focus_set()
+                entry.icursor(tk.END)
             except Exception:
                 pass
 
-        # 窗口内任意按键也写入输入框，无需先点选
         def on_win_key(event: tk.Event) -> str | None:
             if state["done"]:
                 return None
+            try:
+                if self.typing_game_win.focus_get() is entry:
+                    return None
+            except Exception:
+                pass
             if event.widget is entry:
                 return None
             if event.char and event.char.isprintable():
@@ -8000,13 +9204,16 @@ class DesktopPet:
             return None
 
         self.typing_game_win.bind("<KeyPress>", on_win_key)
-        self.typing_game_win.bind("<FocusIn>", focus_entry)
         update_grade_ui()
         refresh_kb()
         self._place_panel_popup(self.typing_game_win)
+        try:
+            self.typing_game_win.lift()
+            self.typing_game_win.focus_force()
+        except Exception:
+            pass
         focus_entry()
-        self.root.after(30, focus_entry)
-        self.root.after(120, focus_entry)
+        self.root.after(80, focus_entry)
         tick_timer()
 
     def _close_vocab_game(self, *, resume: bool = True) -> None:
@@ -8052,17 +9259,29 @@ class DesktopPet:
             else:
                 btn.config(bg=VOCAB_OPTION_DIM, fg="#888888", activebackground=VOCAB_OPTION_DIM)
 
-    def _open_vocab_game(self, lang: str = "英语") -> None:
+    def _open_vocab_game(self, lang: str = "英语", *, pool: list[dict[str, str]] | None = None, from_notebook: bool = False) -> None:
         self._hide_main_menu()
-        if lang == JAPANESE_LANG_LABEL and not _japanese_bank_available():
+        if lang == JAPANESE_LANG_LABEL and not _japanese_bank_available() and pool is None:
             self._show_toast("此功能暂不开放", "#ff8844")
             return
-        words = _load_vocab_bank(lang)
+        words = list(pool) if pool is not None else _load_vocab_bank(lang)
         if len(words) < 4:
-            self._show_toast(f"{lang} 词库不足 4 条", "#ff8844")
-            return
+            # 生词本不足 4 条时，用词库补干扰项，仍可复习
+            if from_notebook and len(words) >= 1:
+                bank = _load_vocab_bank(lang)
+                merged = list(words)
+                for extra in bank:
+                    if extra.get("word") not in {w.get("word") for w in merged}:
+                        merged.append(extra)
+                    if len(merged) >= 4:
+                        break
+                words = merged
+            if len(words) < 4:
+                self._show_toast(f"{lang} 词库不足 4 条", "#ff8844")
+                return
         self._vocab_lang = lang
         self._vocab_pool = words
+        self._vocab_from_notebook = bool(from_notebook)
         self._vocab_streak = 0
         self._close_vocab_game(resume=False)
 
@@ -8115,22 +9334,35 @@ class DesktopPet:
         self._vocab_round_lock = False
         self._vocab_option_btns = {}
 
-        item = random.choice(words)
+        # 生词本复习：优先抽生词本里的词
+        notebook_words = []
+        if getattr(self, "_vocab_from_notebook", False):
+            notebook_words = [w for w in _load_vocab_notebook().get(lang, []) if w.get("word")]
+        if notebook_words:
+            item = random.choice(notebook_words)
+            # 用词库同词覆盖词义（若有更新）
+            for bank_item in words:
+                if bank_item.get("word") == item.get("word"):
+                    item = {**item, **bank_item}
+                    break
+        else:
+            item = random.choice(words)
         correct = item.get("meaning", "？")
         pool = [correct]
-        for other in random.sample(words, min(len(words), 10)):
+        for other in random.sample(words, min(len(words), 12)):
             m = other.get("meaning", "")
             if m and m not in pool:
                 pool.append(m)
             if len(pool) >= 4:
                 break
         while len(pool) < 4:
-            pool.append("（干扰项）")
+            pool.append(f"（干扰项{len(pool)}）")
         options = random.sample(pool[:4], min(4, len(pool)))
 
         self._vocab_current = {"item": item, "correct": correct, "lang": lang, "options": options}
         if self.vocab_word_label:
-            self.vocab_word_label.config(text=f"「{item['word']}」的意思是？")
+            tag = "生词本 · " if getattr(self, "_vocab_from_notebook", False) else ""
+            self.vocab_word_label.config(text=f"{tag}「{item['word']}」的意思是？")
         if self.vocab_status_label:
             self.vocab_status_label.config(text="", fg=MENU_FG)
 
@@ -8142,13 +9374,14 @@ class DesktopPet:
         for opt in options:
             btn = tk.Button(
                 opts_frame,
-                text=opt[:18],
+                text=opt,
                 command=lambda o=opt: self._vocab_choose(o),
                 font=PIXEL_FONT,
                 bg=MENU_ACTIVE,
                 fg=MENU_FG,
                 activebackground=MENU_ACTIVE,
-                wraplength=200,
+                wraplength=280,
+                justify=tk.LEFT,
             )
             btn.pack(fill=tk.X, pady=2)
             self._vocab_option_btns[opt] = btn
@@ -8168,6 +9401,9 @@ class DesktopPet:
             self.mood = min(100, self.mood + 3)
             self._refresh_panel()
             self._add_diary_entry(f"背单词正确：{item['word']}", auto=True)
+            # 生词本复习答对：移出生词本
+            if getattr(self, "_vocab_from_notebook", False):
+                _remove_vocab_notebook_item(lang, str(item.get("word", "")))
             self._vocab_streak += 1
             current_streak = self._vocab_streak
             self._save_game_record(
@@ -8199,6 +9435,10 @@ class DesktopPet:
                 self._vocab_schedule_advance(VOCAB_CORRECT_ADVANCE_MS)
         else:
             self._vocab_streak = 0
+            added = _add_vocab_notebook_item(lang, item)
+            if self.vocab_status_label:
+                tip = "已加入生词本" if added else "已在生词本"
+                self.vocab_status_label.config(text=f"正确答案：{correct}\n（{tip}）", fg="#ffaa44")
             self._save_game_record(
                 "vocab",
                 {"lang": lang, "word": item["word"], "correct": False, "difficulty": self.difficulty},
@@ -8365,10 +9605,6 @@ class DesktopPet:
             )
         elif FEEDBACK_BILI_UID:
             _pack_panel_caption(frame, f"· bilibili UID：{FEEDBACK_BILI_UID}")
-        if FEEDBACK_QQ_GROUP:
-            _pack_panel_caption(frame, f"· QQ 群：{FEEDBACK_QQ_GROUP}")
-        else:
-            _pack_panel_caption(frame, "· QQ 群：（预留）", fg="#888888")
         _pack_panel_caption(frame, FEEDBACK_NOTE, fg="#aaaaaa", pady=(10, 0))
         self._place_panel_popup(self.feedback_win)
 
@@ -8411,6 +9647,8 @@ class DesktopPet:
         if self.diary_win and self.diary_win.winfo_exists():
             self.diary_win.destroy()
             self.diary_win = None
+        if getattr(self, "weather_win", None) and self.weather_win.winfo_exists():
+            self._close_weather_forecast()
         if self.gallery_win and self.gallery_win.winfo_exists():
             self.gallery_win.destroy()
             self.gallery_win = None
@@ -8512,12 +9750,21 @@ class DesktopPet:
 
     def _close_panel(self) -> None:
         self._cancel_timer_job("panel_hide_job")
+        self._close_panel_backpack()
         if self.panel_win and self.panel_win.winfo_exists():
             self.panel_win.destroy()
         self.panel_win = None
         self._panel_backpack_sig = None
         self._panel_sticky_pos = None
         self._panel_reposition_ms = 0
+
+    def _close_panel_backpack(self) -> None:
+        win = getattr(self, "panel_backpack_win", None)
+        if win and win.winfo_exists():
+            win.destroy()
+        self.panel_backpack_win = None
+        self.backpack_grid = None
+        self.backpack_icons_frame = None
 
     def _schedule_panel_auto_hide(self) -> None:
         self._cancel_timer_job("panel_hide_job")
@@ -8539,13 +9786,13 @@ class DesktopPet:
         self.panel_win.attributes("-topmost", True)
         self.panel_win.configure(bg="#1a1a1a")
 
-        frame = tk.Frame(self.panel_win, bg="#1a1a1a", padx=10, pady=8)
+        frame = tk.Frame(self.panel_win, bg="#1a1a1a", padx=8, pady=6)
         frame.pack()
 
         tk.Label(frame, text="面板", font=PIXEL_FONT, fg=PIXEL_COLOR, bg="#1a1a1a").pack(anchor=tk.W)
 
         stamina_row = tk.Frame(frame, bg="#1a1a1a")
-        stamina_row.pack(fill=tk.X, pady=(8, 4))
+        stamina_row.pack(fill=tk.X, pady=(6, 3))
         self.stamina_icon_canvas = tk.Canvas(
             stamina_row, width=PANEL_STAT_ICON, height=PANEL_STAT_ICON, bg="#1a1a1a", highlightthickness=0
         )
@@ -8570,13 +9817,20 @@ class DesktopPet:
         self.mood_label = tk.Label(mood_col, text="", font=PIXEL_FONT, fg=MENU_FG, bg="#1a1a1a")
         self.mood_label.pack(anchor=tk.W, pady=(2, 0))
 
-        self.backpack_icons_frame = tk.Frame(frame, bg="#1a1a1a")
-        self.backpack_icons_frame.pack(anchor=tk.W, pady=(6, 0))
-        tk.Label(self.backpack_icons_frame, text="🎒 食物", font=PIXEL_FONT, fg="#ffcc66", bg="#1a1a1a").pack(
-            anchor=tk.W
-        )
-        self.backpack_grid = tk.Frame(self.backpack_icons_frame, bg="#1a1a1a")
-        self.backpack_grid.pack(anchor=tk.W, pady=(2, 0))
+        tk.Button(
+            frame,
+            text="背包",
+            command=self._toggle_panel_backpack,
+            font=PIXEL_FONT,
+            bg="#334466",
+            fg="#ffcc66",
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=8,
+        ).pack(anchor=tk.W, pady=(4, 0))
+
+        self.backpack_icons_frame = None
+        self.backpack_grid = None
 
         for seq in ("<Enter>", "<Motion>", "<Button-1>", "<ButtonRelease-1>"):
             self.panel_win.bind(seq, self._bump_panel_auto_hide, add="+")
@@ -8586,6 +9840,52 @@ class DesktopPet:
         self._refresh_panel()
         self._reposition_panel(force=True)
         self._wire_panel_auto_hide(self.panel_win)
+        self._schedule_panel_auto_hide()
+
+    def _toggle_panel_backpack(self) -> None:
+        self._bump_panel_auto_hide()
+        if self.panel_backpack_win and self.panel_backpack_win.winfo_exists():
+            self._close_panel_backpack()
+            return
+        self.panel_backpack_win = tk.Toplevel(self.root)
+        self.panel_backpack_win.overrideredirect(True)
+        self.panel_backpack_win.attributes("-topmost", True)
+        self.panel_backpack_win.configure(bg="#1a1a1a")
+        frame = tk.Frame(self.panel_backpack_win, bg="#1a1a1a", padx=8, pady=6)
+        frame.pack(fill=tk.BOTH, expand=True)
+        head = tk.Frame(frame, bg="#1a1a1a")
+        head.pack(fill=tk.X)
+        tk.Label(head, text="背包 · 食物", font=PIXEL_FONT, fg="#ffcc66", bg="#1a1a1a").pack(side=tk.LEFT)
+        tk.Button(
+            head,
+            text="×",
+            command=self._close_panel_backpack,
+            font=PIXEL_FONT,
+            bg="#444444",
+            fg=MENU_FG,
+            relief=tk.FLAT,
+            padx=4,
+        ).pack(side=tk.RIGHT)
+        scroll_wrap, inner, _canvas = _make_scrollable_frame(
+            frame, width=PANEL_BACKPACK_W - 24, height=PANEL_BACKPACK_H, bg="#1a1a1a"
+        )
+        scroll_wrap.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
+        self.backpack_icons_frame = frame
+        self.backpack_grid = inner
+        self._panel_backpack_sig = None
+        self._refresh_panel_backpack()
+        # 贴在面板旁边
+        try:
+            if self.panel_win and self.panel_win.winfo_exists():
+                self.panel_win.update_idletasks()
+                px = self.panel_win.winfo_rootx() + self.panel_win.winfo_width() + 6
+                py = self.panel_win.winfo_rooty()
+                self.panel_backpack_win.geometry(f"+{px}+{py}")
+            else:
+                self._place_panel_popup(self.panel_backpack_win)
+        except Exception:
+            self._place_panel_popup(self.panel_backpack_win)
+        self._wire_panel_auto_hide(self.panel_backpack_win)
         self._schedule_panel_auto_hide()
 
     def _wire_panel_auto_hide(self, widget: tk.Misc) -> None:
@@ -8681,18 +9981,19 @@ class DesktopPet:
             tk.Label(self.backpack_grid, text="空", font=PIXEL_FONT, fg="#666666", bg="#1a1a1a").grid(
                 row=0, column=0
             )
-        if self.panel_win and self.panel_win.winfo_exists():
+        if self.panel_backpack_win and self.panel_backpack_win.winfo_exists():
             self._wire_panel_auto_hide(self.backpack_grid)
 
     def _refresh_panel(self) -> None:
         if not self.panel_win or not self.panel_win.winfo_exists():
             return
         self._refresh_panel_stats()
-        sig = self._food_backpack_signature()
-        if sig != self._panel_backpack_sig:
-            self._panel_backpack_sig = sig
-            self._refresh_panel_backpack()
-            self._reposition_panel(force=False)
+        if self.panel_backpack_win and self.panel_backpack_win.winfo_exists():
+            sig = self._food_backpack_signature()
+            if sig != self._panel_backpack_sig:
+                self._panel_backpack_sig = sig
+                self._refresh_panel_backpack()
+        self._reposition_panel(force=False)
 
     def _cancel_game_countdown(self) -> None:
         self._countdown_token = getattr(self, "_countdown_token", 0) + 1
@@ -11255,12 +12556,35 @@ class DesktopPet:
             cb()
 
     def _play_type_sound(self) -> None:
-        global _type_sound
+        global _type_sound, _type_sound_channel, _type_sound_last_ms
+        now = int(time.time() * 1000)
+        if now - _type_sound_last_ms < TYPE_SOUND_MIN_GAP_MS:
+            return
         sound = _get_type_sound()
-        if not sound:
-            _type_sound = None
-            sound = _get_type_sound()
-        self._play_sound_with_volume(sound, "sfx")
+        if not sound or sound is False:
+            return
+        vol = self._sound_scale("sfx")
+        if vol <= 0:
+            return
+        try:
+            import pygame
+
+            # 固定声道：打断上一次，避免 1s 音效叠满通道导致未响应
+            ch = pygame.mixer.Channel(0)
+            try:
+                ch.stop()
+            except Exception:
+                pass
+            ch.set_volume(vol)
+            ch.play(sound)
+            _type_sound_channel = ch
+            _type_sound_last_ms = now
+        except Exception:
+            try:
+                self._play_sound_with_volume(sound, "sfx")
+                _type_sound_last_ms = now
+            except Exception:
+                pass
 
     def _show_speech_dialog(
         self,

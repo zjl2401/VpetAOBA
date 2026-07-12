@@ -1,25 +1,4583 @@
 {
-  "source": "built-in",
+  "source": "enriched-cn",
   "words": [
-    {"word": "你好", "meaning": "打招呼", "lang": "中文"},
-    {"word": "谢谢", "meaning": "表示感谢", "lang": "中文"},
-    {"word": "桌宠", "meaning": "桌面宠物", "lang": "中文"},
-    {"word": "平凡", "meaning": "旧货店店员", "lang": "中文"},
-    {"word": "旧货店", "meaning": "工作场所", "lang": "中文"},
-    {"word": "音乐", "meaning": "旋律与歌曲", "lang": "中文"},
-    {"word": "自由", "meaning": "一种模式", "lang": "中文"},
-    {"word": "跟随", "meaning": "跟着鼠标走", "lang": "中文"},
-    {"word": "睡眠", "meaning": "休息", "lang": "中文"},
-    {"word": "采集", "meaning": "接食物小游戏", "lang": "中文"},
-    {"word": "日记", "meaning": "记录文字", "lang": "中文"},
-    {"word": "日程", "meaning": "时间安排", "lang": "中文"},
-    {"word": "开心", "meaning": "心情好", "lang": "中文"},
-    {"word": "伤心", "meaning": "心情差", "lang": "中文"},
-    {"word": "工作", "meaning": "搬箱子", "lang": "中文"},
-    {"word": "故障", "meaning": "系统异常", "lang": "中文"},
-    {"word": "修复", "meaning": "解决问题", "lang": "中文"},
-    {"word": "伙伴", "meaning": "同伴", "lang": "中文"},
-    {"word": "练习", "meaning": "反复学习", "lang": "中文"},
-    {"word": "记忆", "meaning": "记住内容", "lang": "中文"}
+    {
+      "word": "尴尬",
+      "meaning": "处境为难，难为情",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "犹豫",
+      "meaning": "拿不定主意",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "谨慎",
+      "meaning": "小心慎重",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "敷衍",
+      "meaning": "做事不认真，表面应付",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "挑剔",
+      "meaning": "过分在意缺点",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "苛刻",
+      "meaning": "要求过于严厉",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "固执",
+      "meaning": "坚持己见不改变",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "委婉",
+      "meaning": "说话婉转不生硬",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "含蓄",
+      "meaning": "不直接表达",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "讽刺",
+      "meaning": "用反话批评",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "讽刺画",
+      "meaning": "带讽刺意味的画",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "隐喻",
+      "meaning": "暗含的比喻",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "象征",
+      "meaning": "用具体事物表示抽象意义",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "抽象",
+      "meaning": "概括的、不具体的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "具体",
+      "meaning": "明确细致的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "辩证",
+      "meaning": "用对立统一看问题",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "逻辑",
+      "meaning": "思维规律；条理",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "推理",
+      "meaning": "由已知推出未知",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "假设",
+      "meaning": "姑且认定",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "论证",
+      "meaning": "用论据证明",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "批判",
+      "meaning": "分析并评价",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "审视",
+      "meaning": "仔细察看",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "洞察",
+      "meaning": "看穿本质",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "敏锐",
+      "meaning": "感觉灵敏",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "迟钝",
+      "meaning": "反应慢",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "麻木",
+      "meaning": "感觉缺失；无动于衷",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "冷漠",
+      "meaning": "不关心",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "热情",
+      "meaning": "热烈的感情",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "真诚",
+      "meaning": "真实诚恳",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "虚伪",
+      "meaning": "不真实，做作",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "谦虚",
+      "meaning": "不自满",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "傲慢",
+      "meaning": "看不起人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "偏见",
+      "meaning": "不公正的看法",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "歧视",
+      "meaning": "不公平对待",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "包容",
+      "meaning": "宽容接纳",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "妥协",
+      "meaning": "互相让步",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "协商",
+      "meaning": "共同商量",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "谈判",
+      "meaning": "协商议定",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "协议",
+      "meaning": "共同议定的条款",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "契约",
+      "meaning": "合同；约定",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "义务",
+      "meaning": "应尽的责任",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "权利",
+      "meaning": "依法享有的利益",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "权力",
+      "meaning": "支配力量",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "权威",
+      "meaning": "使人信从的力量",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "威望",
+      "meaning": "声誉与影响力",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "声望",
+      "meaning": "众所周知的好名声",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "名誉",
+      "meaning": "名声",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "信誉",
+      "meaning": "信用和名誉",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "诚信",
+      "meaning": "诚实守信",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "欺诈",
+      "meaning": "欺骗讹诈",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "贿赂",
+      "meaning": "用财物收买",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "腐败",
+      "meaning": "堕落；糜烂",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "廉洁",
+      "meaning": "不贪污",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "公正",
+      "meaning": "公平正直",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "公平",
+      "meaning": "不偏不倚",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "平等",
+      "meaning": "同等待遇",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自由",
+      "meaning": "不受拘束",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "民主",
+      "meaning": "人民当家作主",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "专制",
+      "meaning": "独自掌握政权；凭自己意志独断独行",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "独裁",
+      "meaning": "独自裁断一切",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "改革",
+      "meaning": "改掉弊病",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "革命",
+      "meaning": "根本变革",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "创新",
+      "meaning": "创造出新事物",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "发明",
+      "meaning": "创造出新方法等",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "发现",
+      "meaning": "找到未知事物",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "探索",
+      "meaning": "多方寻求",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "研究",
+      "meaning": "钻研探求",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "实验",
+      "meaning": "为检验而做的操作",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "观察",
+      "meaning": "仔细察看（观察）",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "测量",
+      "meaning": "用仪器量度",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "统计",
+      "meaning": "汇总分析数据",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "概率",
+      "meaning": "可能性大小",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "比例",
+      "meaning": "数量之比",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "效率",
+      "meaning": "单位时间完成量",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "效益",
+      "meaning": "效果和利益",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "成本",
+      "meaning": "生产耗费",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "利润",
+      "meaning": "盈利",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "投资",
+      "meaning": "投入资金",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "消费",
+      "meaning": "消耗使用",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "市场",
+      "meaning": "买卖场所；供求关系",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "竞争",
+      "meaning": "互相争胜",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "垄断",
+      "meaning": "独占",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "供应",
+      "meaning": "提供所需",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "需求",
+      "meaning": "需要",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "短缺",
+      "meaning": "不足",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "过剩",
+      "meaning": "超过需要",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "通胀",
+      "meaning": "通货膨胀简称",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "通缩",
+      "meaning": "通货紧缩简称",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "预算",
+      "meaning": "预先计算收支",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "决算",
+      "meaning": "最终核算",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "审计",
+      "meaning": "检查账目",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "税务",
+      "meaning": "税收事务",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "关税",
+      "meaning": "进出口税",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "补贴",
+      "meaning": "财政补助",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "津贴",
+      "meaning": "额外补助",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "薪酬",
+      "meaning": "工资报酬",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "绩效",
+      "meaning": "成绩与效果",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "考核",
+      "meaning": "考查审核",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "晋升",
+      "meaning": "提升职位",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "解雇",
+      "meaning": "解除雇佣",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "辞职",
+      "meaning": "请求解除职务",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "退休",
+      "meaning": "离开工作岗位养老",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "合同",
+      "meaning": "双方约定文书",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "条款",
+      "meaning": "条文项目",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "违约",
+      "meaning": "不履行约定",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "赔偿",
+      "meaning": "补偿损失",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "诉讼",
+      "meaning": "打官司",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "仲裁",
+      "meaning": "由第三方裁决",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "证据",
+      "meaning": "证明事实的材料",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "证人",
+      "meaning": "作证的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "被告",
+      "meaning": "被起诉的一方",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "原告",
+      "meaning": "提起诉讼的一方",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "判决",
+      "meaning": "法院裁断",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "上诉",
+      "meaning": "向上级法院请求改判",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "辩护",
+      "meaning": "提出理由保护",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "指控",
+      "meaning": "指责控告",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "嫌疑",
+      "meaning": "被怀疑",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "审讯",
+      "meaning": "审问",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "刑罚",
+      "meaning": "刑事处罚",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "赦免",
+      "meaning": "免除刑罚",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "通缉",
+      "meaning": "通令缉拿",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "逮捕",
+      "meaning": "捉拿归案",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "拘留",
+      "meaning": "临时关押",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "保释",
+      "meaning": "交保释放",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "监狱",
+      "meaning": "关押犯人的处所",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "囚犯",
+      "meaning": "被关押的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "受害者",
+      "meaning": "受害的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "目击者",
+      "meaning": "亲眼看见的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "幸存者",
+      "meaning": "活下来的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "志愿者",
+      "meaning": "自愿服务的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "公民",
+      "meaning": "具有国籍的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "居民",
+      "meaning": "固定居住的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "移民",
+      "meaning": "迁移到他国的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "难民",
+      "meaning": "因灾难逃亡的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "精英",
+      "meaning": "出类拔萃的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "平民",
+      "meaning": "普通百姓",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "贵族",
+      "meaning": "享有特权的阶层",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "官僚",
+      "meaning": "官员；官僚主义",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "政客",
+      "meaning": "从事政治活动的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "外交",
+      "meaning": "国与国交往",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "同盟",
+      "meaning": "结成的联盟",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "条约",
+      "meaning": "国家间协议",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "制裁",
+      "meaning": "用强力约束并惩处",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "干预",
+      "meaning": "过问插手",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "干涉",
+      "meaning": "强行介入",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "独立",
+      "meaning": "不依赖他人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "主权",
+      "meaning": "一个国家在其领域内拥有的最高权力",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "领土",
+      "meaning": "国家管辖土地",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "边境",
+      "meaning": "靠近边界一带",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "海关",
+      "meaning": "监管进出境机关",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "签证",
+      "meaning": "入境许可证明",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "护照",
+      "meaning": "国籍身份证件",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "身份",
+      "meaning": "人的社会地位",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "地位",
+      "meaning": "所处位置",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "阶层",
+      "meaning": "社会等级层次",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "贫富",
+      "meaning": "贫穷与富裕",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "差距",
+      "meaning": "事物间的差别程度",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "贫困",
+      "meaning": "生活困难",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "富裕",
+      "meaning": "财物充裕",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "温饱",
+      "meaning": "吃穿基本满足",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "小康",
+      "meaning": "生活比较宽裕",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "繁荣",
+      "meaning": "昌盛兴旺",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "萧条",
+      "meaning": "冷落不景气",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "复苏",
+      "meaning": "恢复生机",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "危机",
+      "meaning": "严重困难关头",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "风险",
+      "meaning": "可能发生的危险",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "机遇",
+      "meaning": "好的机会",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "挑战",
+      "meaning": "激励人的难题",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "机遇与挑战",
+      "meaning": "机会和困难并存",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "战略",
+      "meaning": "指导战争全局的方略；比喻决定全局的策略",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "战术",
+      "meaning": "进行战斗的原则和方法",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "策略",
+      "meaning": "计策谋略",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "规划",
+      "meaning": "长远计划",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "蓝图",
+      "meaning": "建设规划",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "愿景",
+      "meaning": "向往的前景",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "使命",
+      "meaning": "重大责任",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "价值观",
+      "meaning": "价值判断标准",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "世界观",
+      "meaning": "对世界的总看法",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "人生观",
+      "meaning": "对人生的看法",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "道德",
+      "meaning": "行为规范",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "伦理",
+      "meaning": "人伦道德之理",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "良知",
+      "meaning": "先天的道德意识",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "良心",
+      "meaning": "内心的是非感",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "忏悔",
+      "meaning": "认识错误并悔改",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "救赎",
+      "meaning": "挽救使脱离苦难",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "信仰",
+      "meaning": "极度相信并尊奉",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "迷信",
+      "meaning": "盲目信仰",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "宗教",
+      "meaning": "对神的信仰体系",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "哲学",
+      "meaning": "关于世界观的学说",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "美学",
+      "meaning": "研究美的学科",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "艺术",
+      "meaning": "创造性审美活动",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "文学",
+      "meaning": "以语言文字为工具的艺术",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "诗歌",
+      "meaning": "韵文作品",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "小说",
+      "meaning": "叙事性文学体裁",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "戏剧",
+      "meaning": "舞台表演艺术",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "电影",
+      "meaning": "影像艺术",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "摄影",
+      "meaning": "用相机记录影像",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "雕塑",
+      "meaning": "立体造型艺术",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "建筑",
+      "meaning": "建造房屋等",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遗产",
+      "meaning": "留下的财富或文化",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "文物",
+      "meaning": "历史文化遗物",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "古迹",
+      "meaning": "古代遗迹",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遗址",
+      "meaning": "古代建筑残迹",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "出土",
+      "meaning": "从地下发掘出来",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "考古",
+      "meaning": "研究古代遗迹",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "文明",
+      "meaning": "社会发展高水平状态",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "野蛮",
+      "meaning": "不文明",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "原始",
+      "meaning": "最初的；未开化的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "现代",
+      "meaning": "当前这个时代",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "当代",
+      "meaning": "目前这个时代",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "古代",
+      "meaning": "过去很久的时代",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "近代",
+      "meaning": "离现代较近的时代",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "未来",
+      "meaning": "将来",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "过去",
+      "meaning": "以前的时间",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "现在",
+      "meaning": "当前",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "瞬间",
+      "meaning": "极短的时间",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "永恒",
+      "meaning": "永远不变",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "短暂",
+      "meaning": "时间短",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "漫长",
+      "meaning": "时间很长",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "迅速",
+      "meaning": "非常快",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "缓慢",
+      "meaning": "速度慢",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "剧烈",
+      "meaning": "猛烈",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "温和",
+      "meaning": "不剧烈；平和",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "激烈",
+      "meaning": "剧烈紧张",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "平静",
+      "meaning": "安定安宁",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "喧嚣",
+      "meaning": "声音嘈杂",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "寂静",
+      "meaning": "没有声音",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "热闹",
+      "meaning": "景象繁荣活跃",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "冷清",
+      "meaning": "冷落凄清",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "繁荣昌盛",
+      "meaning": "兴旺发达",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "日新月异",
+      "meaning": "发展很快",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "与时俱进",
+      "meaning": "随时代进步",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "实事求是",
+      "meaning": "从实际出发",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "举一反三",
+      "meaning": "由一事推知其他",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "触类旁通",
+      "meaning": "掌握一类通晓相似",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "融会贯通",
+      "meaning": "融合理解透彻",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "循序渐进",
+      "meaning": "按步骤推进",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "持之以恒",
+      "meaning": "长久坚持",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "半途而废",
+      "meaning": "做事中途停止",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一丝不苟",
+      "meaning": "做事认真细致",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "精益求精",
+      "meaning": "好了还求更好",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "敷衍了事",
+      "meaning": "随便应付完事",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "弄虚作假",
+      "meaning": "用虚假手段欺骗",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "脚踏实地",
+      "meaning": "做事踏实",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "好高骛远",
+      "meaning": "不切实际追求过高",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "急功近利",
+      "meaning": "急于求成贪图眼前",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "深谋远虑",
+      "meaning": "计划周密考虑长远",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "未雨绸缪",
+      "meaning": "事先做好准备",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "临阵磨枪",
+      "meaning": "事到临头才准备",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "亡羊补牢",
+      "meaning": "出了问题及时补救",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "防患未然",
+      "meaning": "在祸患发生前预防",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "居安思危",
+      "meaning": "安定时想到危险",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "戒骄戒躁",
+      "meaning": "防止骄傲急躁",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "谦虚谨慎",
+      "meaning": "虚心又慎重",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "集思广益",
+      "meaning": "集中众人智慧",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "群策群力",
+      "meaning": "大家共同出力出主意",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "独断专行",
+      "meaning": "凭自己意思行事",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一意孤行",
+      "meaning": "不听劝告固执己见",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "从善如流",
+      "meaning": "接受好意见很快",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "刚愎自用",
+      "meaning": "固执任性自以为是",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "虚怀若谷",
+      "meaning": "胸怀宽广能接受意见",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "海纳百川",
+      "meaning": "包容一切",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "兼容并包",
+      "meaning": "把各个方面都容纳进来",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "求同存异",
+      "meaning": "找出共同点保留不同点",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "和而不同",
+      "meaning": "和谐但不盲从",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "同舟共济",
+      "meaning": "同心协力渡过困难",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "风雨同舟",
+      "meaning": "共同经历患难",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "患难与共",
+      "meaning": "一同承受困难",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "荣辱与共",
+      "meaning": "荣耀耻辱共同承担",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "肝胆相照",
+      "meaning": "真诚相待",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "推心置腹",
+      "meaning": "真心待人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "尔虞我诈",
+      "meaning": "互相欺骗",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "钩心斗角",
+      "meaning": "互相排挤倾轧",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "阳奉阴违",
+      "meaning": "表面遵从暗地违背",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "口是心非",
+      "meaning": "嘴里说的和心里想的不一致",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "言不由衷",
+      "meaning": "说的话不是真心话",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "心口如一",
+      "meaning": "心里想的和嘴上说的一致",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "光明磊落",
+      "meaning": "正直坦率",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "光明正大",
+      "meaning": "行为正当无可指责",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "偷偷摸摸",
+      "meaning": "瞒着人做事",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "鬼鬼祟祟",
+      "meaning": "行动偷偷摸摸",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "堂堂正正",
+      "meaning": "光明正大",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "正大光明",
+      "meaning": "心地坦白，言行正派",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "荒谬",
+      "meaning": "荒唐离奇，极不合理",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "荒诞",
+      "meaning": "虚妄不经，不合情理",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "玄虚",
+      "meaning": "让人捉摸不透的手段或道理",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "玄机",
+      "meaning": "深奥的关键；奥妙",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "悬殊",
+      "meaning": "相差很大",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "悬崖勒马",
+      "meaning": "到危险边缘及时回头",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "炫耀",
+      "meaning": "夸耀展示自己",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "绚丽",
+      "meaning": "灿烂美丽",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "眩晕",
+      "meaning": "头晕眼花",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "蓄意",
+      "meaning": "存心，故意",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "宣誓",
+      "meaning": "当众宣布誓言",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "宣扬",
+      "meaning": "广泛传扬",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "喧宾夺主",
+      "meaning": "次要的压过主要的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "削弱",
+      "meaning": "使变弱",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "削减",
+      "meaning": "减少裁减",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "徇私",
+      "meaning": "为私利而违法办事",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "殉职",
+      "meaning": "因公牺牲",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "驯服",
+      "meaning": "使顺从；温顺",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "巡逻",
+      "meaning": "巡查警戒",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "询问",
+      "meaning": "打听问询",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "寻觅",
+      "meaning": "寻找",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "寻常",
+      "meaning": "平常普通",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "寻衅",
+      "meaning": "故意找茬挑衅",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "熏陶",
+      "meaning": "长期影响使逐渐变化",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "逊色",
+      "meaning": "比不上；较差",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "压榨",
+      "meaning": "挤压取汁；剥削",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "压抑",
+      "meaning": "抑制感情或气氛沉闷",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "压制",
+      "meaning": "用力限制或压住",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "鸦雀无声",
+      "meaning": "非常安静",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "雅致",
+      "meaning": "高雅精致",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "亚军",
+      "meaning": "第二名",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "淹没",
+      "meaning": "漫过；盖过",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "言传身教",
+      "meaning": "用言语和行动教导",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "言归正传",
+      "meaning": "回到正题",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "言简意赅",
+      "meaning": "话少而意思完备",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "严峻",
+      "meaning": "严厉；形势严重",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "严厉",
+      "meaning": "严肃而厉害",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "严密",
+      "meaning": "周密严格，没有疏漏",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "严肃",
+      "meaning": "认真不随便",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "严惩",
+      "meaning": "严厉惩罚",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "延缓",
+      "meaning": "推迟放慢",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "延伸",
+      "meaning": "延长扩展",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "延续",
+      "meaning": "继续下去",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "延误",
+      "meaning": "因拖延而耽误",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "研讨",
+      "meaning": "研究讨论",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "掩饰",
+      "meaning": "遮盖真相或缺点",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "掩埋",
+      "meaning": "用土等盖住",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "眼界",
+      "meaning": "见识的广度",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "演变",
+      "meaning": "逐渐发展变化",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "演练",
+      "meaning": "练习演习",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "演绎",
+      "meaning": "推演表现；发挥",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "厌恶",
+      "meaning": "很反感讨厌",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "厌烦",
+      "meaning": "感到腻烦",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "厌倦",
+      "meaning": "失去兴趣而厌烦",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "艳丽",
+      "meaning": "鲜艳美丽",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "扬长避短",
+      "meaning": "发挥优点避开短处",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "扬眉吐气",
+      "meaning": "因得志而快活得意",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "扬言",
+      "meaning": "故意说出要采取的行动",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "洋溢",
+      "meaning": "充分流露",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "仰慕",
+      "meaning": "敬仰思慕",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "仰望",
+      "meaning": "抬头看；敬仰期待",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "养精蓄锐",
+      "meaning": "养足精神积蓄力量",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "夭折",
+      "meaning": "未成年而死；中途失败",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "谣言",
+      "meaning": "没有事实根据的传闻",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "摇晃",
+      "meaning": "来回摆动",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "摇摆",
+      "meaning": "来回晃动；立场不稳",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遥控",
+      "meaning": "远距离控制",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遥远",
+      "meaning": "很远",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "杳无音信",
+      "meaning": "一直没有消息",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "咬文嚼字",
+      "meaning": "过分斟酌字句",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "要害",
+      "meaning": "关键部位或关键处",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "要挟",
+      "meaning": "抓住把柄强迫对方",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "耀眼",
+      "meaning": "光彩夺目",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "揶揄",
+      "meaning": "嘲笑戏弄",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "野心",
+      "meaning": "对名利权势的大欲望",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "夜郎自大",
+      "meaning": "妄自尊大",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "夜以继日",
+      "meaning": "日夜不停",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一败涂地",
+      "meaning": "失败到不可收拾",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一本正经",
+      "meaning": "态度很庄重认真",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一筹莫展",
+      "meaning": "一点办法也没有",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一帆风顺",
+      "meaning": "非常顺利",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一鼓作气",
+      "meaning": "趁劲头足一次做完",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一举两得",
+      "meaning": "做一件事得到两方面好处",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一见钟情",
+      "meaning": "初次见面就产生爱情",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一视同仁",
+      "meaning": "同等对待，不分厚薄",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "一针见血",
+      "meaning": "说话直截了当切中要害",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "衣冠楚楚",
+      "meaning": "穿戴整齐漂亮",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "怡然自得",
+      "meaning": "安适愉快、满足自得",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "贻误",
+      "meaning": "错误导致耽误",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "贻笑大方",
+      "meaning": "让内行笑话",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "移花接木",
+      "meaning": "暗中更换蒙混",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "移植",
+      "meaning": "移栽；转用到别处",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遗憾",
+      "meaning": "不称心；惋惜",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遗迹",
+      "meaning": "古代事物留下的痕迹",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遗留",
+      "meaning": "过去留下未处理完",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遗弃",
+      "meaning": "抛开不顾",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遗失",
+      "meaning": "丢失",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遗忘",
+      "meaning": "忘记",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "疑惑",
+      "meaning": "怀疑困惑",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "疑虑",
+      "meaning": "因怀疑而顾虑",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "以德报怨",
+      "meaning": "用恩惠回报别人的怨恨",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "以身作则",
+      "meaning": "用自己行动做榜样",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "以卵击石",
+      "meaning": "不自量力",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "倚仗",
+      "meaning": "靠着某种势力或条件",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "义愤填膺",
+      "meaning": "胸中充满正义的愤怒",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "义不容辞",
+      "meaning": "道义上不允许推辞",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "屹立",
+      "meaning": "像山峰一样高耸稳固",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "亦步亦趋",
+      "meaning": "一味模仿追随",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "异端",
+      "meaning": "非正统的主张或派别",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "异乎寻常",
+      "meaning": "不同于平常",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "异曲同工",
+      "meaning": "说法做法不同效果一样好",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "异想天开",
+      "meaning": "想法离奇不切实际",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "抑郁",
+      "meaning": "忧愁苦闷",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "抑制",
+      "meaning": "压下去；控制",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "毅力",
+      "meaning": "坚强持久的意志",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "毅然",
+      "meaning": "坚决果断地",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "因材施教",
+      "meaning": "按对象特点进行教育",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "因地制宜",
+      "meaning": "根据当地情况制定办法",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "因势利导",
+      "meaning": "顺着趋势加以引导",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "阴暗",
+      "meaning": "暗；不光明",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "阴谋",
+      "meaning": "暗中做坏事的计谋",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "阴险",
+      "meaning": "表面不露而内心狠毒",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "殷切",
+      "meaning": "深厚急切",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "殷勤",
+      "meaning": "热情周到",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "引导",
+      "meaning": "带领；启发诱导",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "引发",
+      "meaning": "引起触发",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "引擎",
+      "meaning": "发动机",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "引诱",
+      "meaning": "诱导；诱惑",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "饮鸩止渴",
+      "meaning": "只顾眼前不顾后患",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "隐蔽",
+      "meaning": "借旁的事物遮盖",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "隐藏",
+      "meaning": "藏起来不让发现",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "隐患",
+      "meaning": "潜藏的祸患",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "隐晦",
+      "meaning": "意思不明显",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "隐瞒",
+      "meaning": "把真相掩盖起来",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "隐秘",
+      "meaning": "隐蔽不外露",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "隐约",
+      "meaning": "看起来或听起来不很清楚",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "印证",
+      "meaning": "证明与事实相符",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "应酬",
+      "meaning": "交际往来；私人间的宴会",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "应付",
+      "meaning": "对人对事采取措施；敷衍",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "应接不暇",
+      "meaning": "来人太多接待不过来",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "应验",
+      "meaning": "预言等后来成真",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "英明",
+      "meaning": "卓越而有远见",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "英勇",
+      "meaning": "勇敢出众",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "鹦鹉学舌",
+      "meaning": "人家说什么自己也说什么",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "迎合",
+      "meaning": "故意使自己的言行适合别人心意",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "盈利",
+      "meaning": "获得利润",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "盈余",
+      "meaning": "收入中除去开支后的剩余",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "营救",
+      "meaning": "设法救援",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "营造",
+      "meaning": "经营建造；构造",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "萦绕",
+      "meaning": "回旋环绕；反复想着",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "赢得",
+      "meaning": "取得（胜利、荣誉等）",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "影射",
+      "meaning": "用彼物暗示此物",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "硬朗",
+      "meaning": "老人身体健壮",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "庸俗",
+      "meaning": "平庸低级，不高尚",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "慵懒",
+      "meaning": "懒散疲倦",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "踊跃",
+      "meaning": "情绪热烈争先恐后",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "用武之地",
+      "meaning": "施展本领的地方或机会",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "优柔寡断",
+      "meaning": "做事犹豫不决",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "优胜劣汰",
+      "meaning": "强者胜出弱者淘汰",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "优势",
+      "meaning": "能压倒对方的有利形势",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "优异",
+      "meaning": "特别好",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "忧虑",
+      "meaning": "忧愁担心",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "忧郁",
+      "meaning": "愁闷不舒畅",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "幽静",
+      "meaning": "幽雅寂静",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "幽默",
+      "meaning": "有趣可笑而意味深长",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "悠闲",
+      "meaning": "闲适自得",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "悠扬",
+      "meaning": "声音时高时低而和谐",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "由衷",
+      "meaning": "出于内心",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "犹如",
+      "meaning": "如同",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "油然而生",
+      "meaning": "自然而然地产生",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "游荡",
+      "meaning": "闲游；漂泊",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "游刃有余",
+      "meaning": "做事熟练轻松",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "游说",
+      "meaning": "劝说别人接受意见",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "有备无患",
+      "meaning": "事先有准备可免祸患",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "有的放矢",
+      "meaning": "说话做事有明确目标",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "有目共睹",
+      "meaning": "人人都能看见，极其明显",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "有条不紊",
+      "meaning": "有条理不乱",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "有朝一日",
+      "meaning": "将来有那么一天",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "诱导",
+      "meaning": "劝诱教导；引导",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "诱饵",
+      "meaning": "捕捉动物时用来引诱的食物；引诱物",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "幼稚",
+      "meaning": "年纪小；缺乏经验",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "迂回",
+      "meaning": "绕道；不直接",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "余地",
+      "meaning": "言语或行动中留下的可回旋的空间",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "鱼贯而入",
+      "meaning": "一个接一个进入",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "舆论",
+      "meaning": "公众的言论",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "与日俱增",
+      "meaning": "随着时间不断增长",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "与世隔绝",
+      "meaning": "跟社会上的人隔开，失去联系",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "与众不同",
+      "meaning": "跟大家不一样",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "予以",
+      "meaning": "给以",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "雨后春笋",
+      "meaning": "新事物大量涌现",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "语重心长",
+      "meaning": "言辞恳切有分量",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "玉石俱焚",
+      "meaning": "好的坏的一同毁掉",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "预言",
+      "meaning": "预先说出将要发生的事",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "预兆",
+      "meaning": "预先显出的迹象",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "欲罢不能",
+      "meaning": "想停止也停不下来",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "欲盖弥彰",
+      "meaning": "想掩盖反而更明显",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "欲擒故纵",
+      "meaning": "为了抓住而故意先放开",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "欲望",
+      "meaning": "想得到某种东西或达到某种目的的要求",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "寓言",
+      "meaning": "用故事寄托道理的文学体裁",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "寓意",
+      "meaning": "寄托或隐含的意思",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "冤枉",
+      "meaning": "受到不公平待遇；使无罪者有罪",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "渊博",
+      "meaning": "学识深而广",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "渊源",
+      "meaning": "事物的本源",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "原形毕露",
+      "meaning": "本来面目完全暴露",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "原则",
+      "meaning": "说话或行事所依据的准则",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "缘分",
+      "meaning": "人与人之间命中注定的遇合机会",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "缘故",
+      "meaning": "原因",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "远见卓识",
+      "meaning": "目光远大见识卓越",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "怨恨",
+      "meaning": "强烈不满或仇恨",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "怨天尤人",
+      "meaning": "抱怨命运、责怪别人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "约定",
+      "meaning": "经过商量而确定",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "约束",
+      "meaning": "限制使不越出范围",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "悦耳",
+      "meaning": "好听",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "跃跃欲试",
+      "meaning": "心里急切地想试试",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "晕头转向",
+      "meaning": "头脑昏乱辨不清方向",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "酝酿",
+      "meaning": "造酒发酵；事前准备商量",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "蕴藏",
+      "meaning": "蓄积而未显露或未发掘",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "蕴含",
+      "meaning": "包含",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "杂乱无章",
+      "meaning": "又多又乱没有条理",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "灾难",
+      "meaning": "天灾人祸造成的严重损害",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "栽培",
+      "meaning": "种植培养；培养人才",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "宰割",
+      "meaning": "分割；比喻侵略压迫",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "再接再厉",
+      "meaning": "继续努力，再加一把劲",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "在所难免",
+      "meaning": "难以避免",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "赞不绝口",
+      "meaning": "连声赞美",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "赞赏",
+      "meaning": "赞美欣赏",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "赞许",
+      "meaning": "认为好而加以称赞",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "赞扬",
+      "meaning": "称赞表扬",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遭受",
+      "meaning": "受到不幸或损害",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "糟蹋",
+      "meaning": "浪费或损坏；侮辱蹂躏",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "造诣",
+      "meaning": "学问或技艺达到的程度",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "噪音",
+      "meaning": "杂乱刺耳的声音",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "责备",
+      "meaning": "批评指摘",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "责无旁贷",
+      "meaning": "自己应尽的责任不能推给别人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "增添",
+      "meaning": "添加增多",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "增进",
+      "meaning": "增加并促进",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "扎实",
+      "meaning": "结实；踏实",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "诈骗",
+      "meaning": "讹诈骗取",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "摘要",
+      "meaning": "摘录下来的要点",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "债券",
+      "meaning": "公债或公司债的票据",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "债务",
+      "meaning": "欠别人的钱财等",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "沾沾自喜",
+      "meaning": "自以为很好而得意",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "瞻前顾后",
+      "meaning": "看看前面再看看后面；顾虑过多",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "斩钉截铁",
+      "meaning": "说话办事坚决果断",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "展现",
+      "meaning": "明显地表现出来",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "崭新",
+      "meaning": "极新，全新",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "占据",
+      "meaning": "用强力取得或保持",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "占领",
+      "meaning": "用武力占据",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "张冠李戴",
+      "meaning": "弄错对象或弄混事实",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "张扬",
+      "meaning": "把隐秘的事宣扬出去",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "掌控",
+      "meaning": "掌握控制",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "障碍",
+      "meaning": "阻挡前进的东西",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "招标",
+      "meaning": "兴建工程或进行大宗交易时公布标准和条件招人承包或承买",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "招架",
+      "meaning": "抵挡",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "招揽",
+      "meaning": "招引顾客",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "招聘",
+      "meaning": "用公告的方式聘请",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "招摇撞骗",
+      "meaning": "假借名义到处炫耀欺诈",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "照本宣科",
+      "meaning": "死板照着本子念",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "照耀",
+      "meaning": "照射使明亮",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "折腾",
+      "meaning": "翻来覆去；反复做；折磨",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "折扣",
+      "meaning": "按原价减去的成数",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "折磨",
+      "meaning": "使在肉体或精神上受痛苦",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "侦探",
+      "meaning": "暗中探寻机密或案情；做这种工作的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "斟酌",
+      "meaning": "考虑事情或文字是否可行妥当",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "针锋相对",
+      "meaning": "双方尖锐对立",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "珍爱",
+      "meaning": "重视爱护",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "珍藏",
+      "meaning": "认为有价值而妥善收藏",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "珍贵",
+      "meaning": "价值大、意义深刻、宝贵",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "珍惜",
+      "meaning": "珍重爱惜",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "真谛",
+      "meaning": "真实的意义或道理",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "真相",
+      "meaning": "事情的真实情况",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "真挚",
+      "meaning": "真诚恳切",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "震撼",
+      "meaning": "震动；震动人心",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "震惊",
+      "meaning": "大吃一惊",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "镇定",
+      "meaning": "遇到紧急情况不慌不乱",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "镇压",
+      "meaning": "用强力压制；处决",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "争端",
+      "meaning": "引起争执的事由",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "争夺",
+      "meaning": "争着夺取",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "争议",
+      "meaning": "争论",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "挣扎",
+      "meaning": "用力支撑或摆脱",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "征兆",
+      "meaning": "征候，先兆",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "蒸发",
+      "meaning": "液体变为气体；比喻人突然消失",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "蒸蒸日上",
+      "meaning": "形容事业一天天向上发展",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "整顿",
+      "meaning": "使紊乱变整齐；使不健全的健全起来",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "整改",
+      "meaning": "整顿并改革",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "整合",
+      "meaning": "调整重新组合",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "正规",
+      "meaning": "符合正式规定或一般公认标准",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "正经",
+      "meaning": "端庄正派；正式的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "正气",
+      "meaning": "光明正大的作风或风气",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "正视",
+      "meaning": "用严肃态度对待，不躲避不敷衍",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "正义",
+      "meaning": "公正的、有利于人民的道理",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "正直",
+      "meaning": "公正坦率",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "郑重",
+      "meaning": "严肃认真",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "症状",
+      "meaning": "生物体发生疾病时表现出的异常状态",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "支撑",
+      "meaning": "顶住压力使不倒塌；勉强维持",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "支出",
+      "meaning": "付出去；支付的款项",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "支付",
+      "meaning": "付给",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "支配",
+      "meaning": "安排；对人或事物起引导控制作用",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "支柱",
+      "meaning": "起支撑作用的柱子；比喻中坚力量",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "知晓",
+      "meaning": "知道晓得",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "知足常乐",
+      "meaning": "知道满足就总是快乐",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "执着",
+      "meaning": "坚持不懈；固执",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "执迷不悟",
+      "meaning": "坚持错误而不觉悟",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "直截了当",
+      "meaning": "简单爽快，不绕弯子",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "直言不讳",
+      "meaning": "说话坦率毫无顾忌",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "职能",
+      "meaning": "人、事物、机构应有的作用功能",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "职责",
+      "meaning": "职务和责任",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "止境",
+      "meaning": "尽头",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "纸上谈兵",
+      "meaning": "空谈理论不能解决实际问题",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "指引",
+      "meaning": "指点引导",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "指责",
+      "meaning": "指摘责备",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "至高无上",
+      "meaning": "高到没有更高的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "至理名言",
+      "meaning": "最正确、最有价值的话",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "志同道合",
+      "meaning": "志向相同，意见相合",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "制服",
+      "meaning": "军人等穿的有规定式样的服装；用强力压制使驯服",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "制约",
+      "meaning": "甲事物本身的存在和变化以乙事物的存在和变化为条件",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "制止",
+      "meaning": "强迫使停止；不允许继续",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "秩序",
+      "meaning": "有条理、不混乱的情况",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "质变",
+      "meaning": "事物根本性质的变化",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "质朴",
+      "meaning": "朴实，不矫饰",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "质疑",
+      "meaning": "提出疑问",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "滞后",
+      "meaning": "落在后面",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "滞留",
+      "meaning": "停留不动",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "致力",
+      "meaning": "把力量用在某个方面",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "致敬",
+      "meaning": "向人敬礼或表示敬意",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "致使",
+      "meaning": "由于某种原因而使得",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "智慧",
+      "meaning": "辨析判断发明创造的能力",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "智商",
+      "meaning": "智力商数",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "窒息",
+      "meaning": "因缺氧或呼吸系统障碍而呼吸困难甚至停止呼吸",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "置之不理",
+      "meaning": "放在一边不理不睬",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "置之度外",
+      "meaning": "不放在心上",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "中肯",
+      "meaning": "抓住要点，正中要害",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "中流砥柱",
+      "meaning": "比喻坚强能起支柱作用的人或集体",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "忠心耿耿",
+      "meaning": "非常忠诚",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "终结",
+      "meaning": "最后结束",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "终身",
+      "meaning": "一辈子",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "衷心",
+      "meaning": "出于内心的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "众口难调",
+      "meaning": "很难使所有人都满意",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "众望所归",
+      "meaning": "大家一致期望的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "众志成城",
+      "meaning": "大家同心协力就能像城一样牢固",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "周到",
+      "meaning": "面面都照顾到，不疏忽",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "周密",
+      "meaning": "周到而细密",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "周折",
+      "meaning": "事情进行中的反复曲折",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "周转",
+      "meaning": "经济上的流动；人员物资轮流使用",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "骤然",
+      "meaning": "突然，忽然",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "逐步",
+      "meaning": "一步一步地",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "逐个",
+      "meaning": "一个一个地",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "逐年",
+      "meaning": "一年一年地",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "主办",
+      "meaning": "主持办理",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "主导",
+      "meaning": "主要的并且引导事物向某方面发展的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "主动",
+      "meaning": "不待外力推动而行动；能够造成有利局面使事情按自己意图进行",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "主观",
+      "meaning": "属于自我意识方面的；不依据客观实际只凭自己偏见的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "主力",
+      "meaning": "主要力量",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "主题",
+      "meaning": "文学艺术作品中所表现的中心思想；谈话讨论等的核心内容",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "主体",
+      "meaning": "事物的主要部分；依法享有权利承担义务的人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "主旨",
+      "meaning": "主要的意义、用意或目的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "嘱咐",
+      "meaning": "告诉对方记住该做什么不该做什么",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "瞩目",
+      "meaning": "注目，注视",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "助人为乐",
+      "meaning": "把帮助别人作为快乐",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "注目",
+      "meaning": "把视线集中在一点上",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "注册",
+      "meaning": "向有关机关、团体或学校登记备案",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "注入",
+      "meaning": "灌入；投入资金等",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "注销",
+      "meaning": "取消登记过的事项",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "注视",
+      "meaning": "注意地看",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "注重",
+      "meaning": "重视",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "祝贺",
+      "meaning": "庆贺",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "祝福",
+      "meaning": "祝人平安幸福",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "抓耳挠腮",
+      "meaning": "着急又没办法时的样子",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "专长",
+      "meaning": "专门的学问技能；特长",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "专横",
+      "meaning": "任意妄为，专断强横",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "专利",
+      "meaning": "创造发明者在一定时期内法律保障独自享有的利益",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "专职",
+      "meaning": "由专人担任的职务；专门担任某职务",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "转达",
+      "meaning": "把一方的话转告给另一方",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "转换",
+      "meaning": "改变；改换",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "转让",
+      "meaning": "把自己的东西或权利让给别人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "转瞬即逝",
+      "meaning": "很快就消失",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "转弯抹角",
+      "meaning": "说话绕弯，不直截了当",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "撰写",
+      "meaning": "写作",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "庄严",
+      "meaning": "庄重严肃",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "庄重",
+      "meaning": "言语举止不随便不轻浮",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "装备",
+      "meaning": "配备的武器军装等；配备",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "壮丽",
+      "meaning": "雄壮美丽",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "壮烈",
+      "meaning": "勇敢有气节",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "追溯",
+      "meaning": "逆流而上探求源地；比喻探索事物的由来",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "追悼",
+      "meaning": "沉痛地怀念死者",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "坠落",
+      "meaning": "落；落下",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "准绳",
+      "meaning": "测定平直的器具；比喻标准或准则",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "拙劣",
+      "meaning": "笨拙低劣",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "捉襟见肘",
+      "meaning": "顾此失彼，穷于应付",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "灼热",
+      "meaning": "像火烫着一样热",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "茁壮",
+      "meaning": "强壮；健壮",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "卓越",
+      "meaning": "非常优秀，超出一般",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "酌情",
+      "meaning": "斟酌情况",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "着手",
+      "meaning": "开始做；动手",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "着想",
+      "meaning": "为某人某事的利益考虑",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "着眼",
+      "meaning": "从某方面观察考虑",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "着重",
+      "meaning": "把重点放在某方面；强调",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "咨询",
+      "meaning": "征求意见",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "资本",
+      "meaning": "经营工商业的本钱；比喻牟取利益的凭借",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "资格",
+      "meaning": "从事某种活动所应具备的条件身份等",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "资金",
+      "meaning": "经营工商业的本钱；国家用于发展国民经济的物资或货币",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "资源",
+      "meaning": "生产资料或生活资料的天然来源；可用的人力物力财力",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "滋润",
+      "meaning": "含水分多，不干燥；使湿润",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "滋味",
+      "meaning": "味道；比喻苦乐感受",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "仔细",
+      "meaning": "细心；小心当心",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自卑",
+      "meaning": "轻视自己，认为不如别人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自暴自弃",
+      "meaning": "自己甘心落后，不求上进",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自吹自擂",
+      "meaning": "自我吹嘘",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自发",
+      "meaning": "由自己产生，不受外力影响的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自负",
+      "meaning": "自以为了不起",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自给自足",
+      "meaning": "依靠自己生产满足自己需要",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自觉",
+      "meaning": "自己感觉到；自己有所认识而觉悟",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自满",
+      "meaning": "满足于自己已有的成绩",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自命不凡",
+      "meaning": "自以为了不起",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自欺欺人",
+      "meaning": "用自己都难以置信的话或手法欺骗别人",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自然而然",
+      "meaning": "不经人力干预而形成",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自食其果",
+      "meaning": "做了坏事自己承受坏结果",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自相矛盾",
+      "meaning": "自己的言行前后抵触",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自信",
+      "meaning": "相信自己",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自愿",
+      "meaning": "自己愿意",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自圆其说",
+      "meaning": "使自己的说法前后一致没有破绽",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自知之明",
+      "meaning": "了解自己了解他人的明智",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自主",
+      "meaning": "自己做主",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "自尊心",
+      "meaning": "尊重自己、不向别人卑躬屈节也不容别人歧视侮辱的心理",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "总而言之",
+      "meaning": "总括起来说",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "纵横",
+      "meaning": "竖和横；奔驰无阻",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "纵容",
+      "meaning": "对错误行为不加制止任其发展",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "走投无路",
+      "meaning": "无路可走，陷入绝境",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "阻挡",
+      "meaning": "阻止；拦住",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "阻挠",
+      "meaning": "阻止或暗中破坏使不能发展或成功",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "组装",
+      "meaning": "组合装配",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "钻研",
+      "meaning": "深入研究",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "醉生梦死",
+      "meaning": "像喝醉做梦那样糊里糊涂混日子",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "尊贵",
+      "meaning": "高贵而可敬",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "尊敬",
+      "meaning": "重视而恭敬地对待",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "尊严",
+      "meaning": "可尊敬的身份或地位；庄重而有威严",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遵循",
+      "meaning": "遵照",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "遵照",
+      "meaning": "依照",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "左顾右盼",
+      "meaning": "向左右两边看",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "左右逢源",
+      "meaning": "做事得心应手；圆滑讨好",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "作弊",
+      "meaning": "用欺骗方式做不合规定的事",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "作茧自缚",
+      "meaning": "自己束缚自己",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "作威作福",
+      "meaning": "滥用权势，横行霸道",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "坐井观天",
+      "meaning": "眼光狭小，见识有限",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "坐立不安",
+      "meaning": "坐着站着都不安宁",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "坐享其成",
+      "meaning": "自己不出力而享受别人的劳动成果",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "座右铭",
+      "meaning": "写出来放在座位旁边的格言；激励警戒自己的格言",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "洞察力",
+      "meaning": "透彻观察事物的能力",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "批判性",
+      "meaning": "能够分析评价并指出问题的性质",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "系统性",
+      "meaning": "各部分按一定关系组成整体的性质",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "结构性",
+      "meaning": "事物各组成部分搭配排列的性质",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "操作性",
+      "meaning": "可以具体实行操作的程度",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "可行性",
+      "meaning": "可以实行的程度",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "必然性",
+      "meaning": "事物发展中不可避免的、一定如此的趋势",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "偶然性",
+      "meaning": "事物发展中可能出现也可能不出现的不确定情况",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "相对性",
+      "meaning": "事物性质依赖比较条件而成立",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "绝对性",
+      "meaning": "无条件的、不受限制的性质",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "主观性",
+      "meaning": "受个人意识偏见影响的性质",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "客观性",
+      "meaning": "不依赖主观意识而存在的性质",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "抽象化",
+      "meaning": "把具体事物概括为一般概念的过程",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "具体化",
+      "meaning": "把抽象原则落实为细节的过程",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "数字化",
+      "meaning": "用数字技术处理信息的过程或状态",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "信息化",
+      "meaning": "广泛应用信息技术的过程或状态",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "全球化",
+      "meaning": "在全球范围相互联系一体化的过程",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "本土化",
+      "meaning": "使外来事物适应当地情况",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "可持续",
+      "meaning": "能够长期维持而不耗尽资源的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "不可逆",
+      "meaning": "不能再回到原来状态的",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "边际效应",
+      "meaning": "额外增加一单位投入所带来的额外收益变化",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "机会成本",
+      "meaning": "为得到某物而放弃的最大价值",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "比较优势",
+      "meaning": "相对而言成本更低或效率更高的优势",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "沉没成本",
+      "meaning": "已经付出且无法收回的成本",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "信息不对称",
+      "meaning": "交易各方掌握信息不对等",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "供需平衡",
+      "meaning": "供给与需求大致相当",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "规模经济",
+      "meaning": "规模扩大使单位成本下降的效益",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "外部性",
+      "meaning": "行为对他人产生未计入价格的影响",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "公共物品",
+      "meaning": "可供多人共同消费且难以排他的物品",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "囚徒困境",
+      "meaning": "各方理性选择导致整体最差结果的博弈情形",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "道德风险",
+      "meaning": "有保障后行为更冒险而使对方受损的风险",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "逆向选择",
+      "meaning": "信息不对称导致劣质更易成交的现象",
+      "lang": "中文",
+      "hint": "进阶"
+    },
+    {
+      "word": "交易成本",
+      "meaning": "完成一笔交易所需的额外费用与成本",
+      "lang": "中文",
+      "hint": "进阶"
+    }
   ]
 }

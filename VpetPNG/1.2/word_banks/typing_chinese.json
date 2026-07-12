@@ -1,21 +1,3057 @@
 {
-  "source": "built-in",
+  "source": "expanded-advanced",
   "items": [
-    {"display": "你好", "target": "nihao"},
-    {"display": "谢谢", "target": "xiexie"},
-    {"display": "桌宠", "target": "zhuochong"},
-    {"display": "平凡", "target": "pingfan"},
-    {"display": "旧货店", "target": "jiuhuodian"},
-    {"display": "音乐", "target": "yinyue"},
-    {"display": "自由", "target": "ziyou"},
-    {"display": "跟随", "target": "gensui"},
-    {"display": "睡眠", "target": "shuimian"},
-    {"display": "采集", "target": "caiji"},
-    {"display": "日记", "target": "riji"},
-    {"display": "日程", "target": "richeng"},
-    {"display": "开心", "target": "kaixin"},
-    {"display": "伤心", "target": "shangxin"},
-    {"display": "工作", "target": "gongzuo"},
-    {"display": "故障", "target": "guzhang"}
+    {
+      "display": "尴尬",
+      "target": "ganga"
+    },
+    {
+      "display": "犹豫",
+      "target": "youyu"
+    },
+    {
+      "display": "谨慎",
+      "target": "jinshen"
+    },
+    {
+      "display": "敷衍",
+      "target": "fuyan"
+    },
+    {
+      "display": "挑剔",
+      "target": "tiaoti"
+    },
+    {
+      "display": "苛刻",
+      "target": "keke"
+    },
+    {
+      "display": "固执",
+      "target": "guzhi"
+    },
+    {
+      "display": "委婉",
+      "target": "weiwan"
+    },
+    {
+      "display": "含蓄",
+      "target": "hanxu"
+    },
+    {
+      "display": "讽刺",
+      "target": "fengci"
+    },
+    {
+      "display": "讽刺画",
+      "target": "fengcihua"
+    },
+    {
+      "display": "隐喻",
+      "target": "yinyu"
+    },
+    {
+      "display": "象征",
+      "target": "xiangzheng"
+    },
+    {
+      "display": "抽象",
+      "target": "chouxiang"
+    },
+    {
+      "display": "具体",
+      "target": "juti"
+    },
+    {
+      "display": "辩证",
+      "target": "bianzheng"
+    },
+    {
+      "display": "逻辑",
+      "target": "luoji"
+    },
+    {
+      "display": "推理",
+      "target": "tuili"
+    },
+    {
+      "display": "假设",
+      "target": "jiashe"
+    },
+    {
+      "display": "论证",
+      "target": "lunzheng"
+    },
+    {
+      "display": "批判",
+      "target": "pipan"
+    },
+    {
+      "display": "审视",
+      "target": "shenshi"
+    },
+    {
+      "display": "洞察",
+      "target": "dongcha"
+    },
+    {
+      "display": "敏锐",
+      "target": "minrui"
+    },
+    {
+      "display": "迟钝",
+      "target": "chidun"
+    },
+    {
+      "display": "麻木",
+      "target": "mamu"
+    },
+    {
+      "display": "冷漠",
+      "target": "lengmo"
+    },
+    {
+      "display": "热情",
+      "target": "reqing"
+    },
+    {
+      "display": "真诚",
+      "target": "zhencheng"
+    },
+    {
+      "display": "虚伪",
+      "target": "xuwei"
+    },
+    {
+      "display": "谦虚",
+      "target": "qianxu"
+    },
+    {
+      "display": "傲慢",
+      "target": "aoman"
+    },
+    {
+      "display": "偏见",
+      "target": "pianjian"
+    },
+    {
+      "display": "歧视",
+      "target": "qishi"
+    },
+    {
+      "display": "包容",
+      "target": "baorong"
+    },
+    {
+      "display": "妥协",
+      "target": "tuoxie"
+    },
+    {
+      "display": "协商",
+      "target": "xieshang"
+    },
+    {
+      "display": "谈判",
+      "target": "tanpan"
+    },
+    {
+      "display": "协议",
+      "target": "xieyi"
+    },
+    {
+      "display": "契约",
+      "target": "qiyue"
+    },
+    {
+      "display": "义务",
+      "target": "yiwu"
+    },
+    {
+      "display": "权利",
+      "target": "quanli"
+    },
+    {
+      "display": "权力",
+      "target": "quanli"
+    },
+    {
+      "display": "权威",
+      "target": "quanwei"
+    },
+    {
+      "display": "威望",
+      "target": "weiwang"
+    },
+    {
+      "display": "声望",
+      "target": "shengwang"
+    },
+    {
+      "display": "名誉",
+      "target": "mingyu"
+    },
+    {
+      "display": "信誉",
+      "target": "xinyu"
+    },
+    {
+      "display": "诚信",
+      "target": "chengxin"
+    },
+    {
+      "display": "欺诈",
+      "target": "qizha"
+    },
+    {
+      "display": "贿赂",
+      "target": "huilu"
+    },
+    {
+      "display": "腐败",
+      "target": "fubai"
+    },
+    {
+      "display": "廉洁",
+      "target": "lianjie"
+    },
+    {
+      "display": "公正",
+      "target": "gongzheng"
+    },
+    {
+      "display": "公平",
+      "target": "gongping"
+    },
+    {
+      "display": "平等",
+      "target": "pingdeng"
+    },
+    {
+      "display": "自由",
+      "target": "ziyou"
+    },
+    {
+      "display": "民主",
+      "target": "minzhu"
+    },
+    {
+      "display": "专制",
+      "target": "zhuanzhi"
+    },
+    {
+      "display": "独裁",
+      "target": "ducai"
+    },
+    {
+      "display": "改革",
+      "target": "gaige"
+    },
+    {
+      "display": "革命",
+      "target": "geming"
+    },
+    {
+      "display": "创新",
+      "target": "chuangxin"
+    },
+    {
+      "display": "发明",
+      "target": "faming"
+    },
+    {
+      "display": "发现",
+      "target": "faxian"
+    },
+    {
+      "display": "探索",
+      "target": "tansuo"
+    },
+    {
+      "display": "研究",
+      "target": "yanjiu"
+    },
+    {
+      "display": "实验",
+      "target": "shiyan"
+    },
+    {
+      "display": "观察",
+      "target": "guancha"
+    },
+    {
+      "display": "测量",
+      "target": "celiang"
+    },
+    {
+      "display": "统计",
+      "target": "tongji"
+    },
+    {
+      "display": "概率",
+      "target": "gailv"
+    },
+    {
+      "display": "比例",
+      "target": "bili"
+    },
+    {
+      "display": "效率",
+      "target": "xiaolv"
+    },
+    {
+      "display": "效益",
+      "target": "xiaoyi"
+    },
+    {
+      "display": "成本",
+      "target": "chengben"
+    },
+    {
+      "display": "利润",
+      "target": "lirun"
+    },
+    {
+      "display": "投资",
+      "target": "touzi"
+    },
+    {
+      "display": "消费",
+      "target": "xiaofei"
+    },
+    {
+      "display": "市场",
+      "target": "shichang"
+    },
+    {
+      "display": "竞争",
+      "target": "jingzheng"
+    },
+    {
+      "display": "垄断",
+      "target": "longduan"
+    },
+    {
+      "display": "供应",
+      "target": "gongying"
+    },
+    {
+      "display": "需求",
+      "target": "xuqiu"
+    },
+    {
+      "display": "短缺",
+      "target": "duanque"
+    },
+    {
+      "display": "过剩",
+      "target": "guosheng"
+    },
+    {
+      "display": "通胀",
+      "target": "tongzhang"
+    },
+    {
+      "display": "通缩",
+      "target": "tongsuo"
+    },
+    {
+      "display": "预算",
+      "target": "yusuan"
+    },
+    {
+      "display": "决算",
+      "target": "juesuan"
+    },
+    {
+      "display": "审计",
+      "target": "shenji"
+    },
+    {
+      "display": "税务",
+      "target": "shuiwu"
+    },
+    {
+      "display": "关税",
+      "target": "guanshui"
+    },
+    {
+      "display": "补贴",
+      "target": "butie"
+    },
+    {
+      "display": "津贴",
+      "target": "jintie"
+    },
+    {
+      "display": "薪酬",
+      "target": "xinchou"
+    },
+    {
+      "display": "绩效",
+      "target": "jixiao"
+    },
+    {
+      "display": "考核",
+      "target": "kaohe"
+    },
+    {
+      "display": "晋升",
+      "target": "jinsheng"
+    },
+    {
+      "display": "解雇",
+      "target": "jiegu"
+    },
+    {
+      "display": "辞职",
+      "target": "cizhi"
+    },
+    {
+      "display": "退休",
+      "target": "tuixiu"
+    },
+    {
+      "display": "合同",
+      "target": "hetong"
+    },
+    {
+      "display": "条款",
+      "target": "tiaokuan"
+    },
+    {
+      "display": "违约",
+      "target": "weiyue"
+    },
+    {
+      "display": "赔偿",
+      "target": "peichang"
+    },
+    {
+      "display": "诉讼",
+      "target": "susong"
+    },
+    {
+      "display": "仲裁",
+      "target": "zhongcai"
+    },
+    {
+      "display": "证据",
+      "target": "zhengju"
+    },
+    {
+      "display": "证人",
+      "target": "zhengren"
+    },
+    {
+      "display": "被告",
+      "target": "beigao"
+    },
+    {
+      "display": "原告",
+      "target": "yuangao"
+    },
+    {
+      "display": "判决",
+      "target": "panjue"
+    },
+    {
+      "display": "上诉",
+      "target": "shangsu"
+    },
+    {
+      "display": "辩护",
+      "target": "bianhu"
+    },
+    {
+      "display": "指控",
+      "target": "zhikong"
+    },
+    {
+      "display": "嫌疑",
+      "target": "xianyi"
+    },
+    {
+      "display": "审讯",
+      "target": "shenxun"
+    },
+    {
+      "display": "刑罚",
+      "target": "xingfa"
+    },
+    {
+      "display": "赦免",
+      "target": "shemian"
+    },
+    {
+      "display": "通缉",
+      "target": "tongji"
+    },
+    {
+      "display": "逮捕",
+      "target": "daibu"
+    },
+    {
+      "display": "拘留",
+      "target": "juliu"
+    },
+    {
+      "display": "保释",
+      "target": "baoshi"
+    },
+    {
+      "display": "监狱",
+      "target": "jianyu"
+    },
+    {
+      "display": "囚犯",
+      "target": "qiufan"
+    },
+    {
+      "display": "受害者",
+      "target": "shouhaizhe"
+    },
+    {
+      "display": "目击者",
+      "target": "mujizhe"
+    },
+    {
+      "display": "幸存者",
+      "target": "xingcunzhe"
+    },
+    {
+      "display": "志愿者",
+      "target": "zhiyuanzhe"
+    },
+    {
+      "display": "公民",
+      "target": "gongmin"
+    },
+    {
+      "display": "居民",
+      "target": "jumin"
+    },
+    {
+      "display": "移民",
+      "target": "yimin"
+    },
+    {
+      "display": "难民",
+      "target": "nanmin"
+    },
+    {
+      "display": "精英",
+      "target": "jingying"
+    },
+    {
+      "display": "平民",
+      "target": "pingmin"
+    },
+    {
+      "display": "贵族",
+      "target": "guizu"
+    },
+    {
+      "display": "官僚",
+      "target": "guanliao"
+    },
+    {
+      "display": "政客",
+      "target": "zhengke"
+    },
+    {
+      "display": "外交",
+      "target": "waijiao"
+    },
+    {
+      "display": "同盟",
+      "target": "tongmeng"
+    },
+    {
+      "display": "条约",
+      "target": "tiaoyue"
+    },
+    {
+      "display": "制裁",
+      "target": "zhicai"
+    },
+    {
+      "display": "干预",
+      "target": "ganyu"
+    },
+    {
+      "display": "干涉",
+      "target": "ganshe"
+    },
+    {
+      "display": "独立",
+      "target": "duli"
+    },
+    {
+      "display": "主权",
+      "target": "zhuquan"
+    },
+    {
+      "display": "领土",
+      "target": "lingtu"
+    },
+    {
+      "display": "边境",
+      "target": "bianjing"
+    },
+    {
+      "display": "海关",
+      "target": "haiguan"
+    },
+    {
+      "display": "签证",
+      "target": "qianzheng"
+    },
+    {
+      "display": "护照",
+      "target": "huzhao"
+    },
+    {
+      "display": "身份",
+      "target": "shenfen"
+    },
+    {
+      "display": "地位",
+      "target": "diwei"
+    },
+    {
+      "display": "阶层",
+      "target": "jieceng"
+    },
+    {
+      "display": "贫富",
+      "target": "pinfu"
+    },
+    {
+      "display": "差距",
+      "target": "chaju"
+    },
+    {
+      "display": "贫困",
+      "target": "pinkun"
+    },
+    {
+      "display": "富裕",
+      "target": "fuyu"
+    },
+    {
+      "display": "温饱",
+      "target": "wenbao"
+    },
+    {
+      "display": "小康",
+      "target": "xiaokang"
+    },
+    {
+      "display": "繁荣",
+      "target": "fanrong"
+    },
+    {
+      "display": "萧条",
+      "target": "xiaotiao"
+    },
+    {
+      "display": "复苏",
+      "target": "fusu"
+    },
+    {
+      "display": "危机",
+      "target": "weiji"
+    },
+    {
+      "display": "风险",
+      "target": "fengxian"
+    },
+    {
+      "display": "机遇",
+      "target": "jiyu"
+    },
+    {
+      "display": "挑战",
+      "target": "tiaozhan"
+    },
+    {
+      "display": "机遇与挑战",
+      "target": "jiyuyutiaozhan"
+    },
+    {
+      "display": "战略",
+      "target": "zhanlve"
+    },
+    {
+      "display": "战术",
+      "target": "zhanshu"
+    },
+    {
+      "display": "策略",
+      "target": "celve"
+    },
+    {
+      "display": "规划",
+      "target": "guihua"
+    },
+    {
+      "display": "蓝图",
+      "target": "lantu"
+    },
+    {
+      "display": "愿景",
+      "target": "yuanjing"
+    },
+    {
+      "display": "使命",
+      "target": "shiming"
+    },
+    {
+      "display": "价值观",
+      "target": "jiazhiguan"
+    },
+    {
+      "display": "世界观",
+      "target": "shijieguan"
+    },
+    {
+      "display": "人生观",
+      "target": "renshengguan"
+    },
+    {
+      "display": "道德",
+      "target": "daode"
+    },
+    {
+      "display": "伦理",
+      "target": "lunli"
+    },
+    {
+      "display": "良知",
+      "target": "liangzhi"
+    },
+    {
+      "display": "良心",
+      "target": "liangxin"
+    },
+    {
+      "display": "忏悔",
+      "target": "chanhui"
+    },
+    {
+      "display": "救赎",
+      "target": "jiushu"
+    },
+    {
+      "display": "信仰",
+      "target": "xinyang"
+    },
+    {
+      "display": "迷信",
+      "target": "mixin"
+    },
+    {
+      "display": "宗教",
+      "target": "zongjiao"
+    },
+    {
+      "display": "哲学",
+      "target": "zhexue"
+    },
+    {
+      "display": "美学",
+      "target": "meixue"
+    },
+    {
+      "display": "艺术",
+      "target": "yishu"
+    },
+    {
+      "display": "文学",
+      "target": "wenxue"
+    },
+    {
+      "display": "诗歌",
+      "target": "shige"
+    },
+    {
+      "display": "小说",
+      "target": "xiaoshuo"
+    },
+    {
+      "display": "戏剧",
+      "target": "xiju"
+    },
+    {
+      "display": "电影",
+      "target": "dianying"
+    },
+    {
+      "display": "摄影",
+      "target": "sheying"
+    },
+    {
+      "display": "雕塑",
+      "target": "diaosu"
+    },
+    {
+      "display": "建筑",
+      "target": "jianzhu"
+    },
+    {
+      "display": "遗产",
+      "target": "yichan"
+    },
+    {
+      "display": "文物",
+      "target": "wenwu"
+    },
+    {
+      "display": "古迹",
+      "target": "guji"
+    },
+    {
+      "display": "遗址",
+      "target": "yizhi"
+    },
+    {
+      "display": "出土",
+      "target": "chutu"
+    },
+    {
+      "display": "考古",
+      "target": "kaogu"
+    },
+    {
+      "display": "文明",
+      "target": "wenming"
+    },
+    {
+      "display": "野蛮",
+      "target": "yeman"
+    },
+    {
+      "display": "原始",
+      "target": "yuanshi"
+    },
+    {
+      "display": "现代",
+      "target": "xiandai"
+    },
+    {
+      "display": "当代",
+      "target": "dangdai"
+    },
+    {
+      "display": "古代",
+      "target": "gudai"
+    },
+    {
+      "display": "近代",
+      "target": "jindai"
+    },
+    {
+      "display": "未来",
+      "target": "weilai"
+    },
+    {
+      "display": "过去",
+      "target": "guoqu"
+    },
+    {
+      "display": "现在",
+      "target": "xianzai"
+    },
+    {
+      "display": "瞬间",
+      "target": "shunjian"
+    },
+    {
+      "display": "永恒",
+      "target": "yongheng"
+    },
+    {
+      "display": "短暂",
+      "target": "duanzan"
+    },
+    {
+      "display": "漫长",
+      "target": "manchang"
+    },
+    {
+      "display": "迅速",
+      "target": "xunsu"
+    },
+    {
+      "display": "缓慢",
+      "target": "huanman"
+    },
+    {
+      "display": "剧烈",
+      "target": "julie"
+    },
+    {
+      "display": "温和",
+      "target": "wenhe"
+    },
+    {
+      "display": "激烈",
+      "target": "jilie"
+    },
+    {
+      "display": "平静",
+      "target": "pingjing"
+    },
+    {
+      "display": "喧嚣",
+      "target": "xuanxiao"
+    },
+    {
+      "display": "寂静",
+      "target": "jijing"
+    },
+    {
+      "display": "热闹",
+      "target": "renao"
+    },
+    {
+      "display": "冷清",
+      "target": "lengqing"
+    },
+    {
+      "display": "繁荣昌盛",
+      "target": "fanrongchangsheng"
+    },
+    {
+      "display": "日新月异",
+      "target": "rixinyueyi"
+    },
+    {
+      "display": "与时俱进",
+      "target": "yushijujin"
+    },
+    {
+      "display": "实事求是",
+      "target": "shishiqiushi"
+    },
+    {
+      "display": "举一反三",
+      "target": "juyifansan"
+    },
+    {
+      "display": "触类旁通",
+      "target": "chuleipangtong"
+    },
+    {
+      "display": "融会贯通",
+      "target": "ronghuiguantong"
+    },
+    {
+      "display": "循序渐进",
+      "target": "xunxujianjin"
+    },
+    {
+      "display": "持之以恒",
+      "target": "chizhiyiheng"
+    },
+    {
+      "display": "半途而废",
+      "target": "bantuerfei"
+    },
+    {
+      "display": "一丝不苟",
+      "target": "yisibugou"
+    },
+    {
+      "display": "精益求精",
+      "target": "jingyiqiujing"
+    },
+    {
+      "display": "敷衍了事",
+      "target": "fuyanliaoshi"
+    },
+    {
+      "display": "弄虚作假",
+      "target": "nongxuzuojia"
+    },
+    {
+      "display": "脚踏实地",
+      "target": "jiaotashidi"
+    },
+    {
+      "display": "好高骛远",
+      "target": "haogaowuyuan"
+    },
+    {
+      "display": "急功近利",
+      "target": "jigongjinli"
+    },
+    {
+      "display": "深谋远虑",
+      "target": "shenmouyuanlv"
+    },
+    {
+      "display": "未雨绸缪",
+      "target": "weiyuchoumou"
+    },
+    {
+      "display": "临阵磨枪",
+      "target": "linzhenmoqiang"
+    },
+    {
+      "display": "亡羊补牢",
+      "target": "wangyangbulao"
+    },
+    {
+      "display": "防患未然",
+      "target": "fanghuanweiran"
+    },
+    {
+      "display": "居安思危",
+      "target": "juansiwei"
+    },
+    {
+      "display": "戒骄戒躁",
+      "target": "jiejiaojiezao"
+    },
+    {
+      "display": "谦虚谨慎",
+      "target": "qianxujinshen"
+    },
+    {
+      "display": "集思广益",
+      "target": "jisiguangyi"
+    },
+    {
+      "display": "群策群力",
+      "target": "quncequnli"
+    },
+    {
+      "display": "独断专行",
+      "target": "duduanzhuanxing"
+    },
+    {
+      "display": "一意孤行",
+      "target": "yiyiguxing"
+    },
+    {
+      "display": "从善如流",
+      "target": "congshanruliu"
+    },
+    {
+      "display": "刚愎自用",
+      "target": "gangbiziyong"
+    },
+    {
+      "display": "虚怀若谷",
+      "target": "xuhuairuogu"
+    },
+    {
+      "display": "海纳百川",
+      "target": "hainabaichuan"
+    },
+    {
+      "display": "兼容并包",
+      "target": "jianrongbingbao"
+    },
+    {
+      "display": "求同存异",
+      "target": "qiutongcunyi"
+    },
+    {
+      "display": "和而不同",
+      "target": "heerbutong"
+    },
+    {
+      "display": "同舟共济",
+      "target": "tongzhougongji"
+    },
+    {
+      "display": "风雨同舟",
+      "target": "fengyutongzhou"
+    },
+    {
+      "display": "患难与共",
+      "target": "huannanyugong"
+    },
+    {
+      "display": "荣辱与共",
+      "target": "rongruyugong"
+    },
+    {
+      "display": "肝胆相照",
+      "target": "gandanxiangzhao"
+    },
+    {
+      "display": "推心置腹",
+      "target": "tuixinzhifu"
+    },
+    {
+      "display": "尔虞我诈",
+      "target": "eryuwozha"
+    },
+    {
+      "display": "钩心斗角",
+      "target": "gouxindoujiao"
+    },
+    {
+      "display": "阳奉阴违",
+      "target": "yangfengyinwei"
+    },
+    {
+      "display": "口是心非",
+      "target": "koushixinfei"
+    },
+    {
+      "display": "言不由衷",
+      "target": "yanbuyouzhong"
+    },
+    {
+      "display": "心口如一",
+      "target": "xinkouruyi"
+    },
+    {
+      "display": "光明磊落",
+      "target": "guangmingleiluo"
+    },
+    {
+      "display": "光明正大",
+      "target": "guangmingzhengda"
+    },
+    {
+      "display": "偷偷摸摸",
+      "target": "toutoumomo"
+    },
+    {
+      "display": "鬼鬼祟祟",
+      "target": "guiguisuisui"
+    },
+    {
+      "display": "堂堂正正",
+      "target": "tangtangzhengzheng"
+    },
+    {
+      "display": "正大光明",
+      "target": "zhengdaguangming"
+    },
+    {
+      "display": "荒谬",
+      "target": "huangmiu"
+    },
+    {
+      "display": "荒诞",
+      "target": "huangdan"
+    },
+    {
+      "display": "玄虚",
+      "target": "xuanxu"
+    },
+    {
+      "display": "玄机",
+      "target": "xuanji"
+    },
+    {
+      "display": "悬殊",
+      "target": "xuanshu"
+    },
+    {
+      "display": "悬崖勒马",
+      "target": "xuanyalema"
+    },
+    {
+      "display": "炫耀",
+      "target": "xuanyao"
+    },
+    {
+      "display": "绚丽",
+      "target": "xuanli"
+    },
+    {
+      "display": "眩晕",
+      "target": "xuanyun"
+    },
+    {
+      "display": "蓄意",
+      "target": "xuyi"
+    },
+    {
+      "display": "宣誓",
+      "target": "xuanshi"
+    },
+    {
+      "display": "宣扬",
+      "target": "xuanyang"
+    },
+    {
+      "display": "喧宾夺主",
+      "target": "xuanbinduozhu"
+    },
+    {
+      "display": "削弱",
+      "target": "xueruo"
+    },
+    {
+      "display": "削减",
+      "target": "xuejian"
+    },
+    {
+      "display": "徇私",
+      "target": "xunsi"
+    },
+    {
+      "display": "殉职",
+      "target": "xunzhi"
+    },
+    {
+      "display": "驯服",
+      "target": "xunfu"
+    },
+    {
+      "display": "巡逻",
+      "target": "xunluo"
+    },
+    {
+      "display": "询问",
+      "target": "xunwen"
+    },
+    {
+      "display": "寻觅",
+      "target": "xunmi"
+    },
+    {
+      "display": "寻常",
+      "target": "xunchang"
+    },
+    {
+      "display": "寻衅",
+      "target": "xunxin"
+    },
+    {
+      "display": "熏陶",
+      "target": "xuntao"
+    },
+    {
+      "display": "逊色",
+      "target": "xunse"
+    },
+    {
+      "display": "压榨",
+      "target": "yazha"
+    },
+    {
+      "display": "压抑",
+      "target": "yayi"
+    },
+    {
+      "display": "压制",
+      "target": "yazhi"
+    },
+    {
+      "display": "鸦雀无声",
+      "target": "yaquewusheng"
+    },
+    {
+      "display": "雅致",
+      "target": "yazhi"
+    },
+    {
+      "display": "亚军",
+      "target": "yajun"
+    },
+    {
+      "display": "淹没",
+      "target": "yanmo"
+    },
+    {
+      "display": "言传身教",
+      "target": "yanchuanshenjiao"
+    },
+    {
+      "display": "言归正传",
+      "target": "yanguizhengzhuan"
+    },
+    {
+      "display": "言简意赅",
+      "target": "yanjianyigai"
+    },
+    {
+      "display": "严峻",
+      "target": "yanjun"
+    },
+    {
+      "display": "严厉",
+      "target": "yanli"
+    },
+    {
+      "display": "严密",
+      "target": "yanmi"
+    },
+    {
+      "display": "严肃",
+      "target": "yansu"
+    },
+    {
+      "display": "严惩",
+      "target": "yancheng"
+    },
+    {
+      "display": "延缓",
+      "target": "yanhuan"
+    },
+    {
+      "display": "延伸",
+      "target": "yanshen"
+    },
+    {
+      "display": "延续",
+      "target": "yanxu"
+    },
+    {
+      "display": "延误",
+      "target": "yanwu"
+    },
+    {
+      "display": "研讨",
+      "target": "yantao"
+    },
+    {
+      "display": "掩饰",
+      "target": "yanshi"
+    },
+    {
+      "display": "掩埋",
+      "target": "yanmai"
+    },
+    {
+      "display": "眼界",
+      "target": "yanjie"
+    },
+    {
+      "display": "演变",
+      "target": "yanbian"
+    },
+    {
+      "display": "演练",
+      "target": "yanlian"
+    },
+    {
+      "display": "演绎",
+      "target": "yanyi"
+    },
+    {
+      "display": "厌恶",
+      "target": "yanwu"
+    },
+    {
+      "display": "厌烦",
+      "target": "yanfan"
+    },
+    {
+      "display": "厌倦",
+      "target": "yanjuan"
+    },
+    {
+      "display": "艳丽",
+      "target": "yanli"
+    },
+    {
+      "display": "扬长避短",
+      "target": "yangchangbiduan"
+    },
+    {
+      "display": "扬眉吐气",
+      "target": "yangmeituqi"
+    },
+    {
+      "display": "扬言",
+      "target": "yangyan"
+    },
+    {
+      "display": "洋溢",
+      "target": "yangyi"
+    },
+    {
+      "display": "仰慕",
+      "target": "yangmu"
+    },
+    {
+      "display": "仰望",
+      "target": "yangwang"
+    },
+    {
+      "display": "养精蓄锐",
+      "target": "yangjingxurui"
+    },
+    {
+      "display": "夭折",
+      "target": "yaozhe"
+    },
+    {
+      "display": "谣言",
+      "target": "yaoyan"
+    },
+    {
+      "display": "摇晃",
+      "target": "yaohuang"
+    },
+    {
+      "display": "摇摆",
+      "target": "yaobai"
+    },
+    {
+      "display": "遥控",
+      "target": "yaokong"
+    },
+    {
+      "display": "遥远",
+      "target": "yaoyuan"
+    },
+    {
+      "display": "杳无音信",
+      "target": "yaowuyinxin"
+    },
+    {
+      "display": "咬文嚼字",
+      "target": "yaowenjiaozi"
+    },
+    {
+      "display": "要害",
+      "target": "yaohai"
+    },
+    {
+      "display": "要挟",
+      "target": "yaoxie"
+    },
+    {
+      "display": "耀眼",
+      "target": "yaoyan"
+    },
+    {
+      "display": "揶揄",
+      "target": "yeyu"
+    },
+    {
+      "display": "野心",
+      "target": "yexin"
+    },
+    {
+      "display": "夜郎自大",
+      "target": "yelangzida"
+    },
+    {
+      "display": "夜以继日",
+      "target": "yeyijiri"
+    },
+    {
+      "display": "一败涂地",
+      "target": "yibaitudi"
+    },
+    {
+      "display": "一本正经",
+      "target": "yibenzhengjing"
+    },
+    {
+      "display": "一筹莫展",
+      "target": "yichoumozhan"
+    },
+    {
+      "display": "一帆风顺",
+      "target": "yifanfengshun"
+    },
+    {
+      "display": "一鼓作气",
+      "target": "yiguzuoqi"
+    },
+    {
+      "display": "一举两得",
+      "target": "yijuliangde"
+    },
+    {
+      "display": "一见钟情",
+      "target": "yijianzhongqing"
+    },
+    {
+      "display": "一视同仁",
+      "target": "yishitongren"
+    },
+    {
+      "display": "一针见血",
+      "target": "yizhenjianxie"
+    },
+    {
+      "display": "衣冠楚楚",
+      "target": "yiguanchuchu"
+    },
+    {
+      "display": "怡然自得",
+      "target": "yiranzide"
+    },
+    {
+      "display": "贻误",
+      "target": "yiwu"
+    },
+    {
+      "display": "贻笑大方",
+      "target": "yixiaodafang"
+    },
+    {
+      "display": "移花接木",
+      "target": "yihuajiemu"
+    },
+    {
+      "display": "移植",
+      "target": "yizhi"
+    },
+    {
+      "display": "遗憾",
+      "target": "yihan"
+    },
+    {
+      "display": "遗迹",
+      "target": "yiji"
+    },
+    {
+      "display": "遗留",
+      "target": "yiliu"
+    },
+    {
+      "display": "遗弃",
+      "target": "yiqi"
+    },
+    {
+      "display": "遗失",
+      "target": "yishi"
+    },
+    {
+      "display": "遗忘",
+      "target": "yiwang"
+    },
+    {
+      "display": "疑惑",
+      "target": "yihuo"
+    },
+    {
+      "display": "疑虑",
+      "target": "yilv"
+    },
+    {
+      "display": "以德报怨",
+      "target": "yidebaoyuan"
+    },
+    {
+      "display": "以身作则",
+      "target": "yishenzuoze"
+    },
+    {
+      "display": "以卵击石",
+      "target": "yiluanjishi"
+    },
+    {
+      "display": "倚仗",
+      "target": "yizhang"
+    },
+    {
+      "display": "义愤填膺",
+      "target": "yifentianying"
+    },
+    {
+      "display": "义不容辞",
+      "target": "yiburongci"
+    },
+    {
+      "display": "屹立",
+      "target": "yili"
+    },
+    {
+      "display": "亦步亦趋",
+      "target": "yibuyiqu"
+    },
+    {
+      "display": "异端",
+      "target": "yiduan"
+    },
+    {
+      "display": "异乎寻常",
+      "target": "yihuxunchang"
+    },
+    {
+      "display": "异曲同工",
+      "target": "yiqutonggong"
+    },
+    {
+      "display": "异想天开",
+      "target": "yixiangtiankai"
+    },
+    {
+      "display": "抑郁",
+      "target": "yiyu"
+    },
+    {
+      "display": "抑制",
+      "target": "yizhi"
+    },
+    {
+      "display": "毅力",
+      "target": "yili"
+    },
+    {
+      "display": "毅然",
+      "target": "yiran"
+    },
+    {
+      "display": "因材施教",
+      "target": "yincaishijiao"
+    },
+    {
+      "display": "因地制宜",
+      "target": "yindizhiyi"
+    },
+    {
+      "display": "因势利导",
+      "target": "yinshilidao"
+    },
+    {
+      "display": "阴暗",
+      "target": "yinan"
+    },
+    {
+      "display": "阴谋",
+      "target": "yinmou"
+    },
+    {
+      "display": "阴险",
+      "target": "yinxian"
+    },
+    {
+      "display": "殷切",
+      "target": "yinqie"
+    },
+    {
+      "display": "殷勤",
+      "target": "yinqin"
+    },
+    {
+      "display": "引导",
+      "target": "yindao"
+    },
+    {
+      "display": "引发",
+      "target": "yinfa"
+    },
+    {
+      "display": "引擎",
+      "target": "yinqing"
+    },
+    {
+      "display": "引诱",
+      "target": "yinyou"
+    },
+    {
+      "display": "饮鸩止渴",
+      "target": "yinzhenzhike"
+    },
+    {
+      "display": "隐蔽",
+      "target": "yinbi"
+    },
+    {
+      "display": "隐藏",
+      "target": "yincang"
+    },
+    {
+      "display": "隐患",
+      "target": "yinhuan"
+    },
+    {
+      "display": "隐晦",
+      "target": "yinhui"
+    },
+    {
+      "display": "隐瞒",
+      "target": "yinman"
+    },
+    {
+      "display": "隐秘",
+      "target": "yinmi"
+    },
+    {
+      "display": "隐约",
+      "target": "yinyue"
+    },
+    {
+      "display": "印证",
+      "target": "yinzheng"
+    },
+    {
+      "display": "应酬",
+      "target": "yingchou"
+    },
+    {
+      "display": "应付",
+      "target": "yingfu"
+    },
+    {
+      "display": "应接不暇",
+      "target": "yingjiebuxia"
+    },
+    {
+      "display": "应验",
+      "target": "yingyan"
+    },
+    {
+      "display": "英明",
+      "target": "yingming"
+    },
+    {
+      "display": "英勇",
+      "target": "yingyong"
+    },
+    {
+      "display": "鹦鹉学舌",
+      "target": "yingwuxueshe"
+    },
+    {
+      "display": "迎合",
+      "target": "yinghe"
+    },
+    {
+      "display": "盈利",
+      "target": "yingli"
+    },
+    {
+      "display": "盈余",
+      "target": "yingyu"
+    },
+    {
+      "display": "营救",
+      "target": "yingjiu"
+    },
+    {
+      "display": "营造",
+      "target": "yingzao"
+    },
+    {
+      "display": "萦绕",
+      "target": "yingrao"
+    },
+    {
+      "display": "赢得",
+      "target": "yingde"
+    },
+    {
+      "display": "影射",
+      "target": "yingshe"
+    },
+    {
+      "display": "硬朗",
+      "target": "yinglang"
+    },
+    {
+      "display": "庸俗",
+      "target": "yongsu"
+    },
+    {
+      "display": "慵懒",
+      "target": "yonglan"
+    },
+    {
+      "display": "踊跃",
+      "target": "yongyue"
+    },
+    {
+      "display": "用武之地",
+      "target": "yongwuzhidi"
+    },
+    {
+      "display": "优柔寡断",
+      "target": "yourouguaduan"
+    },
+    {
+      "display": "优胜劣汰",
+      "target": "youshenglietai"
+    },
+    {
+      "display": "优势",
+      "target": "youshi"
+    },
+    {
+      "display": "优异",
+      "target": "youyi"
+    },
+    {
+      "display": "忧虑",
+      "target": "youlv"
+    },
+    {
+      "display": "忧郁",
+      "target": "youyu"
+    },
+    {
+      "display": "幽静",
+      "target": "youjing"
+    },
+    {
+      "display": "幽默",
+      "target": "youmo"
+    },
+    {
+      "display": "悠闲",
+      "target": "youxian"
+    },
+    {
+      "display": "悠扬",
+      "target": "youyang"
+    },
+    {
+      "display": "由衷",
+      "target": "youzhong"
+    },
+    {
+      "display": "犹如",
+      "target": "youru"
+    },
+    {
+      "display": "油然而生",
+      "target": "youranersheng"
+    },
+    {
+      "display": "游荡",
+      "target": "youdang"
+    },
+    {
+      "display": "游刃有余",
+      "target": "yourenyouyu"
+    },
+    {
+      "display": "游说",
+      "target": "youshui"
+    },
+    {
+      "display": "有备无患",
+      "target": "youbeiwuhuan"
+    },
+    {
+      "display": "有的放矢",
+      "target": "youdifangshi"
+    },
+    {
+      "display": "有目共睹",
+      "target": "youmugongdu"
+    },
+    {
+      "display": "有条不紊",
+      "target": "youtiaobuwen"
+    },
+    {
+      "display": "有朝一日",
+      "target": "youzhaoyiri"
+    },
+    {
+      "display": "诱导",
+      "target": "youdao"
+    },
+    {
+      "display": "诱饵",
+      "target": "youer"
+    },
+    {
+      "display": "幼稚",
+      "target": "youzhi"
+    },
+    {
+      "display": "迂回",
+      "target": "yuhui"
+    },
+    {
+      "display": "余地",
+      "target": "yudi"
+    },
+    {
+      "display": "鱼贯而入",
+      "target": "yuguanerru"
+    },
+    {
+      "display": "舆论",
+      "target": "yulun"
+    },
+    {
+      "display": "与日俱增",
+      "target": "yurijuzeng"
+    },
+    {
+      "display": "与世隔绝",
+      "target": "yushigejue"
+    },
+    {
+      "display": "与众不同",
+      "target": "yuzhongbutong"
+    },
+    {
+      "display": "予以",
+      "target": "yuyi"
+    },
+    {
+      "display": "雨后春笋",
+      "target": "yuhouchunsun"
+    },
+    {
+      "display": "语重心长",
+      "target": "yuzhongxinchang"
+    },
+    {
+      "display": "玉石俱焚",
+      "target": "yushijufen"
+    },
+    {
+      "display": "预言",
+      "target": "yuyan"
+    },
+    {
+      "display": "预兆",
+      "target": "yuzhao"
+    },
+    {
+      "display": "欲罢不能",
+      "target": "yubabuneng"
+    },
+    {
+      "display": "欲盖弥彰",
+      "target": "yugaimizhang"
+    },
+    {
+      "display": "欲擒故纵",
+      "target": "yuqinguzong"
+    },
+    {
+      "display": "欲望",
+      "target": "yuwang"
+    },
+    {
+      "display": "寓言",
+      "target": "yuyan"
+    },
+    {
+      "display": "寓意",
+      "target": "yuyi"
+    },
+    {
+      "display": "冤枉",
+      "target": "yuanwang"
+    },
+    {
+      "display": "渊博",
+      "target": "yuanbo"
+    },
+    {
+      "display": "渊源",
+      "target": "yuanyuan"
+    },
+    {
+      "display": "原形毕露",
+      "target": "yuanxingbilu"
+    },
+    {
+      "display": "原则",
+      "target": "yuanze"
+    },
+    {
+      "display": "缘分",
+      "target": "yuanfen"
+    },
+    {
+      "display": "缘故",
+      "target": "yuangu"
+    },
+    {
+      "display": "远见卓识",
+      "target": "yuanjianzhuoshi"
+    },
+    {
+      "display": "怨恨",
+      "target": "yuanhen"
+    },
+    {
+      "display": "怨天尤人",
+      "target": "yuantianyouren"
+    },
+    {
+      "display": "约定",
+      "target": "yueding"
+    },
+    {
+      "display": "约束",
+      "target": "yueshu"
+    },
+    {
+      "display": "悦耳",
+      "target": "yueer"
+    },
+    {
+      "display": "跃跃欲试",
+      "target": "yueyueyushi"
+    },
+    {
+      "display": "晕头转向",
+      "target": "yuntouzhuanxiang"
+    },
+    {
+      "display": "酝酿",
+      "target": "yunniang"
+    },
+    {
+      "display": "蕴藏",
+      "target": "yuncang"
+    },
+    {
+      "display": "蕴含",
+      "target": "yunhan"
+    },
+    {
+      "display": "杂乱无章",
+      "target": "zaluanwuzhang"
+    },
+    {
+      "display": "灾难",
+      "target": "zainan"
+    },
+    {
+      "display": "栽培",
+      "target": "zaipei"
+    },
+    {
+      "display": "宰割",
+      "target": "zaige"
+    },
+    {
+      "display": "再接再厉",
+      "target": "zaijiezaili"
+    },
+    {
+      "display": "在所难免",
+      "target": "zaisuonanmian"
+    },
+    {
+      "display": "赞不绝口",
+      "target": "zanbujuekou"
+    },
+    {
+      "display": "赞赏",
+      "target": "zanshang"
+    },
+    {
+      "display": "赞许",
+      "target": "zanxu"
+    },
+    {
+      "display": "赞扬",
+      "target": "zanyang"
+    },
+    {
+      "display": "遭受",
+      "target": "zaoshou"
+    },
+    {
+      "display": "糟蹋",
+      "target": "zaota"
+    },
+    {
+      "display": "造诣",
+      "target": "zaoyi"
+    },
+    {
+      "display": "噪音",
+      "target": "zaoyin"
+    },
+    {
+      "display": "责备",
+      "target": "zebei"
+    },
+    {
+      "display": "责无旁贷",
+      "target": "zewupangdai"
+    },
+    {
+      "display": "增添",
+      "target": "zengtian"
+    },
+    {
+      "display": "增进",
+      "target": "zengjin"
+    },
+    {
+      "display": "扎实",
+      "target": "zhashi"
+    },
+    {
+      "display": "诈骗",
+      "target": "zhapian"
+    },
+    {
+      "display": "摘要",
+      "target": "zhaiyao"
+    },
+    {
+      "display": "债券",
+      "target": "zhaiquan"
+    },
+    {
+      "display": "债务",
+      "target": "zhaiwu"
+    },
+    {
+      "display": "沾沾自喜",
+      "target": "zhanzhanzixi"
+    },
+    {
+      "display": "瞻前顾后",
+      "target": "zhanqianguhou"
+    },
+    {
+      "display": "斩钉截铁",
+      "target": "zhandingjietie"
+    },
+    {
+      "display": "展现",
+      "target": "zhanxian"
+    },
+    {
+      "display": "崭新",
+      "target": "zhanxin"
+    },
+    {
+      "display": "占据",
+      "target": "zhanju"
+    },
+    {
+      "display": "占领",
+      "target": "zhanling"
+    },
+    {
+      "display": "张冠李戴",
+      "target": "zhangguanlidai"
+    },
+    {
+      "display": "张扬",
+      "target": "zhangyang"
+    },
+    {
+      "display": "掌控",
+      "target": "zhangkong"
+    },
+    {
+      "display": "障碍",
+      "target": "zhangai"
+    },
+    {
+      "display": "招标",
+      "target": "zhaobiao"
+    },
+    {
+      "display": "招架",
+      "target": "zhaojia"
+    },
+    {
+      "display": "招揽",
+      "target": "zhaolan"
+    },
+    {
+      "display": "招聘",
+      "target": "zhaopin"
+    },
+    {
+      "display": "招摇撞骗",
+      "target": "zhaoyaozhuangpian"
+    },
+    {
+      "display": "照本宣科",
+      "target": "zhaobenxuanke"
+    },
+    {
+      "display": "照耀",
+      "target": "zhaoyao"
+    },
+    {
+      "display": "折腾",
+      "target": "zheteng"
+    },
+    {
+      "display": "折扣",
+      "target": "zhekou"
+    },
+    {
+      "display": "折磨",
+      "target": "zhemo"
+    },
+    {
+      "display": "侦探",
+      "target": "zhentan"
+    },
+    {
+      "display": "斟酌",
+      "target": "zhenzhuo"
+    },
+    {
+      "display": "针锋相对",
+      "target": "zhenfengxiangdui"
+    },
+    {
+      "display": "珍爱",
+      "target": "zhenai"
+    },
+    {
+      "display": "珍藏",
+      "target": "zhencang"
+    },
+    {
+      "display": "珍贵",
+      "target": "zhengui"
+    },
+    {
+      "display": "珍惜",
+      "target": "zhenxi"
+    },
+    {
+      "display": "真谛",
+      "target": "zhendi"
+    },
+    {
+      "display": "真相",
+      "target": "zhenxiang"
+    },
+    {
+      "display": "真挚",
+      "target": "zhenzhi"
+    },
+    {
+      "display": "震撼",
+      "target": "zhenhan"
+    },
+    {
+      "display": "震惊",
+      "target": "zhenjing"
+    },
+    {
+      "display": "镇定",
+      "target": "zhending"
+    },
+    {
+      "display": "镇压",
+      "target": "zhenya"
+    },
+    {
+      "display": "争端",
+      "target": "zhengduan"
+    },
+    {
+      "display": "争夺",
+      "target": "zhengduo"
+    },
+    {
+      "display": "争议",
+      "target": "zhengyi"
+    },
+    {
+      "display": "挣扎",
+      "target": "zhengzha"
+    },
+    {
+      "display": "征兆",
+      "target": "zhengzhao"
+    },
+    {
+      "display": "蒸发",
+      "target": "zhengfa"
+    },
+    {
+      "display": "蒸蒸日上",
+      "target": "zhengzhengrishang"
+    },
+    {
+      "display": "整顿",
+      "target": "zhengdun"
+    },
+    {
+      "display": "整改",
+      "target": "zhenggai"
+    },
+    {
+      "display": "整合",
+      "target": "zhenghe"
+    },
+    {
+      "display": "正规",
+      "target": "zhenggui"
+    },
+    {
+      "display": "正经",
+      "target": "zhengjing"
+    },
+    {
+      "display": "正气",
+      "target": "zhengqi"
+    },
+    {
+      "display": "正视",
+      "target": "zhengshi"
+    },
+    {
+      "display": "正义",
+      "target": "zhengyi"
+    },
+    {
+      "display": "正直",
+      "target": "zhengzhi"
+    },
+    {
+      "display": "郑重",
+      "target": "zhengzhong"
+    },
+    {
+      "display": "症状",
+      "target": "zhengzhuang"
+    },
+    {
+      "display": "支撑",
+      "target": "zhicheng"
+    },
+    {
+      "display": "支出",
+      "target": "zhichu"
+    },
+    {
+      "display": "支付",
+      "target": "zhifu"
+    },
+    {
+      "display": "支配",
+      "target": "zhipei"
+    },
+    {
+      "display": "支柱",
+      "target": "zhizhu"
+    },
+    {
+      "display": "知晓",
+      "target": "zhixiao"
+    },
+    {
+      "display": "知足常乐",
+      "target": "zhizuchangle"
+    },
+    {
+      "display": "执着",
+      "target": "zhizhuo"
+    },
+    {
+      "display": "执迷不悟",
+      "target": "zhimibuwu"
+    },
+    {
+      "display": "直截了当",
+      "target": "zhijieliaodang"
+    },
+    {
+      "display": "直言不讳",
+      "target": "zhiyanbuhui"
+    },
+    {
+      "display": "职能",
+      "target": "zhineng"
+    },
+    {
+      "display": "职责",
+      "target": "zhize"
+    },
+    {
+      "display": "止境",
+      "target": "zhijing"
+    },
+    {
+      "display": "纸上谈兵",
+      "target": "zhishangtanbing"
+    },
+    {
+      "display": "指引",
+      "target": "zhiyin"
+    },
+    {
+      "display": "指责",
+      "target": "zhize"
+    },
+    {
+      "display": "至高无上",
+      "target": "zhigaowushang"
+    },
+    {
+      "display": "至理名言",
+      "target": "zhilimingyan"
+    },
+    {
+      "display": "志同道合",
+      "target": "zhitongdaohe"
+    },
+    {
+      "display": "制服",
+      "target": "zhifu"
+    },
+    {
+      "display": "制约",
+      "target": "zhiyue"
+    },
+    {
+      "display": "制止",
+      "target": "zhizhi"
+    },
+    {
+      "display": "秩序",
+      "target": "zhixu"
+    },
+    {
+      "display": "质变",
+      "target": "zhibian"
+    },
+    {
+      "display": "质朴",
+      "target": "zhipiao"
+    },
+    {
+      "display": "质疑",
+      "target": "zhiyi"
+    },
+    {
+      "display": "滞后",
+      "target": "zhihou"
+    },
+    {
+      "display": "滞留",
+      "target": "zhiliu"
+    },
+    {
+      "display": "致力",
+      "target": "zhili"
+    },
+    {
+      "display": "致敬",
+      "target": "zhijing"
+    },
+    {
+      "display": "致使",
+      "target": "zhishi"
+    },
+    {
+      "display": "智慧",
+      "target": "zhihui"
+    },
+    {
+      "display": "智商",
+      "target": "zhishang"
+    },
+    {
+      "display": "窒息",
+      "target": "zhixi"
+    },
+    {
+      "display": "置之不理",
+      "target": "zhizhibuli"
+    },
+    {
+      "display": "置之度外",
+      "target": "zhizhiduwai"
+    },
+    {
+      "display": "中肯",
+      "target": "zhongken"
+    },
+    {
+      "display": "中流砥柱",
+      "target": "zhongliudizhu"
+    },
+    {
+      "display": "忠心耿耿",
+      "target": "zhongxingenggeng"
+    },
+    {
+      "display": "终结",
+      "target": "zhongjie"
+    },
+    {
+      "display": "终身",
+      "target": "zhongshen"
+    },
+    {
+      "display": "衷心",
+      "target": "zhongxin"
+    },
+    {
+      "display": "众口难调",
+      "target": "zhongkounantiao"
+    },
+    {
+      "display": "众望所归",
+      "target": "zhongwangsuogui"
+    },
+    {
+      "display": "众志成城",
+      "target": "zhongzhichengcheng"
+    },
+    {
+      "display": "周到",
+      "target": "zhoudao"
+    },
+    {
+      "display": "周密",
+      "target": "zhoumi"
+    },
+    {
+      "display": "周折",
+      "target": "zhouzhe"
+    },
+    {
+      "display": "周转",
+      "target": "zhouzhuan"
+    },
+    {
+      "display": "骤然",
+      "target": "zhouran"
+    },
+    {
+      "display": "逐步",
+      "target": "zhubu"
+    },
+    {
+      "display": "逐个",
+      "target": "zhuge"
+    },
+    {
+      "display": "逐年",
+      "target": "zhunian"
+    },
+    {
+      "display": "主办",
+      "target": "zhuban"
+    },
+    {
+      "display": "主导",
+      "target": "zhudao"
+    },
+    {
+      "display": "主动",
+      "target": "zhudong"
+    },
+    {
+      "display": "主观",
+      "target": "zhuguan"
+    },
+    {
+      "display": "主力",
+      "target": "zhuli"
+    },
+    {
+      "display": "主题",
+      "target": "zhuti"
+    },
+    {
+      "display": "主体",
+      "target": "zhuti"
+    },
+    {
+      "display": "主旨",
+      "target": "zhuzhi"
+    },
+    {
+      "display": "嘱咐",
+      "target": "zhufu"
+    },
+    {
+      "display": "瞩目",
+      "target": "zhumu"
+    },
+    {
+      "display": "助人为乐",
+      "target": "zhurenweile"
+    },
+    {
+      "display": "注目",
+      "target": "zhumu"
+    },
+    {
+      "display": "注册",
+      "target": "zhuce"
+    },
+    {
+      "display": "注入",
+      "target": "zhuru"
+    },
+    {
+      "display": "注销",
+      "target": "zhuxiao"
+    },
+    {
+      "display": "注视",
+      "target": "zhushi"
+    },
+    {
+      "display": "注重",
+      "target": "zhuzhong"
+    },
+    {
+      "display": "祝贺",
+      "target": "zhuhe"
+    },
+    {
+      "display": "祝福",
+      "target": "zhufu"
+    },
+    {
+      "display": "抓耳挠腮",
+      "target": "zhuaernaosai"
+    },
+    {
+      "display": "专长",
+      "target": "zhuanchang"
+    },
+    {
+      "display": "专横",
+      "target": "zhuanheng"
+    },
+    {
+      "display": "专利",
+      "target": "zhuanli"
+    },
+    {
+      "display": "专职",
+      "target": "zhuanzhi"
+    },
+    {
+      "display": "转达",
+      "target": "zhuanda"
+    },
+    {
+      "display": "转换",
+      "target": "zhuanhuan"
+    },
+    {
+      "display": "转让",
+      "target": "zhuanrang"
+    },
+    {
+      "display": "转瞬即逝",
+      "target": "zhuanshunjishi"
+    },
+    {
+      "display": "转弯抹角",
+      "target": "zhuanwanmojiao"
+    },
+    {
+      "display": "撰写",
+      "target": "zhuanxie"
+    },
+    {
+      "display": "庄严",
+      "target": "zhuangyan"
+    },
+    {
+      "display": "庄重",
+      "target": "zhuangzhong"
+    },
+    {
+      "display": "装备",
+      "target": "zhuangbei"
+    },
+    {
+      "display": "壮丽",
+      "target": "zhuangli"
+    },
+    {
+      "display": "壮烈",
+      "target": "zhuanglie"
+    },
+    {
+      "display": "追溯",
+      "target": "zhuisu"
+    },
+    {
+      "display": "追悼",
+      "target": "zhuidao"
+    },
+    {
+      "display": "坠落",
+      "target": "zhuiluo"
+    },
+    {
+      "display": "准绳",
+      "target": "zhunsheng"
+    },
+    {
+      "display": "拙劣",
+      "target": "zhuolie"
+    },
+    {
+      "display": "捉襟见肘",
+      "target": "zhuojinjianzhou"
+    },
+    {
+      "display": "灼热",
+      "target": "zhuore"
+    },
+    {
+      "display": "茁壮",
+      "target": "zhuozhuang"
+    },
+    {
+      "display": "卓越",
+      "target": "zhuoyue"
+    },
+    {
+      "display": "酌情",
+      "target": "zhuoqing"
+    },
+    {
+      "display": "着手",
+      "target": "zhuoshou"
+    },
+    {
+      "display": "着想",
+      "target": "zhuoxiang"
+    },
+    {
+      "display": "着眼",
+      "target": "zhuoyan"
+    },
+    {
+      "display": "着重",
+      "target": "zhuozhong"
+    },
+    {
+      "display": "咨询",
+      "target": "zixun"
+    },
+    {
+      "display": "资本",
+      "target": "ziben"
+    },
+    {
+      "display": "资格",
+      "target": "zige"
+    },
+    {
+      "display": "资金",
+      "target": "zijin"
+    },
+    {
+      "display": "资源",
+      "target": "ziyuan"
+    },
+    {
+      "display": "滋润",
+      "target": "zirun"
+    },
+    {
+      "display": "滋味",
+      "target": "ziwei"
+    },
+    {
+      "display": "仔细",
+      "target": "zixi"
+    },
+    {
+      "display": "自卑",
+      "target": "zibei"
+    },
+    {
+      "display": "自暴自弃",
+      "target": "zibaoziqi"
+    },
+    {
+      "display": "自吹自擂",
+      "target": "zichuizilei"
+    },
+    {
+      "display": "自发",
+      "target": "zifa"
+    },
+    {
+      "display": "自负",
+      "target": "zifu"
+    },
+    {
+      "display": "自给自足",
+      "target": "zijizizu"
+    },
+    {
+      "display": "自觉",
+      "target": "zijue"
+    },
+    {
+      "display": "自满",
+      "target": "ziman"
+    },
+    {
+      "display": "自命不凡",
+      "target": "zimingbufan"
+    },
+    {
+      "display": "自欺欺人",
+      "target": "ziqiqiren"
+    },
+    {
+      "display": "自然而然",
+      "target": "ziranerran"
+    },
+    {
+      "display": "自食其果",
+      "target": "zishiqiguo"
+    },
+    {
+      "display": "自相矛盾",
+      "target": "zixiangmaodun"
+    },
+    {
+      "display": "自信",
+      "target": "zixin"
+    },
+    {
+      "display": "自愿",
+      "target": "ziyuan"
+    },
+    {
+      "display": "自圆其说",
+      "target": "ziyuanqishuo"
+    },
+    {
+      "display": "自知之明",
+      "target": "zizhizhiming"
+    },
+    {
+      "display": "自主",
+      "target": "zizhu"
+    },
+    {
+      "display": "自尊心",
+      "target": "zizunxin"
+    },
+    {
+      "display": "总而言之",
+      "target": "zongeryanzhi"
+    },
+    {
+      "display": "纵横",
+      "target": "zongheng"
+    },
+    {
+      "display": "纵容",
+      "target": "zongrong"
+    },
+    {
+      "display": "走投无路",
+      "target": "zoutouwulu"
+    },
+    {
+      "display": "阻挡",
+      "target": "zudang"
+    },
+    {
+      "display": "阻挠",
+      "target": "zunao"
+    },
+    {
+      "display": "组装",
+      "target": "zuzhuang"
+    },
+    {
+      "display": "钻研",
+      "target": "zuanyan"
+    },
+    {
+      "display": "醉生梦死",
+      "target": "zuishengmengsi"
+    },
+    {
+      "display": "尊贵",
+      "target": "zungui"
+    },
+    {
+      "display": "尊敬",
+      "target": "zunjing"
+    },
+    {
+      "display": "尊严",
+      "target": "zunyan"
+    },
+    {
+      "display": "遵循",
+      "target": "zunxun"
+    },
+    {
+      "display": "遵照",
+      "target": "zunzhao"
+    },
+    {
+      "display": "左顾右盼",
+      "target": "zuoguyoupan"
+    },
+    {
+      "display": "左右逢源",
+      "target": "zuoyoufengyuan"
+    },
+    {
+      "display": "作弊",
+      "target": "zuobi"
+    },
+    {
+      "display": "作茧自缚",
+      "target": "zuojianzifu"
+    },
+    {
+      "display": "作威作福",
+      "target": "zuoweizuofu"
+    },
+    {
+      "display": "坐井观天",
+      "target": "zuojingguantian"
+    },
+    {
+      "display": "坐立不安",
+      "target": "zuolibuan"
+    },
+    {
+      "display": "坐享其成",
+      "target": "zuoxiangqicheng"
+    },
+    {
+      "display": "座右铭",
+      "target": "zuoyouming"
+    },
+    {
+      "display": "洞察力",
+      "target": "dongchali"
+    },
+    {
+      "display": "批判性",
+      "target": "pipanxing"
+    },
+    {
+      "display": "系统性",
+      "target": "xitongxing"
+    },
+    {
+      "display": "结构性",
+      "target": "jiegouxing"
+    },
+    {
+      "display": "操作性",
+      "target": "caozuoxing"
+    },
+    {
+      "display": "可行性",
+      "target": "kexingxing"
+    },
+    {
+      "display": "必然性",
+      "target": "biranxing"
+    },
+    {
+      "display": "偶然性",
+      "target": "ouranxing"
+    },
+    {
+      "display": "相对性",
+      "target": "xiangduixing"
+    },
+    {
+      "display": "绝对性",
+      "target": "jueduixing"
+    },
+    {
+      "display": "主观性",
+      "target": "zhuguanxing"
+    },
+    {
+      "display": "客观性",
+      "target": "keguanxing"
+    },
+    {
+      "display": "抽象化",
+      "target": "chouxianghua"
+    },
+    {
+      "display": "具体化",
+      "target": "jutihua"
+    },
+    {
+      "display": "数字化",
+      "target": "shuzihua"
+    },
+    {
+      "display": "信息化",
+      "target": "xinxihua"
+    },
+    {
+      "display": "全球化",
+      "target": "quanqiuhua"
+    },
+    {
+      "display": "本土化",
+      "target": "bentuhua"
+    },
+    {
+      "display": "可持续",
+      "target": "kechixu"
+    },
+    {
+      "display": "不可逆",
+      "target": "bukeni"
+    },
+    {
+      "display": "边际效应",
+      "target": "bianjixiaoying"
+    },
+    {
+      "display": "机会成本",
+      "target": "jihuichengben"
+    },
+    {
+      "display": "比较优势",
+      "target": "bijiaoyoushi"
+    },
+    {
+      "display": "沉没成本",
+      "target": "chenmochengben"
+    },
+    {
+      "display": "信息不对称",
+      "target": "xinxibuduicheng"
+    },
+    {
+      "display": "供需平衡",
+      "target": "gongxupingheng"
+    },
+    {
+      "display": "规模经济",
+      "target": "guimojingji"
+    },
+    {
+      "display": "外部性",
+      "target": "waibuxing"
+    },
+    {
+      "display": "公共物品",
+      "target": "gonggongwupin"
+    },
+    {
+      "display": "囚徒困境",
+      "target": "qiutukunjing"
+    },
+    {
+      "display": "道德风险",
+      "target": "daodefengxian"
+    },
+    {
+      "display": "逆向选择",
+      "target": "nixiangxuanze"
+    },
+    {
+      "display": "交易成本",
+      "target": "jiaoyichengben"
+    }
   ]
 }
