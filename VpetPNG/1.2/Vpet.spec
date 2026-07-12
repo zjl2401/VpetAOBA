@@ -5,7 +5,7 @@ a = Analysis(
     ['C:\\Users\\36255\\Desktop\\VpetAOBA\\VpetPNG\\1.2\\vpet_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('C:\\Users\\36255\\Desktop\\VpetAOBA\\VpetPNG\\1.2\\assets', 'assets'), ('C:\\Users\\36255\\Desktop\\VpetAOBA\\VpetPNG\\1.2\\gallery', 'gallery'), ('C:\\Users\\36255\\Desktop\\VpetAOBA\\VpetPNG\\1.2\\word_banks', 'word_banks')],
+    datas=[('C:\\Users\\36255\\Desktop\\VpetAOBA\\VpetPNG\\1.2\\assets', 'assets'), ('C:\\Users\\36255\\Desktop\\VpetAOBA\\VpetPNG\\1.2\\gallery', 'gallery'), ('C:\\Users\\36255\\Desktop\\VpetAOBA\\VpetPNG\\1.2\\word_banks', 'word_banks'), ('C:\\Users\\36255\\Desktop\\VpetAOBA\\VpetPNG\\1.2\\app_icon.png', '.'), ('C:\\Users\\36255\\Desktop\\VpetAOBA\\VpetPNG\\1.2\\app_icon1.jpg', '.')],
     hiddenimports=['pystray', 'PIL.ImageTk', 'pygame', 'imageio_ffmpeg'],
     hookspath=[],
     hooksconfig={},

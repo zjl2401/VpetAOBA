@@ -114,6 +114,7 @@ MUSIC_TRACK_ID_MAP: dict[str, str] = {
     "Soul Grace": "soul_grace",
     "天使達": "tenshitachi",
     "クラゲの歌 -extend electro-": "kurage_extend",
+    "クラゲの歌 -extend strings-": "kurage_extend_strings",
     "クラゲの歌‘": "kurage",
     "Tears": "tears",
     "feel your noise": "feel_your_noise",
@@ -134,6 +135,7 @@ MUSIC_TRACK_TITLE_MAP: dict[str, str] = {
     "your_reply": "your reply",
     "kurage": "クラゲの歌",
     "kurage_extend": "クラゲの歌 -extend electro-",
+    "kurage_extend_strings": "クラゲの歌 -extend strings-",
     "tenshitachi": "天使達",
 }
 MUSIC_TRACK_PREFERRED_ORDER: tuple[str, ...] = (
@@ -149,10 +151,12 @@ MUSIC_TRACK_PREFERRED_ORDER: tuple[str, ...] = (
     "tenshitachi",
     "kurage",
     "kurage_extend",
+    "kurage_extend_strings",
 )
 # 旧配置 id 迁移
 MUSIC_TRACK_LEGACY_IDS: dict[str, str] = {
     "aicatch": "radical_mat",
+    "extend_strings": "kurage_extend_strings",
 }
 
 
@@ -922,7 +926,7 @@ GUIDE_TOPICS: dict[str, dict] = {
             "    - 开始工作：持续运送，终点旗可拖，点「结束」停止\n"
             "    - 显示目的地 / 显示运送货物：开关旗子与箱子显示\n"
             "· 游戏 ▶：采集、打字、背单词、音乐、持有者排名\n"
-            "· 音乐（模式菜单）：音乐漫步＝边走边听默认曲（可在声音设置切换），不触发动作\n"
+            "· 音乐（模式菜单）：音乐漫步＝边走边听（声音设置可选列表循环/随机），不触发动作\n"
             "  （与「游戏→音乐」节奏玩法不同）\n\n"
             "【工作运送细节】\n"
             "· 互动→自由运送：箱数/起点/终点随机，终点不可拖\n"
@@ -2416,16 +2420,40 @@ def _schedule_matches_today(item: dict, weekday: int) -> bool:
     return weekday in days
 
 
+def _normalize_music_playlist(raw, *, fallback: str | None = None) -> list[str]:
+    """校验播放列表，至少保留一首有效曲。"""
+    out: list[str] = []
+    if isinstance(raw, list):
+        for tid in raw:
+            tid = MUSIC_TRACK_LEGACY_IDS.get(str(tid), str(tid))
+            if tid in MUSIC_TRACKS and tid not in out:
+                out.append(tid)
+    if not out:
+        fb = MUSIC_TRACK_LEGACY_IDS.get(str(fallback or ""), str(fallback or DEFAULT_MUSIC_TRACK))
+        if fb not in MUSIC_TRACKS:
+            fb = DEFAULT_MUSIC_TRACK
+        if fb in MUSIC_TRACKS:
+            out = [fb]
+    return out
+
+
+def _music_playlist_from_config(config: dict) -> list[str]:
+    raw = config.get("playlist")
+    if isinstance(raw, list) and raw:
+        return _normalize_music_playlist(raw, fallback=DEFAULT_MUSIC_TRACK)
+    tid = str(config.get("normal_track", DEFAULT_MUSIC_TRACK))
+    return _normalize_music_playlist([tid], fallback=DEFAULT_MUSIC_TRACK)
+
+
 def _load_music_config() -> dict:
     default = {
-        "mode": "normal",
-        "normal_track": DEFAULT_MUSIC_TRACK,
+        "play_mode": "list",
+        "playlist": [DEFAULT_MUSIC_TRACK],
         "music_volume": 70,
         "volume": 70,
         "sfx_volume": 80,
         "voice_volume": 80,
         "muted": False,
-        "custom_path": "",
     }
     if not MUSIC_CONFIG_FILE.exists():
         return default
@@ -2437,11 +2465,15 @@ def _load_music_config() -> dict:
         if "music_volume" not in data and "volume" in data:
             merged["music_volume"] = int(data["volume"])
         merged["volume"] = merged["music_volume"]
-        track = str(merged.get("normal_track", DEFAULT_MUSIC_TRACK))
-        track = MUSIC_TRACK_LEGACY_IDS.get(track, track)
-        if track not in MUSIC_TRACKS:
-            track = DEFAULT_MUSIC_TRACK
-        merged["normal_track"] = track
+        playlist = _normalize_music_playlist(
+            data.get("playlist"),
+            fallback=str(data.get("normal_track", DEFAULT_MUSIC_TRACK)),
+        )
+        merged["playlist"] = playlist
+        play_mode = str(merged.get("play_mode", "list"))
+        if play_mode not in ("list", "random"):
+            play_mode = "list"
+        merged["play_mode"] = play_mode
         return merged
     except Exception:
         return default
@@ -2608,18 +2640,8 @@ def _ensure_all_music_track_wavs() -> None:
             pass
 
 
-def _resolve_music_wav(config: dict) -> Path | None:
-    mode = config.get("mode", "normal")
-    if mode == "custom":
-        custom = config.get("custom_path", "")
-        if not custom:
-            return None
-        src = Path(custom)
-        if not src.exists():
-            return None
-        cache = DATA_AUDIO_DIR / f"music_custom_{abs(hash(str(src.resolve()))) % 100000}.wav"
-        return _ensure_audio_wav(src, cache)
-    return _ensure_music_track_wav(str(config.get("normal_track", DEFAULT_MUSIC_TRACK)))
+def _resolve_music_wav(track_id: str | None) -> Path | None:
+    return _ensure_music_track_wav(track_id)
 
 
 def _load_ai_config() -> dict:
@@ -4624,6 +4646,8 @@ class DesktopPet:
         self.music_wave_phase = 0
         self.bg_music_playing = False
         self.bg_music_paused_for_call = False
+        self.bg_music_play_index = 0
+        self.bg_music_watch_job: str | None = None
         self.music_config = _load_music_config()
         self.root.after(200, lambda: threading.Thread(target=_ensure_all_music_track_wavs, daemon=True).start())
         self.music_settings_win: tk.Toplevel | None = None
@@ -5239,29 +5263,104 @@ class DesktopPet:
         except Exception:
             pass
 
+    def _music_playlist(self) -> list[str]:
+        return _music_playlist_from_config(self.music_config)
+
+    def _music_play_mode_label(self) -> str:
+        return "列表循环" if self.music_config.get("play_mode", "list") == "list" else "随机"
+
+    def _cancel_bg_music_watch(self) -> None:
+        if self.bg_music_watch_job:
+            try:
+                self.root.after_cancel(self.bg_music_watch_job)
+            except Exception:
+                pass
+            self.bg_music_watch_job = None
+
+    def _bg_music_play_track(self, track_id: str, *, single_loop: bool) -> bool:
+        wav = _resolve_music_wav(track_id)
+        if wav is None or not wav.exists():
+            return False
+        import pygame
+
+        _init_pygame_mixer()
+        pygame.mixer.music.load(str(wav))
+        self._apply_music_volume()
+        pygame.mixer.music.play(-1 if single_loop else 0)
+        self.bg_music_playing = True
+        return True
+
+    def _advance_bg_music_track(self) -> None:
+        playlist = self._music_playlist()
+        if not playlist:
+            return
+        if len(playlist) == 1:
+            self.bg_music_play_index = 0
+            self._bg_music_play_track(playlist[0], single_loop=True)
+            return
+        mode = self.music_config.get("play_mode", "list")
+        if mode == "random":
+            if len(playlist) == 1:
+                self.bg_music_play_index = 0
+            else:
+                choices = [i for i in range(len(playlist)) if i != self.bg_music_play_index]
+                self.bg_music_play_index = random.choice(choices or list(range(len(playlist))))
+        else:
+            self.bg_music_play_index = (self.bg_music_play_index + 1) % len(playlist)
+        tid = playlist[self.bg_music_play_index]
+        if not self._bg_music_play_track(tid, single_loop=False):
+            self._show_toast(f"找不到音乐：{_music_track(tid)['title']}", "#ff8844")
+            self._stop_bg_music()
+            return
+        self._schedule_bg_music_watch()
+
+    def _schedule_bg_music_watch(self) -> None:
+        self._cancel_bg_music_watch()
+        if not self.bg_music_playing or len(self._music_playlist()) <= 1:
+            return
+
+        def tick() -> None:
+            self.bg_music_watch_job = None
+            if not self.bg_music_playing:
+                return
+            try:
+                import pygame
+
+                if pygame.mixer.get_init() and not pygame.mixer.music.get_busy():
+                    self._advance_bg_music_track()
+                    return
+            except Exception:
+                pass
+            self.bg_music_watch_job = self._safe_after(500, tick)
+
+        self.bg_music_watch_job = self._safe_after(500, tick)
+
     def _start_bg_music(self) -> None:
         if self.bg_music_playing:
             return
-        wav = _resolve_music_wav(self.music_config)
-        if wav is None:
-            mode = self.music_config.get("mode", "normal")
-            if mode == "custom":
-                self._show_toast("请先导入自定义歌曲", "#ff8844")
-            else:
-                self._show_toast("找不到默认音乐文件", "#ff8844")
+        playlist = self._music_playlist()
+        if not playlist:
+            self._show_toast("播放列表为空", "#ff8844")
             return
+        single = len(playlist) == 1
+        if single:
+            self.bg_music_play_index = 0
+        elif self.music_config.get("play_mode", "list") == "random":
+            self.bg_music_play_index = random.randint(0, len(playlist) - 1)
+        else:
+            self.bg_music_play_index = 0
+        tid = playlist[self.bg_music_play_index]
         try:
-            import pygame
-
-            _init_pygame_mixer()
-            pygame.mixer.music.load(str(wav))
-            self._apply_music_volume()
-            pygame.mixer.music.play(-1)
-            self.bg_music_playing = True
+            if not self._bg_music_play_track(tid, single_loop=single):
+                self._show_toast("找不到默认音乐文件", "#ff8844")
+                return
+            if not single:
+                self._schedule_bg_music_watch()
         except Exception:
             self._show_toast("音乐播放失败", "#ff6666")
 
     def _stop_bg_music(self) -> None:
+        self._cancel_bg_music_watch()
         try:
             import pygame
 
@@ -5314,9 +5413,13 @@ class DesktopPet:
         self._sync_mini_pet_music_waves()
         self._set_image(self._current_stand_sprite())
         self._place_window()
-        mode_label = "普通" if self.music_config.get("mode", "normal") == "normal" else "自定义"
-        track = _music_track(self.music_config.get("normal_track"))
-        self._show_toast(f"音乐漫步开启（{mode_label} · {track['title']}）", "#88ccff")
+        playlist = self._music_playlist()
+        mode_label = self._music_play_mode_label()
+        if len(playlist) == 1:
+            track = _music_track(playlist[0])
+            self._show_toast(f"音乐漫步开启（{mode_label} · {track['title']}）", "#88ccff")
+        else:
+            self._show_toast(f"音乐漫步开启（{mode_label} · {len(playlist)} 首）", "#88ccff")
         self._show_once_hint("music_mode", duration_ms=3500)
         self._resume_idle()
 
@@ -5366,72 +5469,70 @@ class DesktopPet:
         )
         mute_btn.pack(anchor=tk.W, pady=(6, 8))
 
-        mode_var = tk.StringVar(value=self.music_config.get("mode", "normal"))
+        play_mode_var = tk.StringVar(value=self.music_config.get("play_mode", "list"))
         mode_row = tk.Frame(frame, bg=MENU_BG)
         mode_row.pack(fill=tk.X, pady=(0, 4))
-        tk.Label(mode_row, text="音乐源", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        tk.Label(mode_row, text="播放模式", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
 
-        def set_mode(mode: str) -> None:
-            mode_var.set(mode)
-            self.music_config["mode"] = mode
+        def set_play_mode(mode: str) -> None:
+            play_mode_var.set(mode)
+            self.music_config["play_mode"] = mode
             _save_music_config(self.music_config)
-            if self.bg_music_playing:
-                self._stop_bg_music()
-                self._start_bg_music()
+            list_btn.config(bg=MENU_ACTIVE if mode == "list" else MENU_BG)
+            random_btn.config(bg=MENU_ACTIVE if mode == "random" else MENU_BG)
             path_label.config(text=self._music_path_label())
-            refresh_track_btns()
-
-        tk.Button(
-            mode_row, text="普通", command=lambda: set_mode("normal"), font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
-        ).pack(side=tk.LEFT, padx=4)
-        tk.Button(
-            mode_row, text="自定义", command=lambda: set_mode("custom"), font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
-        ).pack(side=tk.LEFT, padx=4)
-
-        track_row = tk.Frame(frame, bg=MENU_BG)
-        track_row.pack(fill=tk.X, pady=(2, 4))
-        tk.Label(track_row, text="普通曲", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
-
-        cur_icon_lbl = tk.Label(track_row, bg=MENU_BG)
-        cur_icon_lbl.pack(side=tk.LEFT, padx=(6, 4))
-        cur_name_lbl = tk.Label(track_row, text="", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
-        cur_name_lbl.pack(side=tk.LEFT, padx=(0, 6))
-
-        def refresh_current_track_plate() -> None:
-            tid = str(self.music_config.get("normal_track", DEFAULT_MUSIC_TRACK))
-            tid = MUSIC_TRACK_LEGACY_IDS.get(tid, tid)
-            if tid not in MUSIC_TRACKS:
-                tid = DEFAULT_MUSIC_TRACK
-            track = _music_track(tid)
-            photo = _music_track_icon_photo(tid, 36)
-            if not hasattr(self, "_sound_settings_icons"):
-                self._sound_settings_icons = []
-            self._sound_settings_icons = [photo]
-            cur_icon_lbl.config(image=photo)
-            cur_name_lbl.config(text=str(track["title"]))
-
-        def set_normal_track(track_id: str) -> None:
-            self.music_config["normal_track"] = track_id
-            self.music_config["mode"] = "normal"
-            mode_var.set("normal")
-            _save_music_config(self.music_config)
-            path_label.config(text=self._music_path_label())
-            refresh_current_track_plate()
             if self.bg_music_playing or self.music_sprite_mode:
                 self._stop_bg_music()
                 self._start_bg_music()
 
-        def open_track_picker() -> None:
-            self._open_music_track_plate_picker(
-                title="选择普通曲",
-                current_id=str(self.music_config.get("normal_track", DEFAULT_MUSIC_TRACK)),
-                on_pick=set_normal_track,
-            )
+        list_btn = tk.Button(
+            mode_row,
+            text="列表循环",
+            command=lambda: set_play_mode("list"),
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE if play_mode_var.get() == "list" else MENU_BG,
+            fg=MENU_FG,
+        )
+        list_btn.pack(side=tk.LEFT, padx=4)
+        random_btn = tk.Button(
+            mode_row,
+            text="随机",
+            command=lambda: set_play_mode("random"),
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE if play_mode_var.get() == "random" else MENU_BG,
+            fg=MENU_FG,
+        )
+        random_btn.pack(side=tk.LEFT, padx=4)
+
+        track_row = tk.Frame(frame, bg=MENU_BG)
+        track_row.pack(fill=tk.X, pady=(2, 4))
+        playlist_lbl = tk.Label(track_row, text="", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
+        playlist_lbl.pack(side=tk.LEFT)
+
+        def refresh_playlist_label() -> None:
+            pl = self._music_playlist()
+            if len(pl) == 1:
+                title = str(_music_track(pl[0])["title"])
+                playlist_lbl.config(text=f"播放列表：{title}（单曲循环）")
+            else:
+                playlist_lbl.config(text=f"播放列表：{len(pl)} 首")
+
+        def set_playlist(track_ids: list[str]) -> None:
+            self.music_config["playlist"] = _normalize_music_playlist(track_ids, fallback=DEFAULT_MUSIC_TRACK)
+            _save_music_config(self.music_config)
+            path_label.config(text=self._music_path_label())
+            refresh_playlist_label()
+            if self.bg_music_playing or self.music_sprite_mode:
+                self._stop_bg_music()
+                self._start_bg_music()
+
+        def open_playlist_picker() -> None:
+            self._open_music_playlist_picker(on_confirm=set_playlist)
 
         tk.Button(
-            track_row, text="换曲…", command=open_track_picker, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
-        ).pack(side=tk.LEFT)
-        refresh_current_track_plate()
+            track_row, text="选曲…", command=open_playlist_picker, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        refresh_playlist_label()
 
         def add_volume_row(parent, label: str, key: str, on_change=None) -> None:
             row = tk.Frame(parent, bg=MENU_BG)
@@ -5480,36 +5581,14 @@ class DesktopPet:
         )
         path_label.pack(anchor=tk.W, pady=(6, 4))
 
-        def import_song() -> None:
-            path = filedialog.askopenfilename(
-                title="导入歌曲",
-                filetypes=[
-                    ("音频", "*.mp3 *.wav *.flac *.ogg *.m4a *.mp4 *.aac"),
-                    ("全部", "*.*"),
-                ],
-            )
-            if not path:
-                return
-            self.music_config["mode"] = "custom"
-            self.music_config["custom_path"] = path
-            mode_var.set("custom")
-            _save_music_config(self.music_config)
-            path_label.config(text=self._music_path_label())
-            refresh_track_btns()
-            if self.bg_music_playing or self.music_sprite_mode:
-                self._stop_bg_music()
-                self._start_bg_music()
-
-        tk.Button(frame, text="导入歌曲", command=import_song, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(
-            pady=4
-        )
         tk.Label(
             frame,
-            text="音乐：背景循环  音效：打字/进食/提醒  语音：电话",
+            text="音乐：默认 RADICAL MAT 单曲循环；多首时按列表或随机播放",
             font=PIXEL_FONT,
             fg="#888888",
             bg=MENU_BG,
             justify=tk.LEFT,
+            wraplength=320,
         ).pack(anchor=tk.W, pady=(4, 0))
         self._place_panel_popup(self.sound_settings_win)
 
@@ -5517,11 +5596,15 @@ class DesktopPet:
         self._open_sound_settings()
 
     def _music_path_label(self) -> str:
-        if self.music_config.get("mode", "normal") == "custom":
-            p = self.music_config.get("custom_path", "")
-            return f"自定义：{Path(p).name if p else '未导入'}"
-        track = _music_track(self.music_config.get("normal_track"))
-        return f"普通：{track['title']}"
+        pl = self._music_playlist()
+        mode = self._music_play_mode_label()
+        if not pl:
+            return f"{mode} · 无曲目"
+        if len(pl) == 1:
+            return f"{mode} · {_music_track(pl[0])['title']}（单曲循环）"
+        names = [str(_music_track(tid)["title"]) for tid in pl[:4]]
+        tail = f" 等{len(pl)}首" if len(pl) > 4 else ""
+        return f"{mode} · {' / '.join(names)}{tail}"
 
     def _cancel_yesno_overlay(self) -> None:
         if self.yesno_reveal_job:
@@ -6418,7 +6501,7 @@ class DesktopPet:
         self._hide_main_menu()
         self._open_music_track_plate_picker(
             title="选曲开始",
-            current_id=str(self.music_config.get("normal_track", DEFAULT_MUSIC_TRACK)),
+            current_id=self._music_playlist()[0] if self._music_playlist() else DEFAULT_MUSIC_TRACK,
             on_pick=lambda tid: self._open_rhythm_length_menu(tid),
         )
 
@@ -6517,6 +6600,165 @@ class DesktopPet:
 
         for c in range(MUSIC_PICKER_COLS):
             grid.grid_columnconfigure(c, weight=1)
+
+        def on_mousewheel(event: tk.Event) -> None:
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+        def on_close() -> None:
+            try:
+                canvas.unbind_all("<MouseWheel>")
+            except Exception:
+                pass
+            self.music_track_picker_win = None
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        win.protocol("WM_DELETE_WINDOW", on_close)
+        self._place_panel_popup(win)
+
+    def _open_music_playlist_picker(self, *, on_confirm) -> None:
+        """多选播放列表：点图标切换选中，至少保留一首。"""
+        old = getattr(self, "music_track_picker_win", None)
+        if old and old.winfo_exists():
+            try:
+                old.destroy()
+            except Exception:
+                pass
+
+        selected: set[str] = set(self._music_playlist())
+        cell_refs: dict[str, tk.Frame] = {}
+
+        win = tk.Toplevel(self.root)
+        self.music_track_picker_win = win
+        win.title("播放列表")
+        win.attributes("-topmost", True)
+        win.configure(bg="#161822")
+        _fit_panel_wh(win, 420, 500)
+        setattr(win, "_panel_scroll_installed", True)
+
+        head = tk.Frame(win, bg="#161822", padx=10, pady=8)
+        head.pack(fill=tk.X)
+        tk.Label(head, text="播放列表", font=PIXEL_FONT, fg="#88ccff", bg="#161822").pack(side=tk.LEFT)
+        count_lbl = tk.Label(head, text="", font=("Courier New", 9, "bold"), fg="#778899", bg="#161822")
+        count_lbl.pack(side=tk.RIGHT)
+
+        wrap = tk.Frame(win, bg="#161822")
+        wrap.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 4))
+        canvas = tk.Canvas(wrap, bg="#12141c", highlightthickness=0)
+        scroll = tk.Scrollbar(wrap, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        grid = tk.Frame(canvas, bg="#12141c")
+        grid_id = canvas.create_window((0, 0), window=grid, anchor="nw")
+
+        photos: list[ImageTk.PhotoImage] = []
+        self._music_picker_photos = photos
+
+        def refresh_count() -> None:
+            n = len(selected)
+            if n <= 1:
+                count_lbl.config(text=f"已选 {n} 首（单曲循环）")
+            else:
+                count_lbl.config(text=f"已选 {n} 首")
+
+        def paint_cell(tid: str) -> None:
+            cell = cell_refs.get(tid)
+            if cell and cell.winfo_exists():
+                on = tid in selected
+                cell.configure(highlightbackground="#66aaff" if on else "#2a3144")
+
+        def toggle(tid: str) -> None:
+            if tid in selected:
+                if len(selected) <= 1:
+                    self._show_toast("至少保留一首", "#ff8844")
+                    return
+                selected.remove(tid)
+            else:
+                selected.add(tid)
+            paint_cell(tid)
+            refresh_count()
+
+        def on_configure(_e=None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.itemconfigure(grid_id, width=canvas.winfo_width())
+
+        grid.bind("<Configure>", on_configure)
+        canvas.bind("<Configure>", on_configure)
+
+        for i, tid in enumerate(MUSIC_TRACK_ORDER):
+            track = _music_track(tid)
+            r, c = divmod(i, MUSIC_PICKER_COLS)
+            cell = tk.Frame(grid, bg="#1a1e2a", padx=4, pady=4, highlightthickness=2)
+            cell.grid(row=r, column=c, padx=4, pady=4, sticky="nsew")
+            cell_refs[tid] = cell
+            on = tid in selected
+            cell.configure(highlightbackground="#66aaff" if on else "#2a3144")
+            photo = _music_track_icon_photo(tid, MUSIC_PLATE_ICON_PX)
+            photos.append(photo)
+            btn = tk.Button(
+                cell,
+                image=photo,
+                command=lambda t=tid: toggle(t),
+                bg="#1a1e2a",
+                activebackground="#24304a",
+                relief=tk.FLAT,
+                bd=0,
+            )
+            btn.pack()
+            name = str(track["title"])
+            if len(name) > 14:
+                name = name[:13] + "…"
+            tk.Label(
+                cell,
+                text=name,
+                font=("Courier New", 8, "bold"),
+                fg="#dde6ff" if on else "#a8b4cc",
+                bg="#1a1e2a",
+                wraplength=88,
+                justify=tk.CENTER,
+            ).pack(pady=(2, 0))
+            for wdg in (cell, btn):
+                wdg.bind("<Button-1>", lambda _e, t=tid: toggle(t))
+
+        for c in range(MUSIC_PICKER_COLS):
+            grid.grid_columnconfigure(c, weight=1)
+
+        refresh_count()
+
+        foot = tk.Frame(win, bg="#161822", padx=10, pady=8)
+        foot.pack(fill=tk.X)
+
+        def confirm() -> None:
+            order = [tid for tid in MUSIC_TRACK_ORDER if tid in selected]
+            on_confirm(order)
+            on_close()
+
+        def select_default() -> None:
+            selected.clear()
+            selected.add(DEFAULT_MUSIC_TRACK)
+            for tid in cell_refs:
+                paint_cell(tid)
+            refresh_count()
+
+        def select_all() -> None:
+            selected.clear()
+            selected.update(MUSIC_TRACK_ORDER)
+            for tid in cell_refs:
+                paint_cell(tid)
+            refresh_count()
+
+        tk.Button(foot, text="默认曲", command=select_default, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        tk.Button(foot, text="全选", command=select_all, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        tk.Button(foot, text="确定", command=confirm, font=PIXEL_FONT, bg="#334466", fg="#ffcc66").pack(side=tk.RIGHT)
 
         def on_mousewheel(event: tk.Event) -> None:
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
@@ -8664,7 +8906,7 @@ class DesktopPet:
         if self.rhythm_active:
             return
         self._hide_main_menu()
-        chosen = str(track_id or self.music_config.get("normal_track") or DEFAULT_MUSIC_TRACK)
+        chosen = str(track_id or (self._music_playlist()[0] if self._music_playlist() else DEFAULT_MUSIC_TRACK))
         chosen = MUSIC_TRACK_LEGACY_IDS.get(chosen, chosen)
         if chosen not in MUSIC_TRACKS:
             chosen = DEFAULT_MUSIC_TRACK
@@ -10097,14 +10339,13 @@ class DesktopPet:
         self.diary_entries = []
         _save_diary(self.diary_entries)
         self.music_config = {
-            "mode": "normal",
-            "normal_track": DEFAULT_MUSIC_TRACK,
+            "play_mode": "list",
+            "playlist": [DEFAULT_MUSIC_TRACK],
             "music_volume": 70,
             "volume": 70,
             "sfx_volume": 80,
             "voice_volume": 80,
             "muted": False,
-            "custom_path": "",
         }
         _save_music_config(self.music_config)
         self.app_config = {

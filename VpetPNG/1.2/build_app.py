@@ -19,11 +19,31 @@ EXE_NAME = "Vpet.exe"
 def _ensure_icon() -> Path:
     from PIL import Image
 
-    icon_png = ROOT / "gallery" / "stand.png"
     icon_ico = ROOT / "app_icon.ico"
-    if icon_png.exists():
-        img = Image.open(icon_png).convert("RGBA")
-        img.save(icon_ico, format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (32, 32), (16, 16)])
+    icon_png = ROOT / "app_icon.png"
+    # 优先使用 app_icon1（用户指定的新图标）
+    sources = (
+        ROOT / "app_icon1.jpg",
+        ROOT / "app_icon1.png",
+        ROOT / "app_icon1.ico",
+        ROOT / "gallery" / "stand.png",
+    )
+    src = next((p for p in sources if p.exists()), None)
+    if src is not None:
+        img = Image.open(src).convert("RGBA")
+        # 居中裁成正方形再缩放，避免 JPG 比例拉伸变形
+        w, h = img.size
+        side = min(w, h)
+        left = (w - side) // 2
+        top = (h - side) // 2
+        img = img.crop((left, top, left + side, top + side))
+        img_png = img.resize((256, 256), Image.Resampling.LANCZOS)
+        img_png.save(icon_png, format="PNG")
+        img_png.save(
+            icon_ico,
+            format="ICO",
+            sizes=[(256, 256), (128, 128), (64, 64), (32, 32), (16, 16)],
+        )
     elif not icon_ico.exists():
         img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
         from PIL import ImageDraw
@@ -31,6 +51,7 @@ def _ensure_icon() -> Path:
         draw = ImageDraw.Draw(img)
         draw.rectangle((48, 40, 208, 216), fill="#4488ff")
         draw.rectangle((88, 72, 168, 112), fill="#ffffff")
+        img.save(icon_png, format="PNG")
         img.save(icon_ico, format="ICO", sizes=[(256, 256), (64, 64), (32, 32)])
     return icon_ico
 
@@ -45,6 +66,10 @@ def _collect_data_args() -> list[str]:
         src = ROOT / folder
         if src.is_dir():
             args.extend(["--add-data", f"{src}{sep}{folder}"])
+    for name in ("app_icon.png", "app_icon1.jpg", "app_icon1.png"):
+        src = ROOT / name
+        if src.is_file():
+            args.extend(["--add-data", f"{src}{sep}."])
     return args
 
 
@@ -106,17 +131,19 @@ def _publish_release(build_dir: Path, data_src: Path) -> tuple[Path, Path, str]:
     return staging, staging / EXE_NAME, stamp
 
 
-def _create_shortcut(exe_path: Path) -> None:
+def _create_shortcut(exe_path: Path, icon_path: Path | None = None) -> None:
     if sys.platform != "win32":
         return
     lnk = DESKTOP / "Vpet 桌宠.lnk"
+    icon = icon_path if icon_path and icon_path.exists() else (ROOT / "app_icon.ico")
+    icon_line = f"$Shortcut.IconLocation = '{icon},0'\n" if icon.exists() else ""
     ps = f"""
 $WshShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut('{lnk}')
 $Shortcut.TargetPath = '{exe_path}'
 $Shortcut.WorkingDirectory = '{exe_path.parent}'
 $Shortcut.Description = 'Vpet 桌宠 - 点击托盘图标生成桌宠'
-$Shortcut.Save()
+{icon_line}$Shortcut.Save()
 """
     subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True)
 
@@ -182,7 +209,13 @@ def main() -> None:
 
     release_dir, release_exe, stamp = _publish_release(exe_path.parent, ROOT / "data")
 
-    _create_shortcut(release_exe)
+    icon = ROOT / "app_icon.ico"
+    if icon.exists():
+        try:
+            shutil.copy2(icon, release_dir / "app_icon.ico")
+        except OSError:
+            pass
+    _create_shortcut(release_exe, icon if icon.exists() else None)
     print(f"\n打包完成：{release_exe}")
     print(f"发布目录：{release_dir}")
     print(f"构建版本：{stamp}")

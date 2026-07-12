@@ -102,7 +102,7 @@ def _load_tray_icon():
     from PIL import Image, ImageDraw
 
     root = _resource_root()
-    for rel in ("gallery/stand.png", "app_icon.png"):
+    for rel in ("app_icon1.jpg", "app_icon1.png", "app_icon.png", "gallery/stand.png"):
         path = root / rel
         if path.exists():
             img = Image.open(path).convert("RGBA")
