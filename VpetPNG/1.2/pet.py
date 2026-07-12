@@ -93,42 +93,218 @@ CALL_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\call.mp3.mp4")
 CALL_AUDIO_WAV = DATA_AUDIO_DIR / "call_cache.wav"
 TYPE_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\type.mp4")
 TYPE_AUDIO_WAV = DATA_AUDIO_DIR / "type_cache.wav"
-MUSIC_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\aicatch.mp4")
-MUSIC_AUDIO_WAV = DATA_AUDIO_DIR / "music_aicatch_cache.wav"
-MUSIC_CRYSTALLINE_SRC = Path(r"C:\Users\36255\Desktop\Crystalline.mp4")
-MUSIC_CRYSTALLINE_WAV = DATA_AUDIO_DIR / "music_crystalline_cache.wav"
-MUSIC_YOUR_REPLY_SRC = Path(r"C:\Users\36255\Desktop\your reply.mp4")
-MUSIC_YOUR_REPLY_WAV = DATA_AUDIO_DIR / "music_your_reply_cache.wav"
+MUSIC_SRC_DIR = Path(r"C:\Users\36255\Desktop\Vpetmusic")
 MUSIC_CONFIG_FILE = DATA_DIR / "music_config.json"
 PHONOGRAPH_FILE = DATA_DIR / "phonograph.json"
 PHONOGRAPH_USER_DIR = DATA_DIR / "phonograph"
 
-# 普通模式 / 音游可选曲目（src 可为 mp4，首次启动提取 wav）
-MUSIC_TRACKS: dict[str, dict] = {
-    "aicatch": {
-        "id": "aicatch",
-        "title": "AI Catch",
-        "src": MUSIC_AUDIO_SRC,
-        "cache": MUSIC_AUDIO_WAV,
-        "phonograph": "音乐·AI Catch",
-    },
-    "crystalline": {
-        "id": "crystalline",
-        "title": "Crystalline",
-        "src": MUSIC_CRYSTALLINE_SRC,
-        "cache": MUSIC_CRYSTALLINE_WAV,
-        "phonograph": "音乐·Crystalline",
-    },
-    "your_reply": {
-        "id": "your_reply",
-        "title": "your reply",
-        "src": MUSIC_YOUR_REPLY_SRC,
-        "cache": MUSIC_YOUR_REPLY_WAV,
-        "phonograph": "音乐·your reply",
-    },
+# 固定 id / 标题（其余按文件名自动生成）；默认曲 = RADICAL MAT（替换原 aicatch）
+MUSIC_TRACK_ID_MAP: dict[str, str] = {
+    "RADICAL MAT": "radical_mat",
+    "AI CATCH": "ai_catch",
+    "Crystalline": "crystalline",
+    "your reply": "your_reply",
+    "SLIP ON THE PUMPS": "slip_on_the_pumps",
+    "By My Side": "by_my_side",
+    "felt": "felt",
+    "Lullaby Blue": "lullaby_blue",
+    "Soul Grace": "soul_grace",
+    "天使達": "tenshitachi",
+    "クラゲの歌 -extend electro-": "kurage_extend",
+    "クラゲの歌‘": "kurage",
+    "Tears": "tears",
+    "feel your noise": "feel_your_noise",
+    "MASCULINE DEVIL": "masculine_devil",
+    "bad end": "bad_end",
+    "Only finally there is the free end": "free_end",
+    "At Last": "at_last",
+    "COSMOCALL FIELD": "cosmocall_field",
+    "Deeds,not words": "deeds_not_words",
+    "FORM SWEET FORM": "form_sweet_form",
+    "HOLO GHOST": "holo_ghost",
+    "Milky Way": "milky_way",
 }
-MUSIC_TRACK_ORDER: tuple[str, ...] = ("aicatch", "crystalline", "your_reply")
-DEFAULT_MUSIC_TRACK = "aicatch"
+MUSIC_TRACK_TITLE_MAP: dict[str, str] = {
+    "radical_mat": "RADICAL MAT",
+    "ai_catch": "AI CATCH",
+    "crystalline": "Crystalline",
+    "your_reply": "your reply",
+    "kurage": "クラゲの歌",
+    "kurage_extend": "クラゲの歌 -extend electro-",
+    "tenshitachi": "天使達",
+}
+MUSIC_TRACK_PREFERRED_ORDER: tuple[str, ...] = (
+    "radical_mat",
+    "ai_catch",
+    "crystalline",
+    "your_reply",
+    "slip_on_the_pumps",
+    "by_my_side",
+    "felt",
+    "lullaby_blue",
+    "soul_grace",
+    "tenshitachi",
+    "kurage",
+    "kurage_extend",
+)
+# 旧配置 id 迁移
+MUSIC_TRACK_LEGACY_IDS: dict[str, str] = {
+    "aicatch": "radical_mat",
+}
+
+
+def _music_slug_id(stem: str) -> str:
+    mapped = MUSIC_TRACK_ID_MAP.get(stem)
+    if mapped:
+        return mapped
+    slug = re.sub(r"[^0-9A-Za-z]+", "_", stem).strip("_").lower()
+    if slug:
+        return slug
+    return f"track_{abs(hash(stem)) % 10**8:x}"
+
+
+def _build_music_tracks() -> tuple[dict[str, dict], tuple[str, ...]]:
+    tracks: dict[str, dict] = {}
+    if not MUSIC_SRC_DIR.is_dir():
+        return tracks, ()
+    for path in sorted(MUSIC_SRC_DIR.iterdir(), key=lambda p: p.name.lower()):
+        if not path.is_file() or path.suffix.lower() != ".mp4":
+            continue
+        stem = path.stem
+        tid = _music_slug_id(stem)
+        title = MUSIC_TRACK_TITLE_MAP.get(tid) or stem
+        # 同 id 重复时保留先出现的（优先 preferred 排序时再覆盖顺序）
+        if tid in tracks:
+            continue
+        tracks[tid] = {
+            "id": tid,
+            "title": title,
+            "src": path,
+            "cache": DATA_AUDIO_DIR / f"music_{tid}_cache.wav",
+            "phonograph": f"音乐·{title}",
+        }
+    order: list[str] = []
+    for tid in MUSIC_TRACK_PREFERRED_ORDER:
+        if tid in tracks:
+            order.append(tid)
+    for tid in sorted(tracks.keys(), key=lambda t: str(tracks[t]["title"]).lower()):
+        if tid not in order:
+            order.append(tid)
+    return tracks, tuple(order)
+
+
+MUSIC_TRACKS, MUSIC_TRACK_ORDER = _build_music_tracks()
+DEFAULT_MUSIC_TRACK = (
+    "radical_mat"
+    if "radical_mat" in MUSIC_TRACKS
+    else (MUSIC_TRACK_ORDER[0] if MUSIC_TRACK_ORDER else "radical_mat")
+)
+
+# 曲目版面图标：优先 Vpetsign 抠图，不足则用像素音符
+SIGN_SRC_DIR = Path(r"C:\Users\36255\Desktop\Vpetsign")
+SIGNS_DIR = ASSETS_DIR / "signs"
+MUSIC_PLATE_ICON_PX = 44
+MUSIC_PICKER_COLS = 4
+_MUSIC_ICON_PHOTO_CACHE: dict[tuple[str, int], ImageTk.PhotoImage] = {}
+_MUSIC_SIGN_PATHS: list[Path] | None = None
+
+
+def _cutout_near_white(img: Image.Image, *, thresh: int = 242) -> Image.Image:
+    rgba = img.convert("RGBA")
+    px = rgba.load()
+    w, h = rgba.size
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            m = min(r, g, b)
+            if m >= thresh:
+                px[x, y] = (r, g, b, 0)
+            elif m >= thresh - 14:
+                fade = max(0, min(255, int(a * (thresh - m) / 14)))
+                px[x, y] = (r, g, b, fade)
+    bbox = rgba.getbbox()
+    return rgba.crop(bbox) if bbox else rgba
+
+
+def _ensure_sign_cutouts() -> list[Path]:
+    global _MUSIC_SIGN_PATHS
+    if _MUSIC_SIGN_PATHS is not None:
+        return _MUSIC_SIGN_PATHS
+    SIGNS_DIR.mkdir(parents=True, exist_ok=True)
+    outs: list[Path] = []
+    # 已处理好的 assets/signs
+    existing = sorted(SIGNS_DIR.glob("*.png"))
+    if existing:
+        _MUSIC_SIGN_PATHS = existing
+        return existing
+    if SIGN_SRC_DIR.is_dir():
+        for i, src in enumerate(sorted(SIGN_SRC_DIR.glob("*.jpg")) + sorted(SIGN_SRC_DIR.glob("*.png"))):
+            dst = SIGNS_DIR / f"{i:02d}_{src.stem[:8]}.png"
+            try:
+                if (not dst.exists()) or (src.exists() and dst.stat().st_mtime < src.stat().st_mtime):
+                    _cutout_near_white(Image.open(src)).save(dst)
+                if dst.exists():
+                    outs.append(dst)
+            except Exception:
+                continue
+    _MUSIC_SIGN_PATHS = outs
+    return outs
+
+
+def _make_pixel_music_fallback_icon(index: int, size: int = 48) -> Image.Image:
+    """不够用的版面图标：像素音符 + 色块。"""
+    palette = (
+        "#66ccff",
+        "#ff88cc",
+        "#ffcc66",
+        "#88ffaa",
+        "#cc88ff",
+        "#88aaff",
+        "#ffaa88",
+        "#aaffcc",
+    )
+    col = palette[index % len(palette)]
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    # stem
+    d.rectangle([10, 2, 12, 11], fill=col)
+    # flag
+    d.rectangle([7, 2, 10, 5], fill=col)
+    # note head
+    d.ellipse([4, 9, 11, 14], fill=col)
+    d.rectangle([1, 1, 14, 14], outline="#223355")
+    return img.resize((size, size), Image.NEAREST)
+
+
+def _music_track_icon_image(track_id: str, size: int = MUSIC_PLATE_ICON_PX) -> Image.Image:
+    signs = _ensure_sign_cutouts()
+    try:
+        idx = list(MUSIC_TRACK_ORDER).index(track_id)
+    except ValueError:
+        idx = abs(hash(track_id)) % max(1, len(MUSIC_TRACK_ORDER) or 1)
+    if idx < len(signs):
+        try:
+            im = Image.open(signs[idx]).convert("RGBA")
+            # 等比装入方框，保持像素感
+            im.thumbnail((size, size), Image.NEAREST)
+            canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            ox = (size - im.width) // 2
+            oy = (size - im.height) // 2
+            canvas.paste(im, (ox, oy), im)
+            return canvas
+        except Exception:
+            pass
+    return _make_pixel_music_fallback_icon(idx, size)
+
+
+def _music_track_icon_photo(track_id: str, size: int = MUSIC_PLATE_ICON_PX) -> ImageTk.PhotoImage:
+    key = (str(track_id), int(size))
+    photo = _MUSIC_ICON_PHOTO_CACHE.get(key)
+    if photo is None:
+        photo = ImageTk.PhotoImage(_music_track_icon_image(track_id, size))
+        _MUSIC_ICON_PHOTO_CACHE[key] = photo
+    return photo
+
 
 
 def _ensure_data_dirs() -> None:
@@ -165,9 +341,6 @@ def _migrate_legacy_layout() -> None:
     for name in (
         "call_cache.wav",
         "type_cache.wav",
-        "music_aicatch_cache.wav",
-        "music_crystalline_cache.wav",
-        "music_your_reply_cache.wav",
     ):
         src, dst = root / name, DATA_AUDIO_DIR / name
         if src.is_file() and not dst.exists():
@@ -211,7 +384,7 @@ FOLLOW_MOVE_STEP = 4
 FOLLOW_MOVE_INTERVAL_MS = 40
 ACTION_FRAME_MS = 180
 INTERACT_DURATION_MS = 3000
-WINK_DURATION_MS = 3000
+WINK_DURATION_MS = 3200
 YESNO_WAIT_MS = 5000
 YESNO_ANSWER_TEXT = "你所问问题的答案是"
 INTERACT_DURATIONS: dict[str, int] = {
@@ -225,7 +398,7 @@ INTERACT_DURATIONS: dict[str, int] = {
     "kick": 1200,
     "shy": 3600,
     "wink": WINK_DURATION_MS,
-    "like": 3200,
+    "like": WINK_DURATION_MS,
     "yes": 2600,
     "no": 2600,
     "yesno": YESNO_WAIT_MS + 3200,
@@ -724,7 +897,7 @@ GUIDE_TOPICS: dict[str, dict] = {
             "【桌宠内 · 音乐】\n"
             "· 按键 D / F / J / K 对应四条轨道\n"
             "· 音符落到判定线时按下；Perfect / Great / Good / Miss\n"
-            "· 可选曲：AI Catch / Crystalline / your reply\n"
+            "· 可选曲：Vpetmusic 文件夹内全部曲目（默认 RADICAL MAT）\n"
             "· 按准确率评级 D~S，界面有进度条\n"
             "· 整曲或 90 秒可选；谱面按节拍自动生成\n"
             "· Esc 或关窗可提前结束\n\n"
@@ -805,7 +978,7 @@ FIRST_PLAY_GUIDES: dict[str, dict] = {
             "· 判定：Perfect / Great / Good / Miss\n"
             "· 右上角「设置」可调流速（即时）与谱面难度（下局生效）\n"
             "· 按准确率评级 D~S，界面有进度条\n"
-            "· 曲子可选 AI Catch / Crystalline / your reply\n"
+            "· 曲子来自 Vpetmusic 文件夹（默认 RADICAL MAT，可换曲）\n"
             "· 开局可选「全曲」或「90 秒」\n"
             "· 谱面按歌曲节拍自动生成（首次稍慢，之后有缓存）\n"
             "· Esc 可随时退出\n\n"
@@ -1919,10 +2092,7 @@ def _build_phonograph_catalog() -> list[dict]:
         _resolve_type_cache_wav(),
         category="sfx",
     )
-    music_wav = _ensure_music_track_wav("aicatch")
-    if music_wav is not None:
-        add_file("builtin:music", "音乐·AI Catch", music_wav, category="music")
-    for tid in ("crystalline", "your_reply"):
+    for tid in MUSIC_TRACK_ORDER:
         track = _music_track(tid)
         wav = _ensure_music_track_wav(tid)
         if wav is not None:
@@ -2165,6 +2335,7 @@ def _load_music_config() -> dict:
             merged["music_volume"] = int(data["volume"])
         merged["volume"] = merged["music_volume"]
         track = str(merged.get("normal_track", DEFAULT_MUSIC_TRACK))
+        track = MUSIC_TRACK_LEGACY_IDS.get(track, track)
         if track not in MUSIC_TRACKS:
             track = DEFAULT_MUSIC_TRACK
         merged["normal_track"] = track
@@ -2304,7 +2475,21 @@ def _draw_music_wave(canvas: tk.Canvas, width: int, height: int, phase: int, *, 
 
 def _music_track(track_id: str | None) -> dict:
     tid = str(track_id or DEFAULT_MUSIC_TRACK).strip() or DEFAULT_MUSIC_TRACK
-    return MUSIC_TRACKS.get(tid) or MUSIC_TRACKS[DEFAULT_MUSIC_TRACK]
+    tid = MUSIC_TRACK_LEGACY_IDS.get(tid, tid)
+    if tid in MUSIC_TRACKS:
+        return MUSIC_TRACKS[tid]
+    if DEFAULT_MUSIC_TRACK in MUSIC_TRACKS:
+        return MUSIC_TRACKS[DEFAULT_MUSIC_TRACK]
+    # 兜底：任意一首
+    if MUSIC_TRACK_ORDER:
+        return MUSIC_TRACKS[MUSIC_TRACK_ORDER[0]]
+    return {
+        "id": "missing",
+        "title": "（无曲目）",
+        "src": MUSIC_SRC_DIR / "missing.mp4",
+        "cache": DATA_AUDIO_DIR / "music_missing_cache.wav",
+        "phonograph": "音乐·无曲目",
+    }
 
 
 def _ensure_music_track_wav(track_id: str | None) -> Path | None:
@@ -4447,6 +4632,10 @@ class DesktopPet:
         self.feedback_win: tk.Toplevel | None = None
         self.diary_win: tk.Toplevel | None = None
         self.weather_win: tk.Toplevel | None = None
+        self.music_track_picker_win: tk.Toplevel | None = None
+        self._music_picker_photos: list[ImageTk.PhotoImage] = []
+        self._sound_settings_icons: list[ImageTk.PhotoImage] = []
+        self._rhythm_plate_photo: ImageTk.PhotoImage | None = None
         self.weather_photos: list[ImageTk.PhotoImage] = []
         self._weather_fetch_token = 0
         self.gallery_win: tk.Toplevel | None = None
@@ -5101,38 +5290,46 @@ class DesktopPet:
         track_row.pack(fill=tk.X, pady=(2, 4))
         tk.Label(track_row, text="普通曲", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
 
+        cur_icon_lbl = tk.Label(track_row, bg=MENU_BG)
+        cur_icon_lbl.pack(side=tk.LEFT, padx=(6, 4))
+        cur_name_lbl = tk.Label(track_row, text="", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
+        cur_name_lbl.pack(side=tk.LEFT, padx=(0, 6))
+
+        def refresh_current_track_plate() -> None:
+            tid = str(self.music_config.get("normal_track", DEFAULT_MUSIC_TRACK))
+            tid = MUSIC_TRACK_LEGACY_IDS.get(tid, tid)
+            if tid not in MUSIC_TRACKS:
+                tid = DEFAULT_MUSIC_TRACK
+            track = _music_track(tid)
+            photo = _music_track_icon_photo(tid, 36)
+            if not hasattr(self, "_sound_settings_icons"):
+                self._sound_settings_icons = []
+            self._sound_settings_icons = [photo]
+            cur_icon_lbl.config(image=photo)
+            cur_name_lbl.config(text=str(track["title"]))
+
         def set_normal_track(track_id: str) -> None:
             self.music_config["normal_track"] = track_id
             self.music_config["mode"] = "normal"
             mode_var.set("normal")
             _save_music_config(self.music_config)
             path_label.config(text=self._music_path_label())
-            refresh_track_btns()
+            refresh_current_track_plate()
             if self.bg_music_playing or self.music_sprite_mode:
                 self._stop_bg_music()
                 self._start_bg_music()
 
-        track_btns: dict[str, tk.Button] = {}
-
-        def refresh_track_btns() -> None:
-            cur = str(self.music_config.get("normal_track", DEFAULT_MUSIC_TRACK))
-            for tid, btn in track_btns.items():
-                on = tid == cur and mode_var.get() == "normal"
-                btn.config(bg="#6688aa" if on else MENU_ACTIVE)
-
-        for tid in MUSIC_TRACK_ORDER:
-            track = _music_track(tid)
-            btn = tk.Button(
-                track_row,
-                text=str(track["title"]),
-                command=lambda t=tid: set_normal_track(t),
-                font=PIXEL_FONT,
-                bg=MENU_ACTIVE,
-                fg=MENU_FG,
+        def open_track_picker() -> None:
+            self._open_music_track_plate_picker(
+                title="选择普通曲",
+                current_id=str(self.music_config.get("normal_track", DEFAULT_MUSIC_TRACK)),
+                on_pick=set_normal_track,
             )
-            btn.pack(side=tk.LEFT, padx=2)
-            track_btns[tid] = btn
-        refresh_track_btns()
+
+        tk.Button(
+            track_row, text="换曲…", command=open_track_picker, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
+        ).pack(side=tk.LEFT)
+        refresh_current_track_plate()
 
         def add_volume_row(parent, label: str, key: str, on_change=None) -> None:
             row = tk.Frame(parent, bg=MENU_BG)
@@ -6106,11 +6303,126 @@ class DesktopPet:
         )
 
     def _open_rhythm_track_menu(self) -> None:
-        items: list[tuple[str, callable]] = []
-        for tid in MUSIC_TRACK_ORDER:
+        self._hide_main_menu()
+        self._open_music_track_plate_picker(
+            title="选曲开始",
+            current_id=str(self.music_config.get("normal_track", DEFAULT_MUSIC_TRACK)),
+            on_pick=lambda tid: self._open_rhythm_length_menu(tid),
+        )
+
+    def _open_music_track_plate_picker(
+        self,
+        *,
+        title: str,
+        current_id: str | None,
+        on_pick,
+    ) -> None:
+        """带版面图标的曲目选择（优先 Vpetsign 抠图）。"""
+        old = getattr(self, "music_track_picker_win", None)
+        if old and old.winfo_exists():
+            try:
+                old.destroy()
+            except Exception:
+                pass
+
+        win = tk.Toplevel(self.root)
+        self.music_track_picker_win = win
+        win.title(title)
+        win.attributes("-topmost", True)
+        win.configure(bg="#161822")
+        win.geometry("420x460")
+
+        head = tk.Frame(win, bg="#161822", padx=10, pady=8)
+        head.pack(fill=tk.X)
+        tk.Label(head, text=title, font=PIXEL_FONT, fg="#88ccff", bg="#161822").pack(side=tk.LEFT)
+        tk.Label(head, text="版面图标", font=("Courier New", 9, "bold"), fg="#778899", bg="#161822").pack(
+            side=tk.RIGHT
+        )
+
+        wrap = tk.Frame(win, bg="#161822")
+        wrap.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        canvas = tk.Canvas(wrap, bg="#12141c", highlightthickness=0)
+        scroll = tk.Scrollbar(wrap, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        grid = tk.Frame(canvas, bg="#12141c")
+        grid_id = canvas.create_window((0, 0), window=grid, anchor="nw")
+
+        photos: list[ImageTk.PhotoImage] = []
+        self._music_picker_photos = photos
+        cur = MUSIC_TRACK_LEGACY_IDS.get(str(current_id or ""), str(current_id or ""))
+
+        def on_configure(_e=None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.itemconfigure(grid_id, width=canvas.winfo_width())
+
+        grid.bind("<Configure>", on_configure)
+        canvas.bind("<Configure>", on_configure)
+
+        def pick(tid: str) -> None:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            self.music_track_picker_win = None
+            on_pick(tid)
+
+        for i, tid in enumerate(MUSIC_TRACK_ORDER):
             track = _music_track(tid)
-            items.append((f"{track['title']} ▶", lambda t=tid: self._open_rhythm_length_menu(t)))
-        self._show_sub_menu(items, offset_x=240)
+            r, c = divmod(i, MUSIC_PICKER_COLS)
+            cell = tk.Frame(grid, bg="#1a1e2a", padx=4, pady=4, highlightthickness=2)
+            cell.grid(row=r, column=c, padx=4, pady=4, sticky="nsew")
+            on = tid == cur
+            cell.configure(highlightbackground="#66aaff" if on else "#2a3144")
+            photo = _music_track_icon_photo(tid, MUSIC_PLATE_ICON_PX)
+            photos.append(photo)
+            btn = tk.Button(
+                cell,
+                image=photo,
+                command=lambda t=tid: pick(t),
+                bg="#1a1e2a",
+                activebackground="#24304a",
+                relief=tk.FLAT,
+                bd=0,
+            )
+            btn.pack()
+            name = str(track["title"])
+            if len(name) > 14:
+                name = name[:13] + "…"
+            tk.Label(
+                cell,
+                text=name,
+                font=("Courier New", 8, "bold"),
+                fg="#dde6ff" if on else "#a8b4cc",
+                bg="#1a1e2a",
+                wraplength=88,
+                justify=tk.CENTER,
+            ).pack(pady=(2, 0))
+            for wdg in (cell, btn):
+                wdg.bind("<Button-1>", lambda _e, t=tid: pick(t))
+
+        for c in range(MUSIC_PICKER_COLS):
+            grid.grid_columnconfigure(c, weight=1)
+
+        def on_mousewheel(event: tk.Event) -> None:
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+        def on_close() -> None:
+            try:
+                canvas.unbind_all("<MouseWheel>")
+            except Exception:
+                pass
+            self.music_track_picker_win = None
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        win.protocol("WM_DELETE_WINDOW", on_close)
+        self._place_panel_popup(win)
 
     def _open_rhythm_length_menu(self, track_id: str) -> None:
         self._show_sub_menu(
@@ -6283,6 +6595,7 @@ class DesktopPet:
         for attr in (
             "diary_win",
             "weather_win",
+            "music_track_picker_win",
             "gallery_win",
             "panel_backpack_win",
             "phonograph_win",
@@ -8237,6 +8550,7 @@ class DesktopPet:
             return
         self._hide_main_menu()
         chosen = str(track_id or self.music_config.get("normal_track") or DEFAULT_MUSIC_TRACK)
+        chosen = MUSIC_TRACK_LEGACY_IDS.get(chosen, chosen)
         if chosen not in MUSIC_TRACKS:
             chosen = DEFAULT_MUSIC_TRACK
         self.rhythm_track_id = chosen
@@ -8824,7 +9138,11 @@ class DesktopPet:
             self.rhythm_bg_ready = True
 
         c.delete("dyn")
-        c.create_text(w // 2, 14, text=f"音乐 · {track['title']}", fill="#88ccff", font=PIXEL_FONT, tags=("dyn",))
+        tid = str(getattr(self, "rhythm_track_id", DEFAULT_MUSIC_TRACK))
+        plate = _music_track_icon_photo(tid, 28)
+        self._rhythm_plate_photo = plate
+        c.create_image(28, 16, image=plate, tags=("dyn",))
+        c.create_text(48, 14, text=f"音乐 · {track['title']}", fill="#88ccff", font=PIXEL_FONT, anchor="w", tags=("dyn",))
         left_s = max(0, (self.rhythm_end_ms - now) // 1000)
         mode_tag = "90s" if int(getattr(self, "rhythm_play_cap_ms", 0) or 0) > 0 else "全曲"
         bpm = getattr(self, "rhythm_chart_bpm", None)
@@ -9730,7 +10048,6 @@ class DesktopPet:
                 ("睡眠", self._play_sleep_interact),
                 ("工作 ▶", self._open_work_menu),
                 ("侧踢", self._play_kick),
-                ("wink", lambda: self._play_expression_wink(restore_free=True)),
                 ("×生活", self._play_adult_reserved),
                 ("是", lambda: self._play_expression_sprite("yes", self.sprites.yes)),
                 ("否", lambda: self._play_expression_sprite("no", self.sprites.no)),
@@ -10187,7 +10504,7 @@ class DesktopPet:
         self._notify_bg_fx_change()
 
     def _animate_like_glow(self) -> None:
-        if not self.like_fx_canvas or self.action_name != "like":
+        if not self.like_fx_canvas or self.action_name not in ("like", "wink"):
             self.like_glow_job = None
             return
         size = self.like_fx_canvas.winfo_width() or (self.display_size + 40)
@@ -10914,59 +11231,29 @@ class DesktopPet:
         self.shy_last_click_ms = now_ms
 
     def _play_expression_like(self) -> None:
-        if self.dragging or self.state == "work" or self.music_sprite_mode:
-            return
-        self._interrupt_current_interaction()
-        self.state = "action"
-        self.action_name = "like"
-        self._interact_flair("like", banter=True)
-        self._play_expression_pop()
-        self._set_image(self.sprites.like)
-        self._show_like_fx()
-        self._schedule_action_end(action="like", callback=self._after_simple_expression)
+        self._play_like_or_wink("like", self.sprites.like)
 
     def _play_expression_wink(self, *, restore_free: bool = False) -> None:
+        # wink 与点赞共用同一套表情结束算法，避免独立 wink 特效链路卡死
+        del restore_free
+        self._play_like_or_wink("wink", self.sprites.wink)
+
+    def _play_like_or_wink(self, name: str, sprite: ImageTk.PhotoImage) -> None:
         if self.dragging or self.state == "work" or self.music_sprite_mode:
             return
         self._interrupt_current_interaction()
         self.state = "action"
-        self.action_name = "wink"
-        self._wink_restore_free = restore_free
-        self._interact_flair("wink", banter=False)
+        self.action_name = name
+        self._wink_restore_free = False
+        self._interact_flair(name, banter=True)
         self._play_expression_pop()
-        self._set_image(self.sprites.wink)
-        self._show_wink_fx()
-        self._schedule_action_end(action="wink", callback=self._after_wink_expression)
+        self._set_image(sprite)
+        self._show_like_fx()
+        self._schedule_action_end(action=name, callback=self._after_simple_expression)
 
     def _after_wink_expression(self) -> None:
-        if self.dragging:
-            self._defer_until_not_dragging(self._after_wink_expression)
-            return
-        if self.action_name != "wink" and self.state not in ("action", "drag"):
-            return
-        restore_free = self._wink_restore_free
-        self._wink_restore_free = False
-        self._clear_all_action_fx()
-        self._cancel_action_end()
-        self._cancel_action_defer()
-        self._add_interact_mood()
-        if restore_free and self.mode not in ("free", "game"):
-            self._interrupt_for_mode_switch()
-            self.mode = "free"
-            self.follow_animating = False
-        self.action_name = ""
-        self.click_bounce_offset = 0
-        if self.mode == "quiet":
-            self.state = "rest"
-            self._set_image(self.sprites.sleep[1])
-            self._show_sleep_zzz()
-            self._schedule_rest_bobble()
-        else:
-            self.state = "stand"
-            self._set_image(self._current_stand_sprite())
-        self._place_window()
-        if not self._check_mood_happy():
-            self._stand_tick()
+        # 兼容旧调度/看门狗：统一走简单表情结束
+        self._after_simple_expression()
 
     def _play_expression_sprite(self, name: str, sprite: ImageTk.PhotoImage, *, banter: bool = True) -> None:
         if self.dragging or self.state == "work" or self.music_sprite_mode:
@@ -11374,7 +11661,7 @@ class DesktopPet:
                 ("伤心", self._play_expression_sad),
                 ("有主意", self._play_expression_idea),
                 ("脸红", self._play_expression_shy),
-                ("wink", lambda: self._play_expression_wink(restore_free=True)),
+                ("wink", self._play_expression_wink),
                 ("点赞", self._play_expression_like),
             ],
             offset_x=200,
@@ -13030,9 +13317,6 @@ class DesktopPet:
             return
         if self.state == "action":
             if self.action_end_job or self.action_defer_job:
-                return
-            if self.action_name == "wink":
-                self._after_wink_expression()
                 return
             if self.action_name in ("expose", "yesno"):
                 return

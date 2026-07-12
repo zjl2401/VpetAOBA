@@ -16,22 +16,5 @@
       "attempts": 3,
       "ts": "2026-07-11 22:03:53"
     }
-  ],
-  "vocab:英语": [
-    {
-      "pet_id": 0,
-      "total_correct": 14,
-      "best_streak": 5,
-      "ts": "2026-07-12 05:11:41"
-    }
-  ],
-  "typing:日语": [
-    {
-      "pet_id": 0,
-      "best_score": 5,
-      "best_grade": "C",
-      "attempts": 1,
-      "ts": "2026-07-12 10:25:42"
-    }
   ]
 }

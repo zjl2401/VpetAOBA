@@ -12,11 +12,7 @@
     "companion_bar": true,
     "game_mode": true,
     "music_mode": true,
-    "first_play:vocab": true,
-    "first_play:expose": true,
-    "first_play:typing": true,
-    "first_play:rhythm_game": true,
-    "rhythm_game": true
+    "first_play:expose": true
   },
   "work_mode": {
     "show_props": true,

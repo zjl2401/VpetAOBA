@@ -5,5 +5,6 @@
   "sfx_volume": 80,
   "voice_volume": 80,
   "muted": false,
-  "custom_path": ""
+  "custom_path": "",
+  "normal_track": "radical_mat"
 }
