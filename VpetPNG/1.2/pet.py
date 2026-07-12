@@ -58,6 +58,9 @@ GALLERY_COLS = 3
 GALLERY_WIN_W = 360
 GALLERY_SCROLL_H = 200
 GALLERY_ARROW_ZONE = 0.28
+# 面板过大时统一固定窗口尺寸，内容区滚动查看（与画廊同模式）
+PANEL_FIXED_W = 400
+PANEL_FIXED_H = 480
 
 DEFAULT_GALLERY_GROUPS: tuple[dict, ...] = (
     {"title": "站立", "files": ("stand.jpg",)},
@@ -200,59 +203,98 @@ DEFAULT_MUSIC_TRACK = (
     else (MUSIC_TRACK_ORDER[0] if MUSIC_TRACK_ORDER else "radical_mat")
 )
 
-# 曲目版面图标：优先 Vpetsign 抠图，不足则用像素音符
-SIGN_SRC_DIR = Path(r"C:\Users\36255\Desktop\Vpetsign")
-SIGNS_DIR = ASSETS_DIR / "signs"
-MUSIC_PLATE_ICON_PX = 44
+# 曲目版面图标：像素音符 + border.png 外框（不用 Vpetsign）
+PLATE_BORDER_PATH = ASSETS_DIR / "ui" / "border.png"
+PLATE_BORDER_FALLBACK = Path(__file__).resolve().parent / "border.png"
+MUSIC_PLATE_ICON_PX = 56
+MUSIC_PLATE_INNER_RATIO = 0.70
+MUSIC_PLATE_INNER_ALPHA = 0.72  # 中间图标略降不透明度，突出边框
 MUSIC_PICKER_COLS = 4
-_MUSIC_ICON_PHOTO_CACHE: dict[tuple[str, int], ImageTk.PhotoImage] = {}
-_MUSIC_SIGN_PATHS: list[Path] | None = None
+_MUSIC_ICON_PHOTO_CACHE: dict[tuple, ImageTk.PhotoImage] = {}
+_PLATE_BORDER_CACHE: dict[int, Image.Image] = {}
 
 
-def _cutout_near_white(img: Image.Image, *, thresh: int = 242) -> Image.Image:
+def _cutout_near_black(img: Image.Image, *, thresh: int = 40) -> Image.Image:
     rgba = img.convert("RGBA")
     px = rgba.load()
     w, h = rgba.size
     for y in range(h):
         for x in range(w):
             r, g, b, a = px[x, y]
-            m = min(r, g, b)
-            if m >= thresh:
-                px[x, y] = (r, g, b, 0)
-            elif m >= thresh - 14:
-                fade = max(0, min(255, int(a * (thresh - m) / 14)))
-                px[x, y] = (r, g, b, fade)
-    bbox = rgba.getbbox()
-    return rgba.crop(bbox) if bbox else rgba
+            if r <= thresh and g <= thresh and b <= thresh:
+                px[x, y] = (0, 0, 0, 0)
+            elif max(r, g, b) <= thresh + 16 and abs(r - g) < 10 and abs(g - b) < 10:
+                px[x, y] = (0, 0, 0, 0)
+    return rgba
 
 
-def _ensure_sign_cutouts() -> list[Path]:
-    global _MUSIC_SIGN_PATHS
-    if _MUSIC_SIGN_PATHS is not None:
-        return _MUSIC_SIGN_PATHS
-    SIGNS_DIR.mkdir(parents=True, exist_ok=True)
-    outs: list[Path] = []
-    # 已处理好的 assets/signs
-    existing = sorted(SIGNS_DIR.glob("*.png"))
-    if existing:
-        _MUSIC_SIGN_PATHS = existing
-        return existing
-    if SIGN_SRC_DIR.is_dir():
-        for i, src in enumerate(sorted(SIGN_SRC_DIR.glob("*.jpg")) + sorted(SIGN_SRC_DIR.glob("*.png"))):
-            dst = SIGNS_DIR / f"{i:02d}_{src.stem[:8]}.png"
-            try:
-                if (not dst.exists()) or (src.exists() and dst.stat().st_mtime < src.stat().st_mtime):
-                    _cutout_near_white(Image.open(src)).save(dst)
-                if dst.exists():
-                    outs.append(dst)
-            except Exception:
-                continue
-    _MUSIC_SIGN_PATHS = outs
-    return outs
+def _plate_border_image(size: int) -> Image.Image | None:
+    cached = _PLATE_BORDER_CACHE.get(size)
+    if cached is not None:
+        return cached
+    path = PLATE_BORDER_PATH if PLATE_BORDER_PATH.exists() else PLATE_BORDER_FALLBACK
+    if not path.exists():
+        return None
+    try:
+        border = Image.open(path).convert("RGBA")
+        # 若四角仍是不透明黑底，再抠一次
+        sample = border.getpixel((2, 2))
+        if sample[3] > 200 and sample[0] < 50 and sample[1] < 50 and sample[2] < 50:
+            border = _cutout_near_black(border)
+        border = border.resize((size, size), Image.NEAREST)
+        _PLATE_BORDER_CACHE[size] = border
+        return border
+    except Exception:
+        return None
+
+
+def _scale_rgba_alpha(img: Image.Image, factor: float) -> Image.Image:
+    rgba = img.convert("RGBA")
+    r, g, b, a = rgba.split()
+    a = a.point(lambda v, f=factor: max(0, min(255, int(v * f))))
+    return Image.merge("RGBA", (r, g, b, a))
+
+
+def _make_pixel_headphone_icon(size: int = 18) -> Image.Image:
+    """菜单用像素耳机图标。"""
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    band = "#88ccff"
+    cup = "#66aadd"
+    dark = "#223355"
+    # headband
+    d.rectangle([3, 2, 12, 3], fill=band)
+    d.rectangle([2, 3, 3, 7], fill=band)
+    d.rectangle([12, 3, 13, 7], fill=band)
+    # ear cups
+    d.rectangle([1, 7, 5, 13], fill=cup)
+    d.rectangle([10, 7, 14, 13], fill=cup)
+    d.rectangle([2, 8, 4, 12], fill="#aadfff")
+    d.rectangle([11, 8, 13, 12], fill="#aadfff")
+    d.rectangle([1, 7, 5, 13], outline=dark)
+    d.rectangle([10, 7, 14, 13], outline=dark)
+    return img.resize((size, size), Image.NEAREST)
+
+
+_MENU_KIND_ICON_CACHE: dict[tuple[str, int], ImageTk.PhotoImage] = {}
+
+
+def _menu_kind_icon_photo(kind: str, size: int = 16) -> ImageTk.PhotoImage:
+    key = (kind, int(size))
+    photo = _MENU_KIND_ICON_CACHE.get(key)
+    if photo is not None:
+        return photo
+    if kind == "music":
+        img = _make_pixel_headphone_icon(size)
+    else:
+        img = _make_pixel_music_fallback_icon(abs(hash(kind)), size)
+    photo = ImageTk.PhotoImage(img)
+    _MENU_KIND_ICON_CACHE[key] = photo
+    return photo
 
 
 def _make_pixel_music_fallback_icon(index: int, size: int = 48) -> Image.Image:
-    """不够用的版面图标：像素音符 + 色块。"""
+    """曲目版面图标：像素音符 + 色块（按曲目序号换色）。"""
     palette = (
         "#66ccff",
         "#ff88cc",
@@ -276,29 +318,38 @@ def _make_pixel_music_fallback_icon(index: int, size: int = 48) -> Image.Image:
     return img.resize((size, size), Image.NEAREST)
 
 
-def _music_track_icon_image(track_id: str, size: int = MUSIC_PLATE_ICON_PX) -> Image.Image:
-    signs = _ensure_sign_cutouts()
+def _music_track_content_image(track_id: str, inner: int) -> Image.Image:
     try:
         idx = list(MUSIC_TRACK_ORDER).index(track_id)
     except ValueError:
         idx = abs(hash(track_id)) % max(1, len(MUSIC_TRACK_ORDER) or 1)
-    if idx < len(signs):
-        try:
-            im = Image.open(signs[idx]).convert("RGBA")
-            # 等比装入方框，保持像素感
-            im.thumbnail((size, size), Image.NEAREST)
-            canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-            ox = (size - im.width) // 2
-            oy = (size - im.height) // 2
-            canvas.paste(im, (ox, oy), im)
-            return canvas
-        except Exception:
-            pass
-    return _make_pixel_music_fallback_icon(idx, size)
+    return _make_pixel_music_fallback_icon(idx, inner)
+
+
+def _music_track_icon_image(track_id: str, size: int = MUSIC_PLATE_ICON_PX) -> Image.Image:
+    """版面图标 = 中间标识（略透明）+ border 外框。"""
+    inner = max(16, int(size * MUSIC_PLATE_INNER_RATIO))
+    content = _music_track_content_image(track_id, inner)
+    content = _scale_rgba_alpha(content, MUSIC_PLATE_INNER_ALPHA)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    # 中间轻微底色，避免边框内太空
+    pad = (size - inner) // 2
+    fill = Image.new("RGBA", (inner, inner), (12, 18, 28, 55))
+    canvas.paste(fill, (pad, pad), fill)
+    canvas.paste(content, (pad, pad), content)
+    border = _plate_border_image(size)
+    if border is not None:
+        canvas.alpha_composite(border)
+    else:
+        # 无边框素材时画一圈简易描边
+        d = ImageDraw.Draw(canvas)
+        d.rectangle([1, 1, size - 2, size - 2], outline="#66ccff")
+        d.rectangle([3, 3, size - 4, size - 4], outline="#88e0ff")
+    return canvas
 
 
 def _music_track_icon_photo(track_id: str, size: int = MUSIC_PLATE_ICON_PX) -> ImageTk.PhotoImage:
-    key = (str(track_id), int(size))
+    key = (str(track_id), int(size), "pixel_v1")
     photo = _MUSIC_ICON_PHOTO_CACHE.get(key)
     if photo is None:
         photo = ImageTk.PhotoImage(_music_track_icon_image(track_id, size))
@@ -1172,6 +1223,58 @@ def _make_scrollable_frame(
     _bind_wheel(inner)
     wrap.after_idle(_sync_scroll)
     return wrap, inner, canvas
+
+
+def _fit_panel_wh(
+    win: tk.Misc,
+    width: int = PANEL_FIXED_W,
+    height: int = PANEL_FIXED_H,
+) -> tuple[int, int]:
+    """把面板钳到屏幕内的固定宽高，并写入 win._panel_fixed_size。"""
+    try:
+        sw = int(win.winfo_screenwidth())
+        sh = int(win.winfo_screenheight())
+    except Exception:
+        sw, sh = 1280, 720
+    w = min(int(width), max(280, sw - 80))
+    h = min(int(height), max(240, sh - 100))
+    try:
+        win.geometry(f"{w}x{h}")
+        win.minsize(min(260, w), min(180, h))
+    except Exception:
+        pass
+    try:
+        setattr(win, "_panel_fixed_size", (w, h))
+    except Exception:
+        pass
+    return w, h
+
+
+def _pack_fixed_scroll_panel(
+    win: tk.Misc,
+    *,
+    width: int = PANEL_FIXED_W,
+    height: int = PANEL_FIXED_H,
+    bg: str = MENU_BG,
+    padx: int = 10,
+    pady: int = 8,
+) -> tuple[tk.Frame, tk.Frame]:
+    """固定大小面板壳 + 可滚动内容区。返回 (outer, scroll_inner)；内容放进 scroll_inner。"""
+    w, h = _fit_panel_wh(win, width, height)
+    outer = tk.Frame(win, bg=bg, padx=padx, pady=pady)
+    outer.pack(fill=tk.BOTH, expand=True)
+    scroll_wrap, inner, _canvas = _make_scrollable_frame(
+        outer,
+        width=max(200, w - padx * 2 - 28),
+        height=max(160, h - pady * 2 - 8),
+        bg=bg,
+    )
+    scroll_wrap.pack(fill=tk.BOTH, expand=True)
+    try:
+        setattr(win, "_panel_scroll_installed", True)
+    except Exception:
+        pass
+    return outer, inner
 
 
 FOODS: dict[str, dict] = {
@@ -5237,8 +5340,7 @@ class DesktopPet:
         self.sound_settings_win.attributes("-topmost", True)
         self.sound_settings_win.configure(bg=MENU_BG)
 
-        frame = tk.Frame(self.sound_settings_win, bg=MENU_BG, padx=12, pady=10)
-        frame.pack()
+        _, frame = _pack_fixed_scroll_panel(self.sound_settings_win)
 
         tk.Label(frame, text="声音设置", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
 
@@ -5579,10 +5681,23 @@ class DesktopPet:
     def _place_panel_popup(self, win: tk.Toplevel | None) -> None:
         if not win or not win.winfo_exists():
             return
-        pw = max(win.winfo_reqwidth(), 220)
-        ph = max(win.winfo_reqheight(), 80)
+        fixed = getattr(win, "_panel_fixed_size", None)
+        if isinstance(fixed, tuple) and len(fixed) == 2:
+            pw, ph = int(fixed[0]), int(fixed[1])
+        else:
+            pw = max(win.winfo_reqwidth(), 220)
+            ph = max(win.winfo_reqheight(), 80)
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            max_w = min(PANEL_FIXED_W, max(280, sw - 80))
+            max_h = min(PANEL_FIXED_H, max(240, sh - 100))
+            if pw > max_w or ph > max_h:
+                pw, ph = _fit_panel_wh(win, min(pw, max_w), min(ph, max_h))
         px, py = self._panel_popup_pos(pw, ph)
-        win.geometry(f"+{px}+{py}")
+        try:
+            win.geometry(f"{pw}x{ph}+{px}+{py}")
+        except Exception:
+            win.geometry(f"+{px}+{py}")
 
     def _place_pet_attached_popup(self, win: tk.Toplevel | None, pref_x: int, pref_y: int) -> None:
         if not win or not win.winfo_exists():
@@ -5831,8 +5946,7 @@ class DesktopPet:
         self.operation_guide_win.title("操作说明")
         self.operation_guide_win.attributes("-topmost", True)
         self.operation_guide_win.configure(bg=MENU_BG)
-        frame = tk.Frame(self.operation_guide_win, bg=MENU_BG, padx=12, pady=10)
-        frame.pack()
+        _, frame = _pack_fixed_scroll_panel(self.operation_guide_win)
         tk.Label(frame, text="操作说明", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
         tk.Label(
             frame,
@@ -5879,29 +5993,17 @@ class DesktopPet:
         win.title(str(info["title"]))
         win.attributes("-topmost", True)
         win.configure(bg=MENU_BG)
-        outer = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
-        outer.pack(fill=tk.BOTH, expand=True)
+        _, outer = _pack_fixed_scroll_panel(win)
         tk.Label(outer, text=str(info["title"]), font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
-
-        body_wrap = tk.Frame(outer, bg=MENU_BG)
-        body_wrap.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
-        scroll = tk.Scrollbar(body_wrap)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        text = tk.Text(
-            body_wrap,
-            width=46,
-            height=16,
+        tk.Label(
+            outer,
+            text=str(info.get("body", "")),
             font=PIXEL_FONT,
             fg=MENU_FG,
-            bg="#1e1e28",
-            wrap=tk.WORD,
-            relief=tk.FLAT,
-            yscrollcommand=scroll.set,
-        )
-        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scroll.config(command=text.yview)
-        text.insert("1.0", str(info.get("body", "")))
-        text.config(state=tk.DISABLED)
+            bg=MENU_BG,
+            justify=tk.LEFT,
+            wraplength=340,
+        ).pack(anchor=tk.W, pady=(8, 0))
 
         for label, url in info.get("links") or ():
             _pack_web_link(outer, label, url, prefix="链接 · ")
@@ -5922,8 +6024,7 @@ class DesktopPet:
         win.title("官方音游说明")
         win.attributes("-topmost", True)
         win.configure(bg=MENU_BG)
-        frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
-        frame.pack()
+        _, frame = _pack_fixed_scroll_panel(win)
         tk.Label(frame, text="官方音游介绍", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
         tk.Label(
             frame,
@@ -5962,8 +6063,7 @@ class DesktopPet:
         win.title(str(info.get("title", "操作指南")))
         win.attributes("-topmost", True)
         win.configure(bg=MENU_BG)
-        frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
-        frame.pack()
+        _, frame = _pack_fixed_scroll_panel(win)
         tk.Label(
             frame,
             text=str(info.get("title", "操作指南")),
@@ -6142,9 +6242,8 @@ class DesktopPet:
             self.menu_bar.destroy()
         self.menu_bar = None
 
-    def _menu_btn(self, parent: tk.Misc, text: str, command) -> tk.Button:
-        return tk.Button(
-            parent,
+    def _menu_btn(self, parent: tk.Misc, text: str, command, *, icon: str | None = None) -> tk.Button:
+        kwargs = dict(
             text=text,
             command=command,
             font=PIXEL_FONT,
@@ -6158,8 +6257,16 @@ class DesktopPet:
             bd=0,
             cursor="hand2",
         )
+        if icon:
+            photo = _menu_kind_icon_photo(icon, 16)
+            kwargs.update(image=photo, compound=tk.LEFT, padx=6)
+            btn = tk.Button(parent, **kwargs)
+            # 防止 PhotoImage 被回收
+            btn._menu_icon_photo = photo  # type: ignore[attr-defined]
+            return btn
+        return tk.Button(parent, **kwargs)
 
-    def _show_sub_menu(self, items: list[tuple[str, callable]], offset_x: int = 0) -> None:
+    def _show_sub_menu(self, items: list, offset_x: int = 0) -> None:
         self._hide_sub_menu()
         self.sub_menu = tk.Toplevel(self.root)
         self.sub_menu.overrideredirect(True)
@@ -6169,12 +6276,17 @@ class DesktopPet:
         frame = tk.Frame(self.sub_menu, bg=MENU_BG, padx=2, pady=2)
         frame.pack()
 
-        for label, cmd in items:
+        for item in items:
+            icon = None
+            if len(item) == 3:
+                label, cmd, icon = item
+            else:
+                label, cmd = item
             if "▶" in label:
                 handler = lambda c=cmd: (self._hide_sub_menu(), c())
             else:
                 handler = lambda c=cmd: (self._hide_main_menu(), c())
-            btn = self._menu_btn(frame, label, handler)
+            btn = self._menu_btn(frame, label, handler, icon=icon)
             btn.pack(fill=tk.X, pady=1)
 
         self._sub_menu_offset_x = offset_x
@@ -6234,7 +6346,7 @@ class DesktopPet:
                 (quiet_label, self._enable_quiet),
                 ("工作 ▶", self._open_work_mode_menu),
                 ("游戏 ▶", self._open_mode_game_menu),
-                (music_label, self._toggle_music_mode),
+                (music_label, self._toggle_music_mode, "music"),
             ],
             offset_x=0,
         )
@@ -6287,7 +6399,7 @@ class DesktopPet:
                 ("打字 ▶", self._open_typing_lang_menu),
                 ("背单词 ▶", self._open_vocab_lang_menu),
                 ("生词本 ▶", self._open_vocab_notebook_menu),
-                (rhythm_label, self._open_music_game_menu),
+                (rhythm_label, self._open_music_game_menu, "music"),
                 ("持有者排名", self._open_leaderboard),
             ],
             offset_x=120,
@@ -6317,7 +6429,7 @@ class DesktopPet:
         current_id: str | None,
         on_pick,
     ) -> None:
-        """带版面图标的曲目选择（优先 Vpetsign 抠图）。"""
+        """带边框像素图标的曲目选择。"""
         old = getattr(self, "music_track_picker_win", None)
         if old and old.winfo_exists():
             try:
@@ -6330,12 +6442,13 @@ class DesktopPet:
         win.title(title)
         win.attributes("-topmost", True)
         win.configure(bg="#161822")
-        win.geometry("420x460")
+        _fit_panel_wh(win, 420, 460)
+        setattr(win, "_panel_scroll_installed", True)
 
         head = tk.Frame(win, bg="#161822", padx=10, pady=8)
         head.pack(fill=tk.X)
         tk.Label(head, text=title, font=PIXEL_FONT, fg="#88ccff", bg="#161822").pack(side=tk.LEFT)
-        tk.Label(head, text="版面图标", font=("Courier New", 9, "bold"), fg="#778899", bg="#161822").pack(
+        tk.Label(head, text="像素图标", font=("Courier New", 9, "bold"), fg="#778899", bg="#161822").pack(
             side=tk.RIGHT
         )
 
@@ -6488,6 +6601,7 @@ class DesktopPet:
         win.attributes("-topmost", True)
         win.configure(bg=MENU_BG)
         win.protocol("WM_DELETE_WINDOW", self._close_vocab_notebook)
+        w, h = _fit_panel_wh(win, PANEL_FIXED_W, PANEL_FIXED_H)
         frame = tk.Frame(win, bg=MENU_BG, padx=10, pady=8)
         frame.pack(fill=tk.BOTH, expand=True)
         tk.Label(frame, text=f"生词本 · {lang}（{len(rows)}）", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(
@@ -6523,8 +6637,11 @@ class DesktopPet:
             side=tk.LEFT
         )
 
-        scroll_wrap, inner, _canvas = _make_scrollable_frame(frame, width=320, height=260, bg=MENU_BG)
+        scroll_wrap, inner, _canvas = _make_scrollable_frame(
+            frame, width=max(200, w - 48), height=max(160, h - 120), bg=MENU_BG
+        )
         scroll_wrap.pack(fill=tk.BOTH, expand=True)
+        setattr(win, "_panel_scroll_installed", True)
         if not rows:
             tk.Label(inner, text="（暂无生词）", font=PIXEL_FONT, fg="#666666", bg=MENU_BG).pack(anchor=tk.W, pady=8)
         else:
@@ -7515,8 +7632,7 @@ class DesktopPet:
         self.diary_win.attributes("-topmost", True)
         self.diary_win.configure(bg=MENU_BG)
 
-        frame = tk.Frame(self.diary_win, bg=MENU_BG, padx=10, pady=8)
-        frame.pack()
+        _, frame = _pack_fixed_scroll_panel(self.diary_win)
         tk.Label(frame, text="日记", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
 
         input_row = tk.Frame(frame, bg=MENU_BG)
@@ -7578,7 +7694,7 @@ class DesktopPet:
         self.weather_win.title("天气预报")
         self.weather_win.attributes("-topmost", True)
         self.weather_win.configure(bg="#1a2030")
-        self.weather_win.geometry(f"{WEATHER_W}x{WEATHER_H}")
+        _fit_panel_wh(self.weather_win, WEATHER_W, WEATHER_H)
         self.weather_win.protocol("WM_DELETE_WINDOW", self._close_weather_forecast)
         self.weather_photos = []
 
@@ -7803,7 +7919,8 @@ class DesktopPet:
         self.gallery_win.title("画廊")
         self.gallery_win.attributes("-topmost", True)
         self.gallery_win.configure(bg=MENU_BG)
-        self.gallery_win.geometry(f"{GALLERY_WIN_W}x{GALLERY_PREVIEW_SIZE + GALLERY_SCROLL_H + 110}")
+        gh = GALLERY_PREVIEW_SIZE + GALLERY_SCROLL_H + 110
+        _fit_panel_wh(self.gallery_win, GALLERY_WIN_W, gh)
 
         outer = tk.Frame(self.gallery_win, bg=MENU_BG, padx=8, pady=8)
         outer.pack(fill=tk.BOTH, expand=True)
@@ -8156,8 +8273,7 @@ class DesktopPet:
         self.phonograph_win.attributes("-topmost", True)
         self.phonograph_win.configure(bg=MENU_BG)
 
-        outer = tk.Frame(self.phonograph_win, bg=MENU_BG, padx=12, pady=10)
-        outer.pack()
+        _, outer = _pack_fixed_scroll_panel(self.phonograph_win)
         tk.Label(outer, text="留声", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
         tk.Label(
             outer,
@@ -8262,8 +8378,7 @@ class DesktopPet:
         self.panel_settings_win.attributes("-topmost", True)
         self.panel_settings_win.configure(bg=MENU_BG)
 
-        frame = tk.Frame(self.panel_settings_win, bg=MENU_BG, padx=12, pady=10)
-        frame.pack()
+        _, frame = _pack_fixed_scroll_panel(self.panel_settings_win)
         tk.Label(frame, text="系统设置", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
 
         size_row = tk.Frame(frame, bg=MENU_BG)
@@ -9789,8 +9904,7 @@ class DesktopPet:
         self.leaderboard_win.attributes("-topmost", True)
         self.leaderboard_win.configure(bg=MENU_BG)
 
-        outer = tk.Frame(self.leaderboard_win, bg=MENU_BG, padx=12, pady=10)
-        outer.pack()
+        _, outer = _pack_fixed_scroll_panel(self.leaderboard_win)
         tk.Label(outer, text="持有者排名", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
         tk.Label(
             outer,
@@ -9844,8 +9958,7 @@ class DesktopPet:
         self.about_win.title("关于")
         self.about_win.attributes("-topmost", True)
         self.about_win.configure(bg=MENU_BG)
-        frame = tk.Frame(self.about_win, bg=MENU_BG, padx=14, pady=12)
-        frame.pack()
+        _, frame = _pack_fixed_scroll_panel(self.about_win)
         _pack_panel_caption(frame, "关于 Vpet", fg=PIXEL_COLOR)
         _pack_panel_caption(frame, ABOUT_TEXT, pady=(8, 0))
         _pack_web_link(
@@ -9884,8 +9997,7 @@ class DesktopPet:
         self.feedback_win.title("问题反馈")
         self.feedback_win.attributes("-topmost", True)
         self.feedback_win.configure(bg=MENU_BG)
-        frame = tk.Frame(self.feedback_win, bg=MENU_BG, padx=14, pady=12)
-        frame.pack()
+        _, frame = _pack_fixed_scroll_panel(self.feedback_win)
         _pack_panel_caption(frame, "问题反馈", fg=PIXEL_COLOR)
         _pack_panel_caption(
             frame,
@@ -14572,8 +14684,7 @@ class DesktopPet:
         self.schedule_win.attributes("-topmost", True)
         self.schedule_win.configure(bg=MENU_BG)
 
-        frame = tk.Frame(self.schedule_win, bg=MENU_BG, padx=10, pady=8)
-        frame.pack()
+        _, frame = _pack_fixed_scroll_panel(self.schedule_win)
 
         tk.Label(frame, text="日程提醒", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
         row = tk.Frame(frame, bg=MENU_BG)
