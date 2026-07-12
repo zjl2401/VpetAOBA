@@ -718,11 +718,8 @@ FAULT_ALERT_MESSAGES = (
 FACE_DCLICK_MS = 350
 FACE_DCLICK_COMBOS_NEEDED = 3
 FACE_DCLICK_COMBO_RESET_MS = 4500
-EXIT_DISSOLVE_MS = 45
+EXIT_DISSOLVE_MS = SIZE_LOAD_ANIM_MS
 EXIT_DISSOLVE_FRAMES = 36
-EXIT_DISSOLVE_PX_SCALE = 5
-EXIT_DISSOLVE_MAIN_COLORS = ("#4488ff", "#88ccff", "#ff88cc", "#ffffff", "#66aaff")
-EXIT_DISSOLVE_COMPANION_COLORS = ("#44cc88", "#88ffcc", "#ffdd44", "#ccffaa", "#66dd99")
 EXPOSE_RING_PAD = 36
 EXPOSE_BLUE_SPAN = 60
 EXPOSE_BLUE_SPAN_MIN = 18
@@ -1787,8 +1784,20 @@ def _add_sticker(canvas: Image.Image, kind: str) -> Image.Image:
     return out
 
 
+def _loading_peak_phase(size: int) -> int:
+    px = max(4, size // 12)
+    rows = max(4, size // px)
+    return rows * 2 + 6
+
+
 def _draw_size_loading_frame(
-    canvas: tk.Canvas, size: int, phase: int, *, label: str = "", simple: bool = False
+    canvas: tk.Canvas,
+    size: int,
+    phase: int,
+    *,
+    label: str = "",
+    simple: bool = False,
+    reverse: bool = False,
 ) -> None:
     canvas.delete("all")
     px = max(4, size // 12)
@@ -1802,17 +1811,36 @@ def _draw_size_loading_frame(
         canvas.create_rectangle(bar_x, bar_y, bar_x + bar_w, bar_y + bar_px, fill="#253246", outline="")
         seg_w = max(bar_px * 3, bar_w // 4)
         span = max(1, bar_w - seg_w)
-        offset = int((phase % 20) / 19 * span)
-        canvas.create_rectangle(
-            bar_x + offset, bar_y, bar_x + offset + seg_w, bar_y + bar_px, fill="#5a8ec8", outline=""
-        )
+        if reverse:
+            ratio = max(0.0, 1.0 - min(phase, 20) / 20.0)
+            fill_w = max(0, int(bar_w * ratio))
+            if fill_w > 0:
+                canvas.create_rectangle(
+                    bar_x, bar_y, bar_x + fill_w, bar_y + bar_px, fill="#5a8ec8", outline=""
+                )
+            if ratio > 0.05:
+                offset = int(ratio * span)
+                canvas.create_rectangle(
+                    bar_x + offset,
+                    bar_y,
+                    bar_x + offset + seg_w,
+                    bar_y + bar_px,
+                    fill="#88ccff",
+                    outline="",
+                )
+        else:
+            offset = int((phase % 20) / 19 * span)
+            canvas.create_rectangle(
+                bar_x + offset, bar_y, bar_x + offset + seg_w, bar_y + bar_px, fill="#5a8ec8", outline=""
+            )
         return
 
     cols = max(4, size // px)
     rows = max(4, size // px)
     total = cols * rows
-    scan_row = phase % (rows + 2)
-    lit = min(total, int(total * min(1.0, (phase + 1) / max(6, rows))) + phase * 2)
+    eff = max(0, _loading_peak_phase(size) - phase) if reverse else phase
+    scan_row = eff % (rows + 2)
+    lit = min(total, int(total * min(1.0, (eff + 1) / max(6, rows))) + eff * 2)
     palette = ("#141c28", "#243048", "#4488ff", "#66aaff", "#a8ddff")
     for row in range(rows):
         for col in range(cols):
@@ -1821,14 +1849,14 @@ def _draw_size_loading_frame(
             if row == scan_row or row == scan_row - 1:
                 c = palette[4]
             elif idx < lit:
-                c = palette[2 + (idx + phase) % 3]
-            elif (row + col + phase) % 6 == 0:
+                c = palette[2 + (idx + eff) % 3]
+            elif (row + col + eff) % 6 == 0:
                 c = palette[1]
             else:
                 c = palette[0]
             canvas.create_rectangle(x, y, x + px - 1, y + px - 1, fill=c, outline="")
     cx, cy = size // 2, size // 2
-    pulse = px + (phase % 3)
+    pulse = px + (eff % 3)
     canvas.create_rectangle(cx - pulse, cy - pulse, cx + pulse, cy + pulse, fill="#ffffff", outline="")
     canvas.create_rectangle(cx - px, cy - px, cx + px, cy + px, fill="#4488ff", outline="")
     bar_w = size - px * 4
@@ -13045,7 +13073,6 @@ class DesktopPet:
             self.x,
             self.y + self.click_bounce_offset,
             self.display_size,
-            EXIT_DISSOLVE_MAIN_COLORS,
             on_hide=lambda: self.label.pack_forget(),
             on_done=one_done,
         )
@@ -13066,7 +13093,6 @@ class DesktopPet:
                     int(entry["x"]),
                     int(entry["y"]),
                     int(entry.get("size", MINI_PET_SIZE)),
-                    EXIT_DISSOLVE_COMPANION_COLORS,
                     on_hide=lambda label=lbl: label.pack_forget() if label else None,
                     on_done=one_done,
                 )
@@ -13076,30 +13102,13 @@ class DesktopPet:
         x: int,
         y: int,
         size: int,
-        colors: tuple[str, ...],
         *,
         on_hide=None,
         on_done=None,
     ) -> None:
         if on_hide:
             on_hide()
-        px = max(3, size // 24) * EXIT_DISSOLVE_PX_SCALE
-        cols = max(4, size // px)
-        rows = max(4, size // px)
-        particles: list[dict] = []
-        for row in range(rows):
-            for col in range(cols):
-                particles.append(
-                    {
-                        "x": col * px + random.randint(-1, 1),
-                        "y": row * px + random.randint(-1, 1),
-                        "vx": random.uniform(-2.8, 2.8),
-                        "vy": random.uniform(-1.2, 3.6),
-                        "life": random.randint(EXIT_DISSOLVE_FRAMES // 2, EXIT_DISSOLVE_FRAMES),
-                        "color": random.choice(colors),
-                        "size": px,
-                    }
-                )
+        total_frames = max(EXIT_DISSOLVE_FRAMES, _loading_peak_phase(size))
         dissolve_win = tk.Toplevel(self.root)
         dissolve_win.overrideredirect(True)
         dissolve_win.attributes("-topmost", True)
@@ -13116,28 +13125,9 @@ class DesktopPet:
                 if on_done:
                     on_done()
                 return
-            canvas.delete("all")
-            alive = False
-            for p in particles:
-                if p["life"] <= 0:
-                    continue
-                alive = True
-                p["x"] += p["vx"]
-                p["y"] += p["vy"]
-                p["vy"] += 0.08
-                p["life"] -= 1
-                alpha = max(0.15, p["life"] / EXIT_DISSOLVE_FRAMES)
-                sz = max(2, int(p["size"] * alpha))
-                canvas.create_rectangle(
-                    p["x"],
-                    p["y"],
-                    p["x"] + sz,
-                    p["y"] + sz,
-                    fill=p["color"],
-                    outline="",
-                )
+            _draw_size_loading_frame(canvas, size, frame["n"], reverse=True)
             frame["n"] += 1
-            if alive and frame["n"] < EXIT_DISSOLVE_FRAMES + 8:
+            if frame["n"] <= total_frames:
                 tick_job["id"] = self.root.after(EXIT_DISSOLVE_MS, tick)
             else:
                 tick_job["id"] = None
