@@ -14,6 +14,9 @@ DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 DESKTOP = Path.home() / "Desktop"
 EXE_NAME = "Vpet.exe"
+BUNDLED_SRC = ROOT / "bundled"
+LEGACY_VOICE_SRC = Path(r"C:\Users\36255\Desktop\Vpetvoice")
+LEGACY_MUSIC_SRC = Path(r"C:\Users\36255\Desktop\Vpetmusic")
 
 
 def _ensure_icon() -> Path:
@@ -66,11 +69,73 @@ def _collect_data_args() -> list[str]:
         src = ROOT / folder
         if src.is_dir():
             args.extend(["--add-data", f"{src}{sep}{folder}"])
-    for name in ("app_icon.png", "app_icon1.jpg", "app_icon1.png"):
+    for name in ("app_icon.png", "app_icon1.jpg", "app_icon1.png", "border1.jpg", "border3.jpg"):
         src = ROOT / name
         if src.is_file():
             args.extend(["--add-data", f"{src}{sep}."])
+    type_cache = ROOT / "data" / "audio" / "type_cache.wav"
+    if type_cache.is_file():
+        args.extend(["--add-data", f"{type_cache}{sep}data/audio"])
     return args
+
+
+
+def _sync_bundled_media(*, force: bool = True) -> None:
+    """打包前：桌面 Vpetvoice/Vpetmusic → bundled/（仅音频，视频容器转为 wav）。"""
+    from media_bundled import count_media_files, sync_bundled_audio_only
+
+    BUNDLED_SRC.mkdir(parents=True, exist_ok=True)
+    for name, src in (("Vpetvoice", LEGACY_VOICE_SRC), ("Vpetmusic", LEGACY_MUSIC_SRC)):
+        dst = BUNDLED_SRC / name
+        if not src.is_dir():
+            print(f"警告：未找到 {src}，无法同步 bundled/{name}")
+            continue
+        print(f"同步音频 {src} → {dst} …")
+        copied, converted, removed = sync_bundled_audio_only(src, dst, force=force)
+        audio_n, video_n = count_media_files(dst)
+        print(f"  bundled/{name}: 复制 {copied}，转换 {converted}，剔除视频 {removed}；现有音频 {audio_n}，残留视频 {video_n}")
+
+
+def _clean_workspace() -> None:
+    """清理可再生的构建产物与重复发布目录。"""
+    for rel in ("build", "dist"):
+        path = ROOT / rel
+        if path.exists():
+            shutil.rmtree(path, ignore_errors=True)
+            print(f"已清理 {rel}/")
+    release = ROOT / "release"
+    for name in ("Vpet_old", "Vpet_new"):
+        path = release / name
+        if path.exists():
+            shutil.rmtree(path, ignore_errors=True)
+            print(f"已清理 release/{name}/")
+    # 过期节奏谱缓存
+    audio_dir = ROOT / "data" / "audio"
+    if audio_dir.is_dir():
+        for pattern in ("rhythm_chart_*_v3.json", "rhythm_chart_*_v4.json", "rhythm_chart_aicatch_*"):
+            for path in audio_dir.glob(pattern):
+                try:
+                    path.unlink()
+                    print(f"已删除过期缓存 {path.name}")
+                except OSError:
+                    pass
+
+
+def _publish_bundled_media(staging: Path) -> None:
+    from media_bundled import count_media_files, prune_video_files
+
+    if not BUNDLED_SRC.is_dir():
+        return
+    dst = staging / "bundled"
+    print(f"发布 bundled 资源：{BUNDLED_SRC} → {dst}")
+    _deploy_tree(BUNDLED_SRC, dst)
+    removed = prune_video_files(dst)
+    if removed:
+        print(f"  发布包剔除残留视频 {removed} 个")
+    for name in ("Vpetvoice", "Vpetmusic"):
+        sub = dst / name
+        audio_n, video_n = count_media_files(sub)
+        print(f"  发布 bundled/{name}: 音频 {audio_n}，视频 {video_n}")
 
 
 _RELEASE_LOCK_HINT = (
@@ -108,7 +173,20 @@ def _publish_release(build_dir: Path, data_src: Path) -> tuple[Path, Path, str]:
     release_root.mkdir(parents=True, exist_ok=True)
     app_name = EXE_NAME.removesuffix(".exe")
     primary = release_root / app_name
-    staging = release_root / f"{app_name}_new"
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    stamp_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+    staging_candidates = (
+        release_root / f"{app_name}_new",
+        release_root / f"{app_name}_build_{stamp_tag}",
+    )
+
+    staging: Path | None = None
+    for candidate in staging_candidates:
+        if _try_clear_dir(candidate):
+            staging = candidate
+            break
+    if staging is None:
+        raise OSError(f"无法创建发布暂存目录：{staging_candidates[-1]}")
 
     _deploy_tree(build_dir, staging)
     data_dst = staging / "data"
@@ -117,8 +195,8 @@ def _publish_release(build_dir: Path, data_src: Path) -> tuple[Path, Path, str]:
     else:
         data_dst.mkdir(parents=True, exist_ok=True)
 
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     (staging / "BUILD_STAMP.txt").write_text(stamp, encoding="utf-8")
+    _publish_bundled_media(staging)
 
     if _try_clear_dir(primary):
         try:
@@ -166,6 +244,9 @@ def main() -> None:
         print("正在安装 PyInstaller …")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller", "pystray"])
 
+    _sync_bundled_media()
+    _clean_workspace()
+
     if not deploy_only:
         icon = _ensure_icon()
         if DIST.exists():
@@ -193,6 +274,12 @@ def main() -> None:
             "pygame",
             "--hidden-import",
             "imageio_ffmpeg",
+            "--hidden-import",
+            "voice_system",
+            "--hidden-import",
+            "bundled_paths",
+            "--hidden-import",
+            "media_bundled",
             str(ROOT / "vpet_app.py"),
         ]
         print("执行打包命令：")

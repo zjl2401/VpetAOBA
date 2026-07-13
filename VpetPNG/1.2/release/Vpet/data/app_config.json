@@ -3,6 +3,9 @@
   "display_size": 128,
   "display_preset": "中",
   "difficulty": "中",
+  "rhythm_speed": "中",
+  "rhythm_chart_diff": "中",
+  "weather_city": "北京",
   "seen_hints": {
     "operation_guide": true,
     "rhyme_invite": true,
@@ -10,5 +13,10 @@
     "game_mode": true,
     "music_mode": true
   },
+  "work_mode": {
+    "show_props": true,
+    "show_stack": true
+  },
+  "voice_mode": true,
   "work_box_total": 5
 }
