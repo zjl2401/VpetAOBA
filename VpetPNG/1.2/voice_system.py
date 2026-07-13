@@ -11,6 +11,7 @@ from typing import Callable
 
 from bundled_paths import LEGACY_VOICE_ROOT, resolve_bundled
 from media_bundled import is_audio_media
+from voice_audio import ensure_voice_wav, voice_cache_path
 
 VOICE_ROOT = resolve_bundled("Vpetvoice", legacy=LEGACY_VOICE_ROOT)
 VOICE_CHANNEL_ID = 1
@@ -18,10 +19,33 @@ VOICE_CHANNEL_ID = 1
 VOICE_PRIORITY_AMBIENT = 1
 VOICE_PRIORITY_SCENE = 2
 VOICE_GLOBAL_COOLDOWN_MS = 10_000
+VOICE_HI_CATEGORY = "你好"
 
 _PREFIX_RE = re.compile(r"^(\d+|[a-zA-Z])\s+(.+)$")
-_RING_NAMES = frozenset({"ring"})
+_RING_NAMES = frozenset({"ring", "call-ring", "call_ring", "callring"})
 _STARTUP_HINTS = ("启动", "启动音")
+
+
+def _is_ring_stem(stem: str) -> bool:
+    low = stem.lower().strip()
+    if low in _RING_NAMES or low.endswith("-ring") or low.endswith("_ring"):
+        return True
+    compact = re.sub(r"[\s_\-]+", "", low)
+    if compact in ("ring", "callring"):
+        return True
+    return "call" in low and "ring" in low
+
+
+def _parse_stem(stem: str) -> tuple[str | None, str, bool, bool]:
+    if _is_ring_stem(stem):
+        return None, "铃响", True, False
+    if any(h in stem for h in _STARTUP_HINTS):
+        return None, stem, False, True
+    m = _PREFIX_RE.match(stem)
+    if m:
+        prefix = m.group(1).lower() if m.group(1).isalpha() else m.group(1)
+        return prefix, m.group(2).strip(), False, False
+    return None, stem.strip(), False, False
 
 
 @dataclass
@@ -34,19 +58,6 @@ class VoiceClip:
     is_ring: bool = False
     is_startup: bool = False
     cache_wav: Path | None = None
-
-
-def _parse_stem(stem: str) -> tuple[str | None, str, bool, bool]:
-    low = stem.lower()
-    if low in _RING_NAMES or stem == "ring" or low.endswith("-ring"):
-        return None, "铃响", True, False
-    if any(h in stem for h in _STARTUP_HINTS):
-        return None, stem, False, True
-    m = _PREFIX_RE.match(stem)
-    if m:
-        prefix = m.group(1).lower() if m.group(1).isalpha() else m.group(1)
-        return prefix, m.group(2).strip(), False, False
-    return None, stem.strip(), False, False
 
 
 @dataclass
@@ -169,16 +180,26 @@ class VoiceCatalog:
         return random.choice(misc_pool) if misc_pool else None
 
     def pick_call_sequence(self) -> list[VoiceClip]:
-        rings = [c for c in self.vpet.get("call", []) if c.is_ring]
-        body_pool = [c for c in self.vpet.get("call", []) if not c.is_ring]
-        if not rings and not body_pool:
+        """打电话语音：必须先 ring，再从 Vpet/call 非 ring 条目随机选一条。"""
+        call_clips = self.vpet.get("call", [])
+        rings = [c for c in call_clips if c.is_ring]
+        body_pool = [c for c in call_clips if not c.is_ring]
+        if not rings or not body_pool:
             return []
-        out: list[VoiceClip] = []
-        if rings:
-            out.append(random.choice(rings))
-        if body_pool:
-            out.append(random.choice(body_pool))
-        return out
+        ring = sorted(rings, key=lambda c: (0 if _is_ring_stem(c.src_path.stem) else 1, c.src_path.name))[0]
+        return [ring, random.choice(body_pool)]
+
+    def pick_hi_clip(self) -> VoiceClip | None:
+        """打招呼：从 Vpet/你好 目录随机选一条。"""
+        pool = list(self.vpet.get(VOICE_HI_CATEGORY, []))
+        if not pool:
+            pool = [
+                c
+                for items in self.vpet.values()
+                for c in items
+                if VOICE_HI_CATEGORY in c.title or VOICE_HI_CATEGORY in c.src_path.stem
+            ]
+        return random.choice(pool) if pool else None
 
     def pick_interjection(self, part: str) -> VoiceClip | None:
         groups = self._interjection_part_groups()
@@ -330,12 +351,7 @@ class VoicePlayer:
             pass
         if was_busy:
             self._mark_session_end()
-            hide_cb = self._hide_subtitle_cb
-            if hide_cb:
-                try:
-                    hide_cb()
-                except Exception:
-                    pass
+            self._hide_subtitle_now()
 
     def resolve_wav(self, clip: VoiceClip) -> Path | None:
         return self._resolve_wav(clip)
@@ -353,13 +369,23 @@ class VoicePlayer:
             return clip.cache_wav
         safe = f"{clip.source}_{clip.category}_{clip.src_path.stem}"
         safe = re.sub(r'[<>:"/\\|?*]', "_", safe)[:120]
-        dst = self.cache_dir / f"{safe}.wav"
-        wav = self.ensure_wav(clip.src_path, dst)
+        dst = voice_cache_path(self.cache_dir, safe)
+        wav = ensure_voice_wav(clip.src_path, dst)
         if wav:
             clip.cache_wav = wav
         return wav
 
+    def _hide_subtitle_now(self) -> None:
+        hide_cb = self._hide_subtitle_cb
+        if hide_cb:
+            try:
+                hide_cb()
+            except Exception:
+                pass
+
     def _show_subtitle(self, clip: VoiceClip, duration_ms: int) -> None:
+        if clip.is_ring:
+            return
         if self._subtitle_cb:
             self._subtitle_cb(clip.title, duration_ms)
 
@@ -375,11 +401,15 @@ class VoicePlayer:
         on_done: Callable[[], None] | None = None,
         priority: int = VOICE_PRIORITY_SCENE,
         ignore_cooldown: bool = False,
+        interrupt_busy: bool = False,
     ) -> bool:
         if not self.enabled or not clips:
             return False
         if self.is_busy():
-            return False
+            if interrupt_busy or ignore_cooldown:
+                self.stop()
+            else:
+                return False
         if not ignore_cooldown and not self._global_cooldown_ready():
             return False
         if not self._can_start(priority):
@@ -479,10 +509,32 @@ class VoicePlayer:
             [clip], chain=False, on_done=on_done, priority=priority, ignore_cooldown=ignore_cooldown
         )
 
-    def play_call(self, *, on_done=None, priority: int = VOICE_PRIORITY_SCENE, ignore_cooldown: bool = False) -> bool:
-        seq = self.catalog.pick_call_sequence()
+    def play_call(
+        self,
+        *,
+        clips: list[VoiceClip] | None = None,
+        on_done=None,
+        priority: int = VOICE_PRIORITY_SCENE,
+        ignore_cooldown: bool = False,
+    ) -> bool:
+        seq = clips if clips is not None else self.catalog.pick_call_sequence()
+        if len(seq) < 2:
+            return False
         return self.play_clips(
-            seq, chain=False, on_done=on_done, priority=priority, ignore_cooldown=ignore_cooldown
+            seq,
+            chain=False,
+            on_done=on_done,
+            priority=priority,
+            ignore_cooldown=ignore_cooldown,
+            interrupt_busy=True,
+        )
+
+    def play_hi(self, *, on_done=None, priority: int = VOICE_PRIORITY_SCENE, ignore_cooldown: bool = False) -> bool:
+        clip = self.catalog.pick_hi_clip()
+        if not clip:
+            return False
+        return self.play_clips(
+            [clip], chain=False, on_done=on_done, priority=priority, ignore_cooldown=ignore_cooldown
         )
 
     def play_companion_startup(self, *, on_done=None, priority: int = VOICE_PRIORITY_SCENE, ignore_cooldown: bool = False) -> bool:
@@ -532,32 +584,79 @@ class VoicePlayer:
     def _start_clip(self, clip: VoiceClip, rest: list[VoiceClip], *, chain: bool) -> None:
         wav = clip.cache_wav if clip.cache_wav and clip.cache_wav.exists() else self._resolve_wav(clip)
         if wav is None:
+            self._hide_subtitle_now()
             self._play_next(rest, chain=chain)
             return
         duration_ms = max(400, self.get_duration_ms(wav))
+        min_play_ms = max(500, int(duration_ms * 0.88))
+        if duration_ms < 200 and not clip.is_ring:
+            self._hide_subtitle_now()
+            self._play_next(rest, chain=chain)
+            return
         self._stop_sfx_if_needed()
         try:
             import pygame
 
             if not self.init_mixer():
+                self._hide_subtitle_now()
                 self._finish_all()
                 return
-            self._sound = pygame.mixer.Sound(str(wav))
             ch = pygame.mixer.Channel(VOICE_CHANNEL_ID)
+            ch.stop()
+            self._sound = pygame.mixer.Sound(str(wav))
             ch.set_volume(self.get_volume())
-            ch.play(self._sound)
+            played = ch.play(self._sound)
+            if played is None:
+                for i in range(pygame.mixer.get_num_channels()):
+                    if i != VOICE_CHANNEL_ID:
+                        try:
+                            pygame.mixer.Channel(i).stop()
+                        except Exception:
+                            pass
+                ch.stop()
+                played = ch.play(self._sound)
+            if played is None:
+                self._hide_subtitle_now()
+                self._play_next(rest, chain=chain)
+                return
             self._channel = ch
         except Exception:
+            self._hide_subtitle_now()
             self._play_next(rest, chain=chain)
             return
         self._playing = True
         self._current = clip
+        self._clip_started_ms = int(time.time() * 1000)
+        self._clip_deadline_ms = self._clip_started_ms + duration_ms + 500
+        self._clip_min_play_ms = min_play_ms
         self._show_subtitle(clip, duration_ms)
         if rest:
             self._queue = rest
         else:
             self._queue = []
         self._schedule_watch(duration_ms, chain=chain)
+
+    def _end_current_clip(self, *, chain: bool, force_stop: bool = False) -> None:
+        if force_stop:
+            try:
+                import pygame
+
+                if pygame.mixer.get_init():
+                    pygame.mixer.Channel(VOICE_CHANNEL_ID).stop()
+            except Exception:
+                pass
+        finished = self._current
+        self._current = None
+        self._playing = False
+        self._hide_subtitle_now()
+        if finished and chain:
+            self._maybe_chain(finished)
+        if self._queue:
+            pending = list(self._queue)
+            self._queue.clear()
+            self._play_next_sync(pending, chain=chain)
+        else:
+            self._finish_all()
 
     def _play_next_sync(self, clips: list[VoiceClip], *, chain: bool) -> None:
         """同步解析路径（仅供内部队列衔接）。"""
@@ -597,6 +696,14 @@ class VoicePlayer:
 
         def tick() -> None:
             self._watch_job = None
+            now_ms = int(time.time() * 1000)
+            deadline_ms = getattr(self, "_clip_deadline_ms", now_ms)
+            started_ms = getattr(self, "_clip_started_ms", now_ms)
+            min_play_ms = getattr(self, "_clip_min_play_ms", 500)
+            elapsed = now_ms - started_ms
+            if now_ms >= deadline_ms:
+                self._end_current_clip(chain=chain, force_stop=True)
+                return
             busy = False
             try:
                 import pygame
@@ -605,22 +712,12 @@ class VoicePlayer:
                     busy = pygame.mixer.Channel(VOICE_CHANNEL_ID).get_busy()
             except Exception:
                 busy = False
-            if busy:
+            if busy or elapsed < min_play_ms:
                 self._watch_job = self.root.after(80, tick)
                 return
-            finished = self._current
-            self._current = None
-            self._playing = False
-            if finished and chain:
-                self._maybe_chain(finished)
-            if self._queue:
-                pending = list(self._queue)
-                self._queue.clear()
-                self._play_next_sync(pending, chain=chain)
-            else:
-                self._finish_all()
+            self._end_current_clip(chain=chain, force_stop=False)
 
-        self._watch_job = self.root.after(max(120, duration_ms), tick)
+        self._watch_job = self.root.after(80, tick)
 
     def _maybe_chain(self, clip: VoiceClip) -> None:
         has_mate = self._has_companion_cb() if self._has_companion_cb else False
@@ -638,12 +735,7 @@ class VoicePlayer:
         self._current = None
         self._session_priority = 0
         self._mark_session_end()
-        hide_cb = self._hide_subtitle_cb
-        if hide_cb:
-            try:
-                hide_cb()
-            except Exception:
-                pass
+        self._hide_subtitle_now()
         cb = self._done_cb
         self._done_cb = None
         if cb:

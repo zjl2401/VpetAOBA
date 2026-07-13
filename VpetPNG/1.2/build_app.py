@@ -69,7 +69,7 @@ def _collect_data_args() -> list[str]:
         src = ROOT / folder
         if src.is_dir():
             args.extend(["--add-data", f"{src}{sep}{folder}"])
-    for name in ("app_icon.png", "app_icon1.jpg", "app_icon1.png", "border1.jpg", "border3.jpg"):
+    for name in ("app_icon.png", "app_icon1.jpg", "app_icon1.png", "border1.jpg", "border5.jpg"):
         src = ROOT / name
         if src.is_file():
             args.extend(["--add-data", f"{src}{sep}."])
@@ -274,6 +274,10 @@ def main() -> None:
             "pygame",
             "--hidden-import",
             "imageio_ffmpeg",
+            "--hidden-import",
+            "panel_decor",
+            "--hidden-import",
+            "voice_audio",
             "--hidden-import",
             "voice_system",
             "--hidden-import",

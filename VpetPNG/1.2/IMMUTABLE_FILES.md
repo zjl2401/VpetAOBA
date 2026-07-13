@@ -76,10 +76,11 @@
 
 在 `pet.py` 中接入语音时必须遵守：
 
-1. **语音字幕**走 `_show_voice_subtitle` → 独立 `voice_subtitle_win`，**不得**调用 `_show_speech_dialog`（避免打断打字动画与互动台词）。
-2. **游戏失败语音**走 `_play_game_fail_voice`，在**原结算/特效已显示之后**附加播放，不得提前 `return` 跳过 `_show_game_clear` 或暴露故障动画。
-3. **音效互斥**仅影响 `sfx` 声道；**不得**用 `voice_player.is_busy()` 阻止背景 FX、粒子、game_clear 动画。
-4. **练习对战战败**：保留对战界面约 1.6s 后关闭（`after(1600, _close_rhyme_fight)`），**禁止**用全屏结算替代战败画面。
+1. **语音台词框**走 `_show_voice_subtitle` → 独立 `voice_subtitle_win`（扁平像素底，**不用 border5**）；播完必须隐藏。ring 无框。与 **border5 对话框**互斥。
+2. **border5** 仅用于系统→对话（`_show_speech_dialog(..., use_border5=True)`）；其余打字框与语音字幕均为扁平框。
+3. **游戏失败语音**走 `_play_game_fail_voice`，在**原结算/特效已显示之后**附加播放，不得提前 `return` 跳过 `_show_game_clear` 或暴露故障动画。
+4. **音效互斥**仅影响 `sfx` 声道；**不得**用 `voice_player.is_busy()` 阻止背景 FX、粒子、game_clear 动画。
+5. **练习对战战败**：保留对战界面约 1.6s 后关闭（`after(1600, _close_rhyme_fight)`），**禁止**用全屏结算替代战败画面。
 
 ---
 
