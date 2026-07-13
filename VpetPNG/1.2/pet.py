@@ -1091,9 +1091,11 @@ RHYTHM_H = 600
 RHYTHM_TOP_CHROME_H = 52
 RHYTHM_TRAVEL_MS = 1400
 RHYTHM_SPEED_TRAVEL_MS: dict[str, int] = {"慢": 1800, "中": 1400, "快": 1000}
-RHYTHM_HIT_PERFECT_MS = 55
-RHYTHM_HIT_GREAT_MS = 110
-RHYTHM_HIT_GOOD_MS = 170
+RHYTHM_HIT_PERFECT_MS = 70
+RHYTHM_HIT_GREAT_MS = 140
+RHYTHM_HIT_GOOD_MS = 220
+# Windows VK：即使输入法抢键也能识别 D/F/J/K
+RHYTHM_VK_LANES: dict[int, int] = {0x44: 0, 0x46: 1, 0x4A: 2, 0x4B: 3}
 RHYTHM_BPM = 120  # 仅作音频分析失败时的回退
 RHYTHM_CHART_CACHE_VER = 5  # v5：含长按长音
 RHYTHM_HOLD_RELEASE_MS = 180  # 长音尾部松键判定窗
@@ -1352,10 +1354,10 @@ FIRST_PLAY_GUIDES: dict[str, dict] = {
         "title": "音乐 · 操作指南",
         "body": (
             "四轨节奏玩法：音符下落到判定线时按下对应键。\n\n"
-            "· 按键：D  F  J  K（左→右四轨）\n"
+            "· 按键：D  F  J  K（左→右四轨；点一下游戏窗口再按）\n"
             "· 短音：到线时点按；长音：到线时长按，尾部松键\n"
             "· 判定：Perfect / Great / Good / Miss\n"
-            "· 右上角「设置」可调流速（即时）与谱面难度（下局生效）\n"
+            "· 进入前可在「游戏设置」调流速/谱面；局内设置会暂停游戏\n"
             "· 按准确率评级 D~S，界面有进度条\n"
             "· 曲子来自 bundled/Vpetmusic 内置曲库（默认 RADICAL MAT，可换曲）\n"
             "· 开局可选「全曲」或「90 秒」\n"
@@ -1381,10 +1383,11 @@ FIRST_PLAY_GUIDES: dict[str, dict] = {
         "title": "莱姆对战 · 操作指南",
         "body": (
             "面板 → 莱姆 → 练习对战：本地回合制切磋。\n\n"
-            "· 攻击 / 防御 / 必杀等按钮进行对战\n"
-            "· 必杀有冷却时间，放完需等待后再用\n"
-            "· 邀请对战需联机服务，暂可先练习\n"
-            "· 胜利会计入持有者排名"
+            "· 双方显示「耐久」血条\n"
+            "· 攻击 / 防御 / 必杀（各有小图标）\n"
+            "· 必杀有冷却；耐久归零会激发第二人格·金目自动秒杀\n"
+            "· 金目阶段胜利会触发 forget 语音\n"
+            "· 邀请对战需联机服务，暂可先练习"
         ),
     },
 }
@@ -3076,20 +3079,90 @@ def _draw_pixel_heart(canvas: tk.Canvas, x: int, y: int, px: int = 2, *, color: 
 def _draw_fight_fighter_icon(canvas: tk.Canvas, size: int, *, side: str = "player") -> None:
     canvas.delete("all")
     px = max(3, size // 10)
-    body = "#88ccff" if side == "player" else "#ff8844"
-    accent = "#ffffff" if side == "player" else "#ffddaa"
+    if side == "jinmu":
+        body, accent, eye = "#2a6fc0", "#a8dcff", "#ff66aa"
+    elif side == "player":
+        body, accent, eye = "#88ccff", "#ffffff", "#66f0ff"
+    else:
+        body, accent, eye = "#ff8844", "#ffddaa", "#ff6644"
     cx = size // 2
     foot = size - px
     canvas.create_rectangle(cx - px, foot - px * 4, cx + px, foot - px * 2, fill=body, outline="")
     canvas.create_rectangle(cx - px * 2, foot - px * 6, cx + px * 2, foot - px * 4, fill=body, outline="")
     canvas.create_rectangle(cx - px * 2, foot - px * 8, cx + px * 2, foot - px * 6, fill=accent, outline="")
+    canvas.create_rectangle(cx - px, foot - px * 7, cx - px // 2, foot - px * 6, fill=eye, outline="")
+    canvas.create_rectangle(cx + px // 2, foot - px * 7, cx + px, foot - px * 6, fill=eye, outline="")
     if side == "opponent":
         canvas.create_rectangle(cx - px * 3, foot - px * 9, cx - px, foot - px * 7, fill="#ff6644", outline="")
+    if side == "jinmu":
+        # 金目光环点
+        canvas.create_rectangle(cx - px * 3, foot - px * 9, cx - px * 2, foot - px * 8, fill="#66f0ff", outline="")
+        canvas.create_rectangle(cx + px * 2, foot - px * 9, cx + px * 3, foot - px * 8, fill="#ff4db8", outline="")
+
+
+def _draw_fight_durability_bar(
+    canvas: tk.Canvas,
+    width: int,
+    height: int,
+    current: int,
+    maximum: int,
+    *,
+    fill: str = "#44ff88",
+    low_fill: str = "#ff4455",
+    bg: str = "#1a2233",
+) -> None:
+    canvas.delete("all")
+    canvas.create_rectangle(0, 0, width, height, fill=bg, outline="#3a4a66")
+    maximum = max(1, int(maximum))
+    ratio = max(0.0, min(1.0, float(current) / float(maximum)))
+    fw = int((width - 2) * ratio)
+    col = low_fill if ratio <= 0.28 else fill
+    if fw > 0:
+        canvas.create_rectangle(1, 1, 1 + fw, height - 1, fill=col, outline="")
+    # 分段刻度
+    for i in range(1, 4):
+        x = int(width * i / 4)
+        canvas.create_line(x, 1, x, height - 1, fill="#0a0e18")
+
+
+def _draw_fight_action_icon(canvas: tk.Canvas, kind: str, size: int = 18) -> None:
+    """攻击 / 防御 / 必杀 小像素标识。"""
+    canvas.delete("all")
+    px = max(2, size // 9)
+    if kind == "attack":
+        # 斜斩
+        canvas.create_rectangle(px, size - px * 3, px * 2, size - px, fill="#ffcc66", outline="")
+        canvas.create_rectangle(px * 2, px * 2, px * 3, size - px * 2, fill="#ffeeaa", outline="")
+        canvas.create_rectangle(px * 3, px, px * 5, px * 2, fill="#ffffff", outline="")
+        canvas.create_rectangle(px * 4, px * 2, px * 6, px * 3, fill="#88ccff", outline="")
+    elif kind == "defense":
+        # 盾
+        canvas.create_rectangle(px * 2, px, size - px * 2, size - px, fill="#66aaff", outline="")
+        canvas.create_rectangle(px * 3, px * 2, size - px * 3, size - px * 2, fill="#224466", outline="")
+        canvas.create_rectangle(px * 4, px * 3, size - px * 4, px * 4, fill="#aaddff", outline="")
+    else:
+        # 必杀：靴踢星
+        canvas.create_rectangle(px, size - px * 4, px * 4, size - px, fill="#ff6688", outline="")
+        canvas.create_rectangle(px * 3, px * 2, px * 5, size - px * 3, fill="#ffaa44", outline="")
+        _draw_pixel_star(canvas, size - px * 5, px, px=max(2, px - 1), color="#ffff88")
 
 
 def _spawn_game_clear_particles(width: int, height: int, accent: str) -> list[dict]:
-    # 保留空接口，通关动画已改为简洁静态展示
-    return []
+    rng = random.Random(hash(accent) & 0xFFFFFFFF)
+    parts: list[dict] = []
+    for _ in range(28):
+        parts.append(
+            {
+                "x": rng.uniform(12, width - 12),
+                "y": rng.uniform(18, height - 18),
+                "vx": rng.uniform(-1.6, 1.6),
+                "vy": rng.uniform(-2.2, -0.4),
+                "life": rng.randint(8, 26),
+                "size": rng.choice((2, 3, 4)),
+                "color": accent if rng.random() < 0.55 else ("#ff4db8" if rng.random() < 0.5 else "#66f0ff"),
+            }
+        )
+    return parts
 
 
 def _draw_pixel_ring(canvas: tk.Canvas, cx: int, cy: int, radius: int, px: int, color: str) -> None:
@@ -5405,6 +5478,9 @@ class DesktopPet:
         self.rhythm_keys_down: set[int] = set()
         self.rhythm_settings_win: tk.Toplevel | None = None
         self.rhythm_travel_ms = RHYTHM_TRAVEL_MS
+        self.rhythm_paused = False
+        self.rhythm_pause_mark_ms = 0
+        self._rhythm_keybinds_active = False
 
         self.drag_x = 0
         self.drag_y = 0
@@ -8097,6 +8173,7 @@ class DesktopPet:
         self._show_sub_menu(
             [
                 ("选曲开始 ▶", self._open_rhythm_track_menu),
+                ("游戏设置", self._open_rhythm_pre_settings),
                 ("官方音游说明", self._open_rhythm_carnival_info),
             ],
             offset_x=180,
@@ -10479,10 +10556,14 @@ class DesktopPet:
         state = {
             "player_hp": 100,
             "enemy_hp": 100,
+            "player_max": 100,
+            "enemy_max": 100,
             "blocking": False,
             "log": "对手：来切磋一下吧！",
             "over": False,
             "special_ready_ms": 0,
+            "jinmu": False,
+            "jinmu_used": False,
         }
 
         self.rhyme_fight_win = tk.Toplevel(self.root)
@@ -10494,7 +10575,8 @@ class DesktopPet:
 
         frame = tk.Frame(self.rhyme_fight_win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
-        tk.Label(frame, text="练习对战", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+        title_lbl = tk.Label(frame, text="练习对战 · 耐久对决", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG)
+        title_lbl.pack(anchor=tk.W)
 
         icon_row = tk.Frame(frame, bg=MENU_BG)
         icon_row.pack(fill=tk.X, pady=(6, 4))
@@ -10502,32 +10584,83 @@ class DesktopPet:
         player_canvas = tk.Canvas(icon_row, width=icon_size, height=icon_size, bg=MENU_BG, highlightthickness=0)
         player_canvas.pack(side=tk.LEFT, padx=(0, 8))
         _draw_fight_fighter_icon(player_canvas, icon_size, side="player")
-        tk.Label(icon_row, text="VS", font=PIXEL_FONT, fg="#ffcc44", bg=MENU_BG).pack(side=tk.LEFT, padx=4)
+        vs_lbl = tk.Label(icon_row, text="VS", font=PIXEL_FONT, fg="#ffcc44", bg=MENU_BG)
+        vs_lbl.pack(side=tk.LEFT, padx=4)
         enemy_canvas = tk.Canvas(icon_row, width=icon_size, height=icon_size, bg=MENU_BG, highlightthickness=0)
         enemy_canvas.pack(side=tk.LEFT, padx=(8, 0))
         _draw_fight_fighter_icon(enemy_canvas, icon_size, side="opponent")
 
-        hp_label = tk.Label(frame, text="", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
-        hp_label.pack(anchor=tk.W, pady=(4, 4))
-        log_label = tk.Label(frame, text="", font=PIXEL_FONT, fg="#aaaaaa", bg=MENU_BG, wraplength=260, justify=tk.LEFT)
-        log_label.pack(anchor=tk.W, pady=(0, 8))
+        # 双方耐久条
+        bar_w, bar_h = 280, 14
+        you_row = tk.Frame(frame, bg=MENU_BG)
+        you_row.pack(fill=tk.X, pady=(4, 2))
+        you_name = tk.Label(you_row, text="你 耐久", font=PIXEL_FONT, fg="#88ccff", bg=MENU_BG, width=8, anchor=tk.W)
+        you_name.pack(side=tk.LEFT)
+        player_bar = tk.Canvas(you_row, width=bar_w, height=bar_h, bg=MENU_BG, highlightthickness=0)
+        player_bar.pack(side=tk.LEFT, padx=(4, 6))
+        player_hp_txt = tk.Label(you_row, text="100", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG, width=4, anchor=tk.E)
+        player_hp_txt.pack(side=tk.LEFT)
+
+        foe_row = tk.Frame(frame, bg=MENU_BG)
+        foe_row.pack(fill=tk.X, pady=(2, 4))
+        foe_name = tk.Label(foe_row, text="对手 耐久", font=PIXEL_FONT, fg="#ff8844", bg=MENU_BG, width=8, anchor=tk.W)
+        foe_name.pack(side=tk.LEFT)
+        enemy_bar = tk.Canvas(foe_row, width=bar_w, height=bar_h, bg=MENU_BG, highlightthickness=0)
+        enemy_bar.pack(side=tk.LEFT, padx=(4, 6))
+        enemy_hp_txt = tk.Label(foe_row, text="100", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG, width=4, anchor=tk.E)
+        enemy_hp_txt.pack(side=tk.LEFT)
+
+        phase_lbl = tk.Label(frame, text=f"阶段 1 · 苍叶  [{self.difficulty}]", font=PIXEL_FONT, fg="#aaaaaa", bg=MENU_BG)
+        phase_lbl.pack(anchor=tk.W)
+        log_label = tk.Label(frame, text="", font=PIXEL_FONT, fg="#cccccc", bg=MENU_BG, wraplength=320, justify=tk.LEFT)
+        log_label.pack(anchor=tk.W, pady=(4, 8))
 
         btn_row = tk.Frame(frame, bg=MENU_BG)
         btn_row.pack(fill=tk.X)
-        special_btn = tk.Button(
-            btn_row,
-            text="必杀",
-            font=PIXEL_FONT,
-            bg="#884444",
-            fg=MENU_FG,
-            activebackground="#aa5555",
-        )
+
+        def _make_action_btn(parent, kind: str, text: str, command, *, bg: str, active: str) -> tk.Button:
+            wrap = tk.Frame(parent, bg=MENU_BG)
+            wrap.pack(side=tk.LEFT, padx=3)
+            ic = tk.Canvas(wrap, width=18, height=18, bg=MENU_BG, highlightthickness=0)
+            ic.pack(side=tk.LEFT, padx=(0, 2))
+            _draw_fight_action_icon(ic, kind, 18)
+            btn = tk.Button(
+                wrap,
+                text=text,
+                command=command,
+                font=PIXEL_FONT,
+                bg=bg,
+                fg=MENU_FG,
+                activebackground=active,
+                activeforeground=MENU_FG,
+                relief=tk.FLAT,
+                padx=6,
+                pady=2,
+            )
+            btn.pack(side=tk.LEFT)
+            btn._icon_canvas = ic  # type: ignore[attr-defined]
+            return btn
+
+        attack_btn = _make_action_btn(btn_row, "attack", "攻击", lambda: None, bg=MENU_ACTIVE, active="#3a4a66")
+        block_btn = _make_action_btn(btn_row, "defense", "防御", lambda: None, bg="#2a3348", active="#3a4458")
+        special_btn = _make_action_btn(btn_row, "special", "必杀", lambda: None, bg="#884444", active="#aa5555")
+
+        def set_buttons_enabled(enabled: bool) -> None:
+            st = tk.NORMAL if enabled else tk.DISABLED
+            for b in (attack_btn, block_btn, special_btn):
+                try:
+                    b.config(state=st)
+                except Exception:
+                    pass
 
         def special_left_ms() -> int:
             return max(0, int(state["special_ready_ms"]) - int(time.time() * 1000))
 
         def refresh_special_btn() -> None:
             if state["over"] or not special_btn.winfo_exists():
+                return
+            if state["jinmu"]:
+                special_btn.config(text="必杀", state=tk.DISABLED, bg="#333344", fg="#666666")
                 return
             left = special_left_ms()
             if left > 0:
@@ -10537,7 +10670,31 @@ class DesktopPet:
                 special_btn.config(text="必杀", state=tk.NORMAL, bg="#884444", fg=MENU_FG)
 
         def refresh() -> None:
-            hp_label.config(text=f"你 {state['player_hp']} HP    对手 {state['enemy_hp']} HP  [{self.difficulty}]")
+            _draw_fight_durability_bar(
+                player_bar,
+                bar_w,
+                bar_h,
+                state["player_hp"],
+                state["player_max"],
+                fill="#44ddff" if state["jinmu"] else "#44ff88",
+            )
+            _draw_fight_durability_bar(
+                enemy_bar,
+                bar_w,
+                bar_h,
+                state["enemy_hp"],
+                state["enemy_max"],
+                fill="#ff8844",
+                low_fill="#ff3344",
+            )
+            player_hp_txt.config(text=str(int(state["player_hp"])))
+            enemy_hp_txt.config(text=str(int(state["enemy_hp"])))
+            if state["jinmu"]:
+                phase_lbl.config(text=f"阶段 2 · 金目觉醒  [{self.difficulty}]", fg="#ff66aa")
+                you_name.config(text="金目 耐久", fg="#66b0ee")
+            else:
+                phase_lbl.config(text=f"阶段 1 · 苍叶  [{self.difficulty}]", fg="#aaaaaa")
+                you_name.config(text="你 耐久", fg="#88ccff")
             log_label.config(text=state["log"])
             refresh_special_btn()
 
@@ -10545,17 +10702,32 @@ class DesktopPet:
             if state["over"]:
                 return
             state["over"] = True
+            set_buttons_enabled(False)
             if won:
-                self.mood = min(100, self.mood + 5)
-                state["log"] = "你赢了！对手：下次我不会输的…"
-                self._add_diary_entry("练习对战：胜利", auto=True)
-                self._save_game_record("rhyme", {"won": True, "difficulty": self.difficulty})
+                self.mood = min(100, self.mood + (8 if state["jinmu"] else 5))
+                if state["jinmu"]:
+                    state["log"] = "金目接管结束。对手：…什么人？"
+                    self._add_diary_entry("练习对战：金目觉醒胜利", auto=True)
+                    self._save_game_record(
+                        "rhyme",
+                        {"won": True, "jinmu": True, "difficulty": self.difficulty},
+                    )
+                    # 二阶段胜利：forget 随机语音
+                    self._play_scene_voice_vpet("forget", chain=False, ignore_cooldown=True)
+                    subtitle = "第二人格·金目 秒杀胜利"
+                    accent = "#66b0ee"
+                else:
+                    state["log"] = "你赢了！对手：下次我不会输的…"
+                    self._add_diary_entry("练习对战：胜利", auto=True)
+                    self._save_game_record("rhyme", {"won": True, "jinmu": False, "difficulty": self.difficulty})
+                    subtitle = "练习对战通关"
+                    accent = "#ff8844"
                 self._refresh_panel()
                 refresh()
                 self._show_game_clear(
                     title="胜利！",
-                    subtitle="练习对战通关",
-                    accent="#ff8844",
+                    subtitle=subtitle,
+                    accent=accent,
                     on_done=self._close_rhyme_fight,
                 )
             else:
@@ -10565,7 +10737,12 @@ class DesktopPet:
                 self._refresh_panel()
                 refresh()
                 self._play_game_fail_voice("hurt")
-                self.root.after(1600, self._close_rhyme_fight)
+                self._show_game_clear(
+                    title="对战失败",
+                    subtitle="练习对战 · 再来一次",
+                    accent="#ff4455",
+                    on_done=self._close_rhyme_fight,
+                )
 
         def start_special_cooldown() -> None:
             state["special_ready_ms"] = int(time.time() * 1000) + RHYME_SPECIAL_COOLDOWN_MS
@@ -10581,12 +10758,12 @@ class DesktopPet:
             self.root.after(200, tick_cd)
 
         def player_attack(*, special: bool = False) -> None:
-            if state["over"]:
+            if state["over"] or state["jinmu"]:
                 return
             mult = self._fight_player_mult
             if special:
                 if special_left_ms() > 0:
-                    state["log"] = f"必杀冷却中（{ (special_left_ms() + 999) // 1000 }s）"
+                    state["log"] = f"必杀冷却中（{(special_left_ms() + 999) // 1000}s）"
                     refresh()
                     return
                 start_special_cooldown()
@@ -10605,15 +10782,51 @@ class DesktopPet:
                 end_fight(True)
 
         def player_block() -> None:
-            if state["over"]:
+            if state["over"] or state["jinmu"]:
                 return
             state["blocking"] = True
             state["log"] = "防御姿态…"
             refresh()
             self.root.after(700, lambda: state.update({"blocking": False}))
 
-        def enemy_turn() -> None:
+        def jinmu_finisher() -> None:
             if state["over"] or not self.rhyme_fight_win or not self.rhyme_fight_win.winfo_exists():
+                return
+            state["log"] = "金目：零距离切段——秒杀！"
+            state["enemy_hp"] = 0
+            refresh()
+            self.root.after(650, lambda: end_fight(True))
+
+        def awaken_jinmu() -> None:
+            if state["jinmu_used"] or state["over"]:
+                return
+            state["jinmu_used"] = True
+            state["jinmu"] = True
+            set_buttons_enabled(False)
+            # 续命并切形态
+            state["player_hp"] = max(45, int(state["player_max"] * 0.55))
+            state["log"] = "耐久归零…第二人格·金目觉醒！"
+            _draw_fight_fighter_icon(player_canvas, icon_size, side="jinmu")
+            refresh()
+            # 取消对手倒计时，金目自动出手秒杀
+            if self.rhyme_fight_job:
+                try:
+                    self.root.after_cancel(self.rhyme_fight_job)
+                except Exception:
+                    pass
+                self.rhyme_fight_job = None
+
+            def after_awaken() -> None:
+                if state["over"] or not self.rhyme_fight_win or not self.rhyme_fight_win.winfo_exists():
+                    return
+                state["log"] = "金目开始自动攻击…"
+                refresh()
+                self.rhyme_fight_job = self.root.after(900, jinmu_finisher)
+
+            self.rhyme_fight_job = self.root.after(700, after_awaken)
+
+        def enemy_turn() -> None:
+            if state["over"] or state["jinmu"] or not self.rhyme_fight_win or not self.rhyme_fight_win.winfo_exists():
                 return
             action = random.choice(["attack", "attack", "heavy", "feint"])
             em = self._fight_enemy_mult
@@ -10629,23 +10842,22 @@ class DesktopPet:
             if state["blocking"]:
                 dmg = max(1, dmg // 3)
                 msg += "（被格挡）"
-            state["player_hp"] = max(0, state["player_hp"] - dmg)
+            new_hp = max(0, state["player_hp"] - dmg)
+            state["player_hp"] = new_hp
             state["log"] = msg
             refresh()
-            if state["player_hp"] <= 0:
-                end_fight(False)
+            if new_hp <= 0:
+                if not state["jinmu_used"]:
+                    awaken_jinmu()
+                else:
+                    end_fight(False)
                 return
             delay = random.randint(1400, 2200)
             self.rhyme_fight_job = self.root.after(delay, enemy_turn)
 
-        tk.Button(btn_row, text="攻击", command=player_attack, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(
-            side=tk.LEFT, padx=2
-        )
-        tk.Button(
-            btn_row, text="防御", command=player_block, font=PIXEL_FONT, bg=MENU_BG, fg=MENU_FG
-        ).pack(side=tk.LEFT, padx=2)
+        attack_btn.config(command=player_attack)
+        block_btn.config(command=player_block)
         special_btn.config(command=lambda: player_attack(special=True))
-        special_btn.pack(side=tk.LEFT, padx=2)
         refresh()
         self._place_panel_popup(self.rhyme_fight_win)
         self.rhyme_fight_job = self.root.after(1500, enemy_turn)
@@ -10895,12 +11107,15 @@ class DesktopPet:
         )
         self.rhythm_canvas.pack(padx=0, pady=(0, 8))
         self.rhythm_play_h = RHYTHM_PLAY_H
-        self.rhythm_win.bind("<KeyPress>", self._rhythm_on_key)
-        self.rhythm_win.bind("<KeyRelease>", self._rhythm_on_key_release)
+        self.rhythm_paused = False
+        self.rhythm_pause_mark_ms = 0
         try:
-            self.rhythm_win.focus_force()
+            self.rhythm_canvas.configure(takefocus=True)
         except Exception:
             pass
+        self.rhythm_win.bind("<Button-1>", lambda _e: self._rhythm_focus_input())
+        self.rhythm_canvas.bind("<Button-1>", lambda _e: self._rhythm_focus_input())
+        self._rhythm_bind_keys(True)
         self._place_panel_popup(self.rhythm_win)
         self._refresh_rhythm_grade_bar(force=True)
 
@@ -10919,39 +11134,98 @@ class DesktopPet:
 
         self.rhythm_start_ms = int(time.time() * 1000)
         self._mark_hint_seen("rhythm_game")
+        self._rhythm_focus_input()
+        self.root.after(80, self._rhythm_focus_input)
+        self.root.after(220, self._rhythm_focus_input)
+        self._show_toast("按 D F J K 击打 · 先点一下游戏窗", "#88ccff", duration_ms=1800)
         self._rhythm_tick()
+
+    def _rhythm_focus_input(self) -> None:
+        if not self.rhythm_active or getattr(self, "rhythm_paused", False):
+            return
+        win = self.rhythm_win
+        if not win or not win.winfo_exists():
+            return
+        try:
+            win.lift()
+            win.focus_force()
+        except Exception:
+            pass
+        canvas = self.rhythm_canvas
+        if canvas is not None:
+            try:
+                if canvas.winfo_exists():
+                    canvas.focus_set()
+            except Exception:
+                pass
+
+    def _rhythm_bind_keys(self, enable: bool) -> None:
+        """局内全局监听 D/F/J/K；非对局时处理函数直接 return，不拆其它绑定。"""
+        if enable and not self._rhythm_keybinds_active:
+            self.root.bind_all("<KeyPress>", self._rhythm_on_key, add="+")
+            self.root.bind_all("<KeyRelease>", self._rhythm_on_key_release, add="+")
+            self._rhythm_keybinds_active = True
+        # enable=False 时不 unbind_all（会误删其它模块绑定）；靠 rhythm_active 守卫
+
+    def _rhythm_event_lane(self, event: tk.Event) -> int | None:
+        key = (getattr(event, "keysym", None) or "").lower()
+        if key in RHYTHM_KEYS:
+            return RHYTHM_KEYS.index(key)
+        ch = (getattr(event, "char", None) or "").lower()
+        if ch in RHYTHM_KEYS:
+            return RHYTHM_KEYS.index(ch)
+        code = int(getattr(event, "keycode", 0) or 0)
+        if code in RHYTHM_VK_LANES:
+            return RHYTHM_VK_LANES[code]
+        return None
 
     def _get_rhythm_travel_ms(self) -> int:
         return int(getattr(self, "rhythm_travel_ms", None) or _rhythm_travel_ms_for(self.app_config.get("rhythm_speed", "中")))
 
-    def _open_rhythm_settings(self) -> None:
-        if not self.rhythm_active or not self.rhythm_win or not self.rhythm_win.winfo_exists():
+    def _pause_rhythm_for_settings(self) -> None:
+        if not self.rhythm_active or getattr(self, "rhythm_paused", False):
             return
-        old = getattr(self, "rhythm_settings_win", None)
-        if old is not None:
+        self.rhythm_paused = True
+        self.rhythm_pause_mark_ms = int(time.time() * 1000)
+        if self.rhythm_job:
             try:
-                if old.winfo_exists():
-                    old.lift()
-                    old.focus_force()
-                    return
+                self.root.after_cancel(self.rhythm_job)
             except Exception:
                 pass
-        win = tk.Toplevel(self.rhythm_win)
-        self.rhythm_settings_win = win
-        win.title("音乐设置")
-        self._apply_window_layer(win)
-        win.configure(bg="#181828")
-        win.resizable(False, False)
-        frame = tk.Frame(win, bg="#181828", padx=14, pady=12)
-        frame.pack()
+            self.rhythm_job = None
+        try:
+            import pygame
+
+            if pygame.mixer.get_init():
+                pygame.mixer.music.pause()
+        except Exception:
+            pass
+
+    def _resume_rhythm_after_settings(self) -> None:
+        if not self.rhythm_active or not getattr(self, "rhythm_paused", False):
+            return
+        elapsed = max(0, int(time.time() * 1000) - int(getattr(self, "rhythm_pause_mark_ms", 0) or 0))
+        self.rhythm_start_ms += elapsed
+        self.rhythm_paused = False
+        self.rhythm_pause_mark_ms = 0
+        try:
+            import pygame
+
+            if pygame.mixer.get_init():
+                pygame.mixer.music.unpause()
+        except Exception:
+            pass
+        self._rhythm_focus_input()
+        self._rhythm_tick()
+
+    def _fill_rhythm_settings_form(self, frame: tk.Frame, *, in_game: bool) -> None:
+        tip = "局内调整：流速即时生效 · 谱面难度下局生效 · 打开时游戏暂停"
+        if not in_game:
+            tip = "开局前设置 · 流速与谱面难度都会在本局生效"
         tk.Label(frame, text="音乐设置", font=PIXEL_FONT, fg="#88ccff", bg="#181828").pack(anchor=tk.W)
-        tk.Label(
-            frame,
-            text="流速即时生效 · 谱面难度下局生效",
-            font=PIXEL_FONT,
-            fg="#888899",
-            bg="#181828",
-        ).pack(anchor=tk.W, pady=(4, 10))
+        tk.Label(frame, text=tip, font=PIXEL_FONT, fg="#888899", bg="#181828", wraplength=320, justify=tk.LEFT).pack(
+            anchor=tk.W, pady=(4, 10)
+        )
 
         speed_var = tk.StringVar(value=str(self.app_config.get("rhythm_speed", "中")))
         diff_var = tk.StringVar(value=str(self.app_config.get("rhythm_chart_diff", "中")))
@@ -10987,21 +11261,53 @@ class DesktopPet:
         def set_diff(v: str) -> None:
             self.app_config["rhythm_chart_diff"] = v
             _save_app_config(self.app_config)
-            self._show_toast(f"谱面难度：{v}（下局生效）", "#88ffaa", duration_ms=1200)
+            msg = f"谱面难度：{v}" + ("（下局生效）" if in_game else "（本局生效）")
+            self._show_toast(msg, "#88ffaa", duration_ms=1200)
 
         row("流速", speed_var, ("慢", "中", "快"), set_speed)
         row("谱面", diff_var, ("低", "中", "高"), set_diff)
         tk.Label(
             frame,
-            text="长音：到线时长按，尾部松键",
+            text="按键 D F J K · 长音到线时长按、尾部松键",
             font=PIXEL_FONT,
             fg="#888899",
             bg="#181828",
         ).pack(anchor=tk.W, pady=(10, 6))
+
+    def _open_rhythm_pre_settings(self) -> None:
+        """进游戏前设置流速/谱面。"""
+        self._hide_main_menu()
+        old = getattr(self, "rhythm_settings_win", None)
+        if old is not None:
+            try:
+                if old.winfo_exists():
+                    old.lift()
+                    old.focus_force()
+                    return
+            except Exception:
+                pass
+        win = tk.Toplevel(self.root)
+        self.rhythm_settings_win = win
+        win.title("音乐 · 游戏设置")
+        self._apply_window_layer(win)
+        win.configure(bg="#181828")
+        win.resizable(False, False)
+        frame = tk.Frame(win, bg="#181828", padx=14, pady=12)
+        frame.pack()
+        self._fill_rhythm_settings_form(frame, in_game=False)
+
+        def close() -> None:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            if self.rhythm_settings_win is win:
+                self.rhythm_settings_win = None
+
         tk.Button(
             frame,
-            text="关闭",
-            command=win.destroy,
+            text="完成",
+            command=close,
             font=PIXEL_FONT,
             bg="#2a2a44",
             fg="#dddddd",
@@ -11009,7 +11315,54 @@ class DesktopPet:
             padx=10,
             pady=4,
         ).pack(anchor=tk.E)
-        win.protocol("WM_DELETE_WINDOW", win.destroy)
+        win.protocol("WM_DELETE_WINDOW", close)
+        self._place_panel_popup(win)
+
+    def _open_rhythm_settings(self) -> None:
+        if not self.rhythm_active or not self.rhythm_win or not self.rhythm_win.winfo_exists():
+            return
+        old = getattr(self, "rhythm_settings_win", None)
+        if old is not None:
+            try:
+                if old.winfo_exists():
+                    self._pause_rhythm_for_settings()
+                    old.lift()
+                    old.focus_force()
+                    return
+            except Exception:
+                pass
+        self._pause_rhythm_for_settings()
+        win = tk.Toplevel(self.rhythm_win)
+        self.rhythm_settings_win = win
+        win.title("音乐设置（已暂停）")
+        self._apply_window_layer(win)
+        win.configure(bg="#181828")
+        win.resizable(False, False)
+        frame = tk.Frame(win, bg="#181828", padx=14, pady=12)
+        frame.pack()
+        self._fill_rhythm_settings_form(frame, in_game=True)
+
+        def close_and_resume() -> None:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            if self.rhythm_settings_win is win:
+                self.rhythm_settings_win = None
+            self._resume_rhythm_after_settings()
+
+        tk.Button(
+            frame,
+            text="继续游戏",
+            command=close_and_resume,
+            font=PIXEL_FONT,
+            bg="#2a2a44",
+            fg="#dddddd",
+            relief=tk.FLAT,
+            padx=10,
+            pady=4,
+        ).pack(anchor=tk.E)
+        win.protocol("WM_DELETE_WINDOW", close_and_resume)
         try:
             win.geometry(f"+{self.rhythm_win.winfo_rootx() + 40}+{self.rhythm_win.winfo_rooty() + 60}")
         except Exception:
@@ -11075,12 +11428,19 @@ class DesktopPet:
         self._rhythm_apply_judgment(judge, pts)
 
     def _rhythm_on_key(self, event: tk.Event) -> None:
-        if not self.rhythm_active:
+        if not self.rhythm_active or getattr(self, "rhythm_paused", False):
             return
-        key = (event.keysym or "").lower()
-        if key not in RHYTHM_KEYS:
+        # 设置窗 / 输入框打开时不要抢键
+        try:
+            w = event.widget
+            cls = w.winfo_class() if w is not None else ""
+            if cls in ("Entry", "Text", "TEntry"):
+                return
+        except Exception:
+            pass
+        lane = self._rhythm_event_lane(event)
+        if lane is None:
             return
-        lane = RHYTHM_KEYS.index(key)
         if lane in self.rhythm_keys_down:
             return
         self.rhythm_keys_down.add(lane)
@@ -11094,9 +11454,9 @@ class DesktopPet:
             if note.get("head_hit") or note.get("holding"):
                 continue
             t = int(note["t"])
-            if t > now + RHYTHM_HIT_GOOD_MS + 40:
+            if t > now + RHYTHM_HIT_GOOD_MS + 60:
                 break
-            if t < now - RHYTHM_HIT_GOOD_MS - 40:
+            if t < now - RHYTHM_HIT_GOOD_MS - 60:
                 continue
             delta = now - t
             ad = abs(delta)
@@ -11120,12 +11480,11 @@ class DesktopPet:
             self._rhythm_apply_judgment(judge, pts)
 
     def _rhythm_on_key_release(self, event: tk.Event) -> None:
-        if not self.rhythm_active:
+        if not self.rhythm_active or getattr(self, "rhythm_paused", False):
             return
-        key = (event.keysym or "").lower()
-        if key not in RHYTHM_KEYS:
+        lane = self._rhythm_event_lane(event)
+        if lane is None:
             return
-        lane = RHYTHM_KEYS.index(key)
         self.rhythm_keys_down.discard(lane)
         now = self._rhythm_now_ms()
         start = max(0, getattr(self, "rhythm_scan_i", 0) - 8)
@@ -11153,6 +11512,8 @@ class DesktopPet:
 
     def _rhythm_tick(self) -> None:
         if not self.rhythm_active or not self.rhythm_canvas or not self.rhythm_win:
+            return
+        if getattr(self, "rhythm_paused", False):
             return
         if not self.rhythm_win.winfo_exists():
             self._close_rhythm_game(resume=True)
