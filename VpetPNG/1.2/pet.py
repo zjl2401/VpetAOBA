@@ -989,8 +989,8 @@ STARTUP_ANIM_MS = 45
 STARTUP_MIN_MS = 320
 WAIT_HINT_DEFAULT = "请耐心等待…"
 WAIT_HINT_TICK_MS = 500
-SPRITE_BATCH_SIZE = 5
-SPRITE_BATCH_MS = 16
+SPRITE_BATCH_SIZE = 12
+SPRITE_BATCH_MS = 8
 UI_BUSY_LAG_THRESHOLD_MS = 500
 IDLE_WATCHDOG_MS = 5000
 FOOD_DRAG_ICON = 40
@@ -1031,15 +1031,15 @@ FAULT_ALERT_MESSAGES = (
 FACE_DCLICK_MS = 350
 FACE_DCLICK_COMBOS_NEEDED = 3
 FACE_DCLICK_COMBO_RESET_MS = 4500
-EXIT_DISSOLVE_MS = 26
-EXIT_DISSOLVE_FRAMES = 36
+EXIT_DISSOLVE_MS = 28
+EXIT_DISSOLVE_FRAMES = 32
 PIXEL_BLOCK_DISSOLVE_MS = EXIT_DISSOLVE_MS
 PIXEL_BLOCK_DISSOLVE_FRAMES = EXIT_DISSOLVE_FRAMES
-# 潮科技像素：霓虹粉青 + 网格光
-VPET_ANIM_PALETTE = ("#ff2d95", "#ff66cc", "#66f0ff", "#2ad4ff", "#a8f6ff", "#ffffff")
-COMPANION_ANIM_PALETTE = ("#1a3a6e", "#2458a8", "#3d8dff", "#66c8ff", "#9ee0ff", "#e8f7ff")
-PIXEL_REASSEMBLY_CYCLE = 44
-NEON_GRID_STEP = 10
+# 像素聚散主题色（加载环用）；出入场块色来自立绘采样
+VPET_ANIM_PALETTE = ("#4488ff", "#66aaff", "#88ccff", "#ff88cc", "#ffffff")
+COMPANION_ANIM_PALETTE = ("#44cc88", "#66dd99", "#88ffcc", "#ffdd44", "#ffffff")
+PIXEL_REASSEMBLY_CYCLE = 36
+STARTUP_WATCHDOG_MS = 14000
 
 EXPOSE_RING_PAD = 36
 EXPOSE_BLUE_SPAN = 60
@@ -1232,6 +1232,7 @@ GUIDE_TOPICS: dict[str, dict] = {
             "· 左键拖拽蓝色把手区域：移动桌宠\n"
             "· 左键点脸：弹跳；连点可触发状态对话；双击可害羞等\n"
             "· Esc：退出当前游戏 / 音乐玩法 / AI 对话 / 多数子窗口，回到自由模式\n"
+            "· Ctrl+Shift+Q：强制关闭桌宠（跳过出场动画，卡死时可用）\n"
             "· F1：随时打开操作说明\n"
             "· 四大菜单与状态面板：约 8 秒无操作会自动关闭（有点击/悬停会续期）\n"
             "· 首次启动会弹出总览说明；加载时桌宠下方「请耐心等待」属正常"
@@ -1308,7 +1309,8 @@ GUIDE_TOPICS: dict[str, dict] = {
             "· 重置 / 关于 / 退出 / 操作说明 / 问题反馈\n\n"
             "【快捷键 Ctrl+Shift+】\n"
             "  H 打招呼   E 喂食   T 电话   J 下蹲\n"
-            "  N 睡眠     A AI对话  V 开关菜单\n\n"
+            "  N 睡眠     A AI对话  V 开关菜单\n"
+            "  Q 强制关闭桌宠（跳过语音与出场）\n\n"
             "【显示层级 顶部/底部】\n"
             "顶部：桌宠与所有菜单、面板、对话框、特效置于所有窗口最上层；\n"
             "底部：取消置顶，显示在其他窗口之下。\n\n"
@@ -1810,6 +1812,7 @@ HOTKEY_ACTIONS: list[tuple[int, int, str]] = [
     (5, ord("N"), "sleep"),
     (6, ord("A"), "ai_chat"),
     (7, ord("V"), "toggle_menu"),
+    (8, ord("Q"), "force_quit"),  # 强制退出，跳过语音与出场
 ]
 
 TYPING_BANK_FILES: dict[str, str] = {
@@ -2224,18 +2227,6 @@ def _palette_tint_color(hex_color: str, palette: tuple[str, ...] | None, seed: i
     return f"#{nr:02x}{ng:02x}{nb:02x}"
 
 
-def _draw_spark_chip(canvas: tk.Canvas, cx: float, cy: float, half: float, color: str, *, tip: bool = False) -> None:
-    """菱形星屑；tip 时加十字闪光。"""
-    hx = max(1.0, half)
-    x, y = int(cx), int(cy)
-    pts = (x, int(y - hx), int(x + hx), y, x, int(y + hx), int(x - hx), y)
-    canvas.create_polygon(pts, fill=color, outline="")
-    if tip and hx >= 2.0:
-        arm = max(1, int(hx * 1.6))
-        canvas.create_rectangle(x - 1, y - arm, x + 1, y + arm, fill=color, outline="")
-        canvas.create_rectangle(x - arm, y - 1, x + arm, y + 1, fill=color, outline="")
-
-
 def _build_pixel_block_specs(
     img: Image.Image,
     size: int,
@@ -2243,13 +2234,12 @@ def _build_pixel_block_specs(
     palette: tuple[str, ...] | None = None,
     lively: bool = True,
 ) -> tuple[int, list[tuple]]:
-    """星屑采样：(block_size, [(tx, ty, color, angle, burst, delay, wobble, speed, spark), ...])"""
-    bs = max(3, _pixel_block_size(size) - (1 if lively else 0))
+    """像素块规格：(block_size, [(tx, ty, color, drift_x, drift_y, delay, wobble, speed), ...])"""
+    bs = max(4, _pixel_block_size(size) - (1 if lively else 0))
     cols = max(1, (size + bs - 1) // bs)
     rows = max(1, (size + bs - 1) // bs)
     rng = random.Random(time.time_ns() ^ (id(img) << 7) ^ os.getpid())
     specs: list[tuple] = []
-    mid = size * 0.5
     for row in range(rows):
         for col in range(cols):
             x0, y0 = col * bs, row * bs
@@ -2258,19 +2248,19 @@ def _build_pixel_block_specs(
             if sampled is None:
                 continue
             color, _alpha = sampled
-            color = _palette_tint_color(color, palette, row * 31 + col * 17 + int(rng.random() * 10000))
-            tx = x0 + bs * 0.5
-            ty = y0 + bs * 0.5
-            base_ang = math.atan2(ty - mid, tx - mid)
-            jitter = rng.uniform(-0.55, 0.55)
-            angle = base_ang + jitter
-            dist = math.hypot(tx - mid, ty - mid)
-            burst = max(size * 0.18, dist * rng.uniform(1.15, 1.85) + bs * rng.uniform(2.2, 5.5))
-            delay = min(0.72, (dist / max(1.0, size * 0.72)) * 0.35 + rng.uniform(0.0, 0.42))
+            if palette:
+                color = _palette_tint_color(color, palette, row * 31 + col * 17 + int(rng.random() * 10000))
+            angle = rng.uniform(0.0, math.tau)
+            mag = rng.uniform(0.45, 1.55 if lively else 1.15) * bs * (1.35 if lively else 1.05)
+            from_cx = (x0 + bs * 0.5) - size * 0.5
+            from_cy = (y0 + bs * 0.5) - size * 0.5
+            radial = math.hypot(from_cx, from_cy) or 1.0
+            drift_x = math.cos(angle) * mag + from_cx / radial * bs * rng.uniform(0.35, 1.4)
+            drift_y = math.sin(angle) * mag + from_cy / radial * bs * rng.uniform(0.25, 1.2)
+            delay = min(0.78, (row / max(1, rows - 1)) * 0.28 + rng.uniform(0.0, 0.45))
             wobble = rng.uniform(0.0, math.tau)
-            speed = rng.uniform(0.78, 1.28)
-            spark = 1 if rng.random() < (0.28 if lively else 0.12) else 0
-            specs.append((tx, ty, color, angle, burst, delay, wobble, speed, spark))
+            speed = rng.uniform(0.75, 1.32)
+            specs.append((x0, y0, color, drift_x, drift_y, delay, wobble, speed))
     rng.shuffle(specs)
     return bs, specs
 
@@ -2286,109 +2276,41 @@ def _draw_pixel_block_dissolve_frame(
     reverse: bool = False,
     sparkle_palette: tuple[str, ...] | None = None,
 ) -> None:
-    """星屑绽放：入场中心绽开再收束成角色；退场由角色位向外炸开。"""
+    """像素聚散：入场块从外侧飘回原位；退场块向外飘散淡出。"""
     canvas.delete("all")
     if not specs:
         return
     t_global = phase / max(1, total_phases - 1)
-    mid = size * 0.5
-    bloom_end = SPARK_BURST_BLOOM
-    palette = sparkle_palette or VPET_ANIM_PALETTE
-
-    # 中心光核 / 冲击环
-    if reverse:
-        ring_u = _ease_out_cubic(t_global)
-        core_r = max(1, int(block_size * (1.2 - ring_u * 0.9)))
-        ring_r = int(size * 0.08 + ring_u * size * 0.55)
-    else:
-        if t_global < bloom_end:
-            ring_u = _ease_out_cubic(t_global / bloom_end)
-            core_r = max(2, int(block_size * (0.8 + ring_u * 1.6)))
-            ring_r = int(size * 0.06 + ring_u * size * 0.42)
-        else:
-            settle = _ease_in_out_quad((t_global - bloom_end) / max(0.001, 1.0 - bloom_end))
-            core_r = max(1, int(block_size * (1.4 - settle * 1.1)))
-            ring_r = int(size * (0.48 - settle * 0.38))
-    glow = palette[min(len(palette) - 1, 3)]
-    canvas.create_oval(
-        int(mid - core_r),
-        int(mid - core_r),
-        int(mid + core_r),
-        int(mid + core_r),
-        fill=palette[-1],
-        outline="",
-    )
-    if ring_r > 2:
-        thick = max(1, block_size // 3)
-        canvas.create_oval(
-            int(mid - ring_r),
-            int(mid - ring_r),
-            int(mid + ring_r),
-            int(mid + ring_r),
-            outline=glow,
-            width=thick,
-        )
-
+    home = block_size * 0.5
     for item in specs:
-        if len(item) >= 9:
-            tx, ty, color, angle, burst, delay, wobble, speed, spark = item[:9]
-        else:
-            tx, ty, color, angle, burst, delay, wobble, speed = item[:8]
-            spark = 0
-        stagger = delay * 0.55
-        denom = max(0.18, 1.0 - stagger * 0.5)
-        t_local = min(1.0, max(0.0, ((t_global * speed) - stagger * 0.22) / denom))
-        cos_a, sin_a = math.cos(angle), math.sin(angle)
-
+        tx, ty, color, drift_x, drift_y, delay, wobble, speed = item[:8]
+        stagger = delay * 0.42
+        denom = max(0.18, 1.0 - stagger * 0.45)
+        t_local = min(1.0, max(0.0, ((t_global * speed) - stagger * 0.28) / denom))
         if reverse:
-            u = _ease_in_cubic(t_local)
-            spin = wobble + u * 4.2
-            radius = burst * u
-            cx = tx + cos_a * radius + math.cos(spin) * block_size * 0.35 * u
-            cy = ty + sin_a * radius + math.sin(spin * 1.1) * block_size * 0.35 * u
-            alpha = 1.0 - u
-            scale = 1.05 - u * 0.55
-            tip = bool(spark) and u > 0.15
+            t_eased = _ease_in_cubic(t_local)
+            float_up = t_eased * block_size * 0.2
+            wobble_px = math.sin(wobble + t_eased * math.pi * 1.4) * block_size * 0.08 * (1.0 - t_eased)
+            cx = tx + home + drift_x * t_eased + wobble_px
+            cy = ty + home + drift_y * t_eased - float_up + wobble_px * 0.35
+            alpha = 1.0 - t_eased
+            scale = 1.0 - t_eased * 0.28
         else:
-            if t_local <= bloom_end:
-                u = _ease_out_cubic(t_local / bloom_end)
-                # 中心绽开：冲到 overshoot 半径
-                peak = burst * (0.55 + 0.45 * (burst / max(1.0, size)))
-                radius = peak * u
-                cx = mid + cos_a * radius
-                cy = mid + sin_a * radius
-                alpha = 0.25 + 0.75 * u
-                scale = 0.35 + 0.85 * u
-                tip = bool(spark)
-            else:
-                u = _ease_in_out_quad((t_local - bloom_end) / max(0.001, 1.0 - bloom_end))
-                peak = burst * (0.55 + 0.45 * (burst / max(1.0, size)))
-                sx = mid + cos_a * peak
-                sy = mid + sin_a * peak
-                cx = sx + (tx - sx) * u
-                cy = sy + (ty - sy) * u
-                # 收束时轻微螺旋
-                swirl = (1.0 - u) * 0.35
-                cx += math.cos(wobble + u * math.pi) * block_size * swirl
-                cy += math.sin(wobble + u * math.pi) * block_size * swirl
-                alpha = 0.55 + 0.45 * u
-                scale = 1.15 - 0.25 * u
-                tip = bool(spark) and u < 0.85
-
+            t_eased = _ease_in_out_quad(t_local)
+            remain = 1.0 - t_eased
+            wobble_px = math.sin(wobble + t_eased * math.pi) * block_size * 0.1 * remain
+            cx = tx + home + drift_x * remain + wobble_px
+            cy = ty + home + drift_y * remain + wobble_px * 0.45
+            alpha = t_eased
+            scale = 0.55 + t_eased * 0.45
         if alpha < 0.05:
             continue
-        half = max(1.2, block_size * 0.55 * scale * (0.75 + 0.25 * alpha))
-        if cx + half < 0 or cy + half < 0 or cx - half > size or cy - half > size:
+        half = block_size * scale * 0.5
+        x1, y1 = int(cx - half), int(cy - half)
+        x2, y2 = int(cx + half), int(cy + half)
+        if x2 <= 0 or y2 <= 0 or x1 >= size or y1 >= size:
             continue
-        draw_color = color if alpha > 0.55 else palette[(int(wobble * 10) + phase) % len(palette)]
-        _draw_spark_chip(canvas, cx, cy, half, draw_color, tip=tip and phase % 2 == 0)
-
-        # 拖尾星点
-        if alpha > 0.3 and (spark or (phase + int(wobble * 8)) % 5 == 0):
-            trail = half * (1.8 if reverse else 1.4)
-            tx2 = cx - cos_a * trail
-            ty2 = cy - sin_a * trail
-            _draw_spark_chip(canvas, tx2, ty2, max(1.0, half * 0.35), palette[-1], tip=False)
+        canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
 
 
 def _run_pixel_block_dissolve_animation(
@@ -2404,31 +2326,37 @@ def _run_pixel_block_dissolve_animation(
     palette: tuple[str, ...] | None = None,
     lively: bool = True,
 ) -> None:
-    block_size, specs = _build_pixel_block_specs(img, size, palette=palette, lively=lively)
-    frames = max(24, min(48, frames + (random.randint(0, 6) if lively else random.randint(-2, 2))))
-    ms = max(18, min(36, ms + (random.randint(-4, 2) if lively else random.randint(-4, 4))))
+    try:
+        block_size, specs = _build_pixel_block_specs(img, size, palette=palette, lively=lively)
+    except Exception:
+        if on_done:
+            on_done()
+        return
+    frames = max(22, min(40, frames + (random.randint(-2, 3) if lively else 0)))
+    ms = max(20, min(36, ms + (random.randint(-3, 2) if lively else 0)))
     frame = {"n": 0}
-    sparkle = palette
 
     def tick() -> None:
-        if not canvas.winfo_exists():
-            if on_done:
+        try:
+            if not canvas.winfo_exists():
+                if on_done:
+                    on_done()
+                return
+            _draw_pixel_block_dissolve_frame(
+                canvas,
+                specs,
+                block_size,
+                size,
+                frame["n"],
+                frames,
+                reverse=reverse,
+            )
+            frame["n"] += 1
+            if frame["n"] < frames:
+                root.after(ms, tick)
+            elif on_done:
                 on_done()
-            return
-        _draw_pixel_block_dissolve_frame(
-            canvas,
-            specs,
-            block_size,
-            size,
-            frame["n"],
-            frames,
-            reverse=reverse,
-            sparkle_palette=sparkle,
-        )
-        frame["n"] += 1
-        if frame["n"] < frames:
-            root.after(ms, tick)
-        else:
+        except Exception:
             if on_done:
                 on_done()
 
@@ -2443,58 +2371,45 @@ def _draw_themed_pixel_reassembly(
     palette: tuple[str, ...] = VPET_ANIM_PALETTE,
     label: str = "",
 ) -> None:
-    """加载用星芒脉冲：中心绽放 → 收束 → 再绽放，循环。"""
+    """加载：像素网格聚拢 ↔ 散开循环。"""
     canvas.delete("all")
-    mid = size * 0.5
+    canvas.create_rectangle(0, 0, size, size, fill="#101018", outline="")
     cycle = PIXEL_REASSEMBLY_CYCLE
     t = (phase % cycle) / max(1, cycle - 1)
     if t <= 0.5:
         u = _ease_out_cubic(t * 2.0)
-        blooming = True
+        scatter = u
     else:
         u = _ease_in_cubic((t - 0.5) * 2.0)
-        blooming = False
-    px = max(3, size // 18)
-    pulse = 0.55 + 0.45 * (u if blooming else 1.0 - u)
-
-    # 旋转星芒射线
-    rays = 10
-    rot = phase * 0.11
-    ray_len = size * (0.18 + 0.34 * pulse)
-    for i in range(rays):
-        ang = rot + i * (math.tau / rays)
-        cos_a, sin_a = math.cos(ang), math.sin(ang)
-        color = palette[i % len(palette)]
-        x1 = mid + cos_a * px * 0.6
-        y1 = mid + sin_a * px * 0.6
-        x2 = mid + cos_a * ray_len
-        y2 = mid + sin_a * ray_len
-        thick = max(1, int(px * (0.55 + 0.35 * math.sin(phase * 0.3 + i))))
-        canvas.create_line(x1, y1, x2, y2, fill=color, width=thick)
-
-    # 冲击环
-    for k, mul in enumerate((0.55, 0.85, 1.15)):
-        rr = int(size * 0.08 * mul + pulse * size * 0.22 * mul)
-        col = palette[(k + phase) % len(palette)]
-        canvas.create_oval(int(mid - rr), int(mid - rr), int(mid + rr), int(mid + rr), outline=col, width=max(1, px // 2))
-
-    # 漂浮星屑
-    rng = random.Random((phase // 2) * 4243 + size * 17)
-    spark_n = 18
-    for i in range(spark_n):
-        ang = rng.random() * math.tau + phase * 0.07
-        rad = size * (0.12 + 0.38 * ((i * 0.17 + u) % 1.0))
-        if not blooming:
-            rad *= 1.0 - 0.35 * u
-        sx = mid + math.cos(ang) * rad
-        sy = mid + math.sin(ang) * rad * 0.92
-        half = px * (0.35 + 0.55 * rng.random()) * (1.15 if blooming else 0.85)
-        tip = (i + phase) % 4 == 0
-        _draw_spark_chip(canvas, sx, sy, half, palette[i % len(palette)], tip=tip)
-
-    # 核心
-    core = max(2, int(px * (1.1 + 0.7 * pulse)))
-    canvas.create_oval(
+        scatter = 1.0 - u
+    bs = max(4, size // 12)
+    cols = max(1, (size + bs - 1) // bs)
+    rows = max(1, (size + bs - 1) // bs)
+    mid = size * 0.5
+    rng = random.Random((phase // 2) * 9973 + size)
+    for row in range(rows):
+        for col in range(cols):
+            if (row + col + phase) % 5 == 0 and scatter < 0.15:
+                continue
+            tx = col * bs + bs * 0.5
+            ty = row * bs + bs * 0.5
+            ang = math.atan2(ty - mid, tx - mid) + rng.uniform(-0.2, 0.2)
+            dist = math.hypot(tx - mid, ty - mid) * 0.55 + bs * 1.8
+            cx = tx + math.cos(ang) * dist * scatter
+            cy = ty + math.sin(ang) * dist * scatter
+            half = bs * (0.45 + 0.2 * (1.0 - scatter))
+            color = palette[(row * 3 + col + phase) % len(palette)]
+            canvas.create_rectangle(
+                int(cx - half),
+                int(cy - half),
+                int(cx + half),
+                int(cy + half),
+                fill=color,
+                outline="",
+            )
+    # 中心核
+    core = max(2, int(bs * (0.8 + 0.5 * (1.0 - scatter))))
+    canvas.create_rectangle(
         int(mid - core),
         int(mid - core),
         int(mid + core),
@@ -2502,21 +2417,13 @@ def _draw_themed_pixel_reassembly(
         fill=palette[-1],
         outline="",
     )
-    canvas.create_oval(
-        int(mid - core * 0.45),
-        int(mid - core * 0.45),
-        int(mid + core * 0.45),
-        int(mid + core * 0.45),
-        fill=palette[1],
-        outline="",
-    )
     if label:
         canvas.create_text(
             size // 2,
-            size - max(px * 2, 12),
+            size - max(bs, 12),
             text=label,
             fill=palette[-1],
-            font=("Courier New", max(8, px), "bold"),
+            font=("Courier New", max(8, bs - 1), "bold"),
         )
 
 
@@ -2531,7 +2438,8 @@ def _draw_size_loading_frame(
     theme: str = "vpet",
 ) -> None:
     palette = COMPANION_ANIM_PALETTE if theme == "companion" else VPET_ANIM_PALETTE
-    _draw_themed_pixel_reassembly(canvas, size, phase, palette=palette, label=label)
+    draw_phase = -phase if reverse else phase
+    _draw_themed_pixel_reassembly(canvas, size, draw_phase, palette=palette, label=label)
     if not simple:
         px = max(3, size // 16)
         bar_w = size - px * 4
@@ -2539,8 +2447,11 @@ def _draw_size_loading_frame(
         bar_y = size - px * 2
         canvas.create_rectangle(bar_x, bar_y, bar_x + bar_w, bar_y + px, fill="#1a2233", outline="")
         cycle = PIXEL_REASSEMBLY_CYCLE
-        fill_w = max(px, int(bar_w * ((phase % cycle) / max(1, cycle - 1))))
-        canvas.create_rectangle(bar_x, bar_y, bar_x + fill_w, bar_y + px, fill=palette[3], outline="")
+        fill_ratio = ((phase % cycle) / max(1, cycle - 1))
+        if reverse:
+            fill_ratio = 1.0 - fill_ratio
+        fill_w = max(px, int(bar_w * fill_ratio))
+        canvas.create_rectangle(bar_x, bar_y, bar_x + fill_w, bar_y + px, fill=palette[2], outline="")
 
 
 def _draw_like_sticker(canvas: tk.Canvas, x: int, y: int, px: int = 3) -> None:
@@ -5762,6 +5673,9 @@ class DesktopPet:
         self._place_window()
         self.root.update_idletasks()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        # 尽早注册全局热键：启动卡住时也能 Ctrl+Shift+Q 强制退出
+        self._force_quit_chord_down = False
+        self._register_hotkey()
         tick_ms = self._difficulty_params()["stamina_tick_ms"]
         self.root.after(tick_ms, self._stamina_tick)
         self.root.after(REMINDER_CHECK_MS, self._reminder_tick)
@@ -5770,6 +5684,7 @@ class DesktopPet:
         self._animate_startup_loading()
         threading.Thread(target=self._startup_load_worker, daemon=True).start()
         self.root.after(80, self._preload_assets_idle)
+        self.root.after(STARTUP_WATCHDOG_MS, self._startup_watchdog)
 
     def _startup_busy(self) -> bool:
         return not self._startup_ready
@@ -6019,9 +5934,30 @@ class DesktopPet:
             self.display_size,
             reverse=False,
             on_done=finish,
-            palette=VPET_ANIM_PALETTE,
+            palette=None,
             lively=True,
         )
+
+    def _startup_watchdog(self) -> None:
+        """启动超时：跳过入场动画直接就绪，避免永久卡在「请耐心等待」。"""
+        if self._closing or self._startup_ready:
+            return
+        self._startup_loading_active = False
+        try:
+            self._hide_startup_canvas()
+        except Exception:
+            pass
+        if getattr(self, "sprites", None) is None:
+            try:
+                self.sprites = SpriteSet(self.display_size)
+                self._sprite_cache[self.display_size] = self.sprites
+                self.label.configure(image=self.sprites.stand)
+                self.label.image = self.sprites.stand
+            except Exception:
+                self._show_toast("启动失败，可按 Ctrl+Shift+Q 退出", "#ff6666", duration_ms=5000)
+                return
+        self._show_toast("启动较慢，已跳过入场动画", "#ffcc66", duration_ms=2200)
+        self._complete_startup_after_sprites()
 
     def _complete_startup_after_sprites(self) -> None:
         if self._closing or self._startup_ready:
@@ -7569,7 +7505,12 @@ class DesktopPet:
     def _register_hotkey(self) -> None:
         if sys.platform != "win32":
             return
-        hwnd = self.root.winfo_id()
+        # 先卸再挂，避免启动前后重复注册失败
+        self._unregister_hotkey()
+        try:
+            hwnd = int(self.root.winfo_id())
+        except Exception:
+            return
         self.hotkey_ids.clear()
         for hotkey_id, key, _action in HOTKEY_ACTIONS:
             ok = ctypes.windll.user32.RegisterHotKey(
@@ -7577,18 +7518,50 @@ class DesktopPet:
             )
             if ok:
                 self.hotkey_ids.append(hotkey_id)
-        if self.hotkey_ids:
-            self.root.after(100, self._poll_hotkey)
+        # 无论 RegisterHotKey 是否成功，都开轮询（物理 Ctrl+Shift+Q 兜底）
+        if not getattr(self, "_hotkey_polling", False):
+            self._hotkey_polling = True
+            self.root.after(50, self._poll_hotkey)
 
     def _unregister_hotkey(self) -> None:
         if sys.platform != "win32" or not self.hotkey_ids:
             return
-        hwnd = self.root.winfo_id()
+        try:
+            hwnd = int(self.root.winfo_id())
+        except Exception:
+            self.hotkey_ids.clear()
+            return
         for hotkey_id in self.hotkey_ids:
-            ctypes.windll.user32.UnregisterHotKey(hwnd, hotkey_id)
+            try:
+                ctypes.windll.user32.UnregisterHotKey(hwnd, hotkey_id)
+            except Exception:
+                pass
         self.hotkey_ids.clear()
 
+    def _force_quit_combo_pressed(self) -> bool:
+        """物理键轮询 Ctrl+Shift+Q（不依赖 RegisterHotKey / 窗口焦点）。"""
+        if sys.platform != "win32":
+            return False
+        try:
+            u = ctypes.windll.user32
+            ctrl = bool(u.GetAsyncKeyState(0x11) & 0x8000)
+            shift = bool(u.GetAsyncKeyState(0x10) & 0x8000)
+            q = bool(u.GetAsyncKeyState(0x51) & 0x8000)
+            return ctrl and shift and q
+        except Exception:
+            return False
+
+    def _poll_force_quit_chord(self) -> None:
+        down = self._force_quit_combo_pressed()
+        was = bool(getattr(self, "_force_quit_chord_down", False))
+        self._force_quit_chord_down = down
+        if down and not was:
+            self._force_quit()
+
     def _handle_hotkey_action(self, action: str) -> None:
+        if action == "force_quit":
+            self._force_quit()
+            return
         if self._startup_busy():
             return
         self._interrupt_current_interaction()
@@ -7602,6 +7575,36 @@ class DesktopPet:
             self._toggle_main_menu_from_hotkey()
         elif action in SELECT_ACTIONS:
             self._play_action(action)
+
+    def _force_quit(self, _event=None) -> None:
+        """Ctrl+Shift+Q：强制退出，跳过 end 语音与像素出场。"""
+        if getattr(self, "_force_quitting", False):
+            return
+        self._force_quitting = True
+        self._closing = True
+        try:
+            self._unregister_hotkey()
+        except Exception:
+            pass
+        try:
+            import pygame
+
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+                pygame.mixer.stop()
+        except Exception:
+            pass
+        try:
+            self._finalize_close()
+        except Exception:
+            try:
+                self.root.destroy()
+            except Exception:
+                pass
+        try:
+            os._exit(0)
+        except Exception:
+            pass
 
     def _toggle_main_menu_from_hotkey(self) -> None:
         if self.menu_bar and self.menu_bar.winfo_exists():
@@ -7886,19 +7889,23 @@ class DesktopPet:
             pass
 
     def _poll_hotkey(self) -> None:
-        if not self.hotkey_ids or not self._alive():
+        if not self._alive():
+            self._hotkey_polling = False
             return
-        msg = wintypes.MSG()
-        hwnd = self.root.winfo_id()
-        while ctypes.windll.user32.PeekMessageW(
-            ctypes.byref(msg), hwnd, WM_HOTKEY, WM_HOTKEY, 1
-        ):
-            if msg.message == WM_HOTKEY:
-                for hotkey_id, _key, action in HOTKEY_ACTIONS:
-                    if msg.wParam == hotkey_id:
-                        self._handle_hotkey_action(action)
-                        break
-        self._safe_after(100, self._poll_hotkey)
+        # 物理键兜底：即使 RegisterHotKey 失败/启动卡住也能强制退出
+        self._poll_force_quit_chord()
+        if self.hotkey_ids:
+            msg = wintypes.MSG()
+            # hwnd=0：取本线程全部 WM_HOTKEY（Tk 窗口句柄有时对不上）
+            while ctypes.windll.user32.PeekMessageW(
+                ctypes.byref(msg), 0, WM_HOTKEY, WM_HOTKEY, 1
+            ):
+                if msg.message == WM_HOTKEY:
+                    for hotkey_id, _key, action in HOTKEY_ACTIONS:
+                        if msg.wParam == hotkey_id:
+                            self._handle_hotkey_action(action)
+                            break
+        self._safe_after(80, self._poll_hotkey)
 
     def _alive(self) -> bool:
         if self._closing:
@@ -10915,6 +10922,8 @@ class DesktopPet:
         self.rhythm_canvas = None
         self.rhythm_grade_bar = None
         self.rhythm_active = False
+        self.rhythm_paused = False
+        self.rhythm_pause_mark_ms = 0
         self.rhythm_notes = []
         self.rhythm_flash = {}
         self.rhythm_keys_down = set()
@@ -11134,10 +11143,11 @@ class DesktopPet:
 
         self.rhythm_start_ms = int(time.time() * 1000)
         self._mark_hint_seen("rhythm_game")
+        self._rhythm_sync_phys_keys()
         self._rhythm_focus_input()
         self.root.after(80, self._rhythm_focus_input)
         self.root.after(220, self._rhythm_focus_input)
-        self._show_toast("按 D F J K 击打 · 先点一下游戏窗", "#88ccff", duration_ms=1800)
+        self._show_toast("D F J K 击打（无需抢窗口焦点）", "#88ccff", duration_ms=1800)
         self._rhythm_tick()
 
     def _rhythm_focus_input(self) -> None:
@@ -11177,7 +11187,40 @@ class DesktopPet:
         code = int(getattr(event, "keycode", 0) or 0)
         if code in RHYTHM_VK_LANES:
             return RHYTHM_VK_LANES[code]
+        # 个别 Tk 构建下 keycode 是扫描码近似值，再兜一层字母大写 keysym
+        if len(key) == 1 and key in RHYTHM_KEYS:
+            return RHYTHM_KEYS.index(key)
         return None
+
+    def _rhythm_phys_key_down(self, vk: int) -> bool:
+        if sys.platform != "win32":
+            return False
+        try:
+            return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
+        except Exception:
+            return False
+
+    def _rhythm_sync_phys_keys(self) -> None:
+        """暂停恢复时对齐物理键状态，避免松键边沿丢失或误触。"""
+        down: set[int] = set()
+        for vk, lane in RHYTHM_VK_LANES.items():
+            if self._rhythm_phys_key_down(vk):
+                down.add(lane)
+        self.rhythm_keys_down = down
+
+    def _rhythm_poll_phys_keys(self) -> None:
+        """无 Tk 焦点时也可用：轮询 D/F/J/K 物理按下边沿（与暴露 QTE 同思路）。"""
+        if sys.platform != "win32":
+            return
+        if not self.rhythm_active or getattr(self, "rhythm_paused", False):
+            return
+        for vk, lane in RHYTHM_VK_LANES.items():
+            down = self._rhythm_phys_key_down(vk)
+            held = lane in self.rhythm_keys_down
+            if down and not held:
+                self._rhythm_press_lane(lane)
+            elif not down and held:
+                self._rhythm_release_lane(lane)
 
     def _get_rhythm_travel_ms(self) -> int:
         return int(getattr(self, "rhythm_travel_ms", None) or _rhythm_travel_ms_for(self.app_config.get("rhythm_speed", "中")))
@@ -11208,6 +11251,7 @@ class DesktopPet:
         self.rhythm_start_ms += elapsed
         self.rhythm_paused = False
         self.rhythm_pause_mark_ms = 0
+        self._rhythm_sync_phys_keys()
         try:
             import pygame
 
@@ -11427,36 +11471,25 @@ class DesktopPet:
         self.rhythm_flash[lane] = self._rhythm_now_ms() + 120
         self._rhythm_apply_judgment(judge, pts)
 
-    def _rhythm_on_key(self, event: tk.Event) -> None:
-        if not self.rhythm_active or getattr(self, "rhythm_paused", False):
-            return
-        # 设置窗 / 输入框打开时不要抢键
-        try:
-            w = event.widget
-            cls = w.winfo_class() if w is not None else ""
-            if cls in ("Entry", "Text", "TEntry"):
-                return
-        except Exception:
-            pass
-        lane = self._rhythm_event_lane(event)
-        if lane is None:
-            return
+    def _rhythm_press_lane(self, lane: int) -> None:
         if lane in self.rhythm_keys_down:
             return
         self.rhythm_keys_down.add(lane)
         now = self._rhythm_now_ms()
+        # 任何按键先闪一下，确认输入已收到（哪怕此刻没有可判定音符）
+        self.rhythm_flash[lane] = now + 100
         best = None
         best_abs = RHYTHM_HIT_GOOD_MS + 1
         start = max(0, getattr(self, "rhythm_scan_i", 0) - 8)
         for note in self.rhythm_notes[start:]:
-            if note["lane"] != lane or note["hit"] or note["missed"]:
+            if int(note["lane"]) != lane or note["hit"] or note["missed"]:
                 continue
             if note.get("head_hit") or note.get("holding"):
                 continue
             t = int(note["t"])
-            if t > now + RHYTHM_HIT_GOOD_MS + 60:
+            if t > now + RHYTHM_HIT_GOOD_MS + 80:
                 break
-            if t < now - RHYTHM_HIT_GOOD_MS - 60:
+            if t < now - RHYTHM_HIT_GOOD_MS - 80:
                 continue
             delta = now - t
             ad = abs(delta)
@@ -11469,21 +11502,17 @@ class DesktopPet:
         judge, pts = _rhythm_hit_judgment(delta)
         if judge == "Miss":
             return
-        self.rhythm_flash[lane] = now + 120
+        self.rhythm_flash[lane] = now + 140
         if self._rhythm_note_is_hold(note):
             note["head_hit"] = True
             note["holding"] = True
-            # 头部给一半分，尾部再给一半
             self._rhythm_apply_judgment(judge, max(50, pts // 2))
         else:
             note["hit"] = True
             self._rhythm_apply_judgment(judge, pts)
 
-    def _rhythm_on_key_release(self, event: tk.Event) -> None:
-        if not self.rhythm_active or getattr(self, "rhythm_paused", False):
-            return
-        lane = self._rhythm_event_lane(event)
-        if lane is None:
+    def _rhythm_release_lane(self, lane: int) -> None:
+        if lane not in self.rhythm_keys_down:
             return
         self.rhythm_keys_down.discard(lane)
         now = self._rhythm_now_ms()
@@ -11510,6 +11539,30 @@ class DesktopPet:
                 self._rhythm_complete_hold_tail(note, judge, max(50, pts // 2))
             return
 
+    def _rhythm_on_key(self, event: tk.Event) -> None:
+        if not self.rhythm_active or getattr(self, "rhythm_paused", False):
+            return
+        # 设置窗 / 输入框打开时不要抢键
+        try:
+            w = event.widget
+            cls = w.winfo_class() if w is not None else ""
+            if cls in ("Entry", "Text", "TEntry"):
+                return
+        except Exception:
+            pass
+        lane = self._rhythm_event_lane(event)
+        if lane is None:
+            return
+        self._rhythm_press_lane(lane)
+
+    def _rhythm_on_key_release(self, event: tk.Event) -> None:
+        if not self.rhythm_active or getattr(self, "rhythm_paused", False):
+            return
+        lane = self._rhythm_event_lane(event)
+        if lane is None:
+            return
+        self._rhythm_release_lane(lane)
+
     def _rhythm_tick(self) -> None:
         if not self.rhythm_active or not self.rhythm_canvas or not self.rhythm_win:
             return
@@ -11518,6 +11571,7 @@ class DesktopPet:
         if not self.rhythm_win.winfo_exists():
             self._close_rhythm_game(resume=True)
             return
+        self._rhythm_poll_phys_keys()
         now = self._rhythm_now_ms()
         i = getattr(self, "rhythm_scan_i", 0)
         notes = self.rhythm_notes
@@ -13419,7 +13473,7 @@ class DesktopPet:
         }
         lbl.bind("<Button-1>", lambda _e, ent=entry: self._on_mini_pet_click(ent), add="+")
         self.mini_pets.append(entry)
-        # 入场：星屑绽放收束后再显示精灵
+        # 入场：像素聚散收束后再显示精灵
         lbl.pack_forget()
         anim_canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
         anim_canvas.pack()
@@ -14857,6 +14911,7 @@ class DesktopPet:
                 ("操作说明", self._open_operation_guide),
                 ("问题反馈", self._open_feedback),
                 ("退出", self._on_close),
+                ("强制退出 (Ctrl+Shift+Q)", self._force_quit),
             ],
             offset_x=240,
         )
