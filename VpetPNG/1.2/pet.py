@@ -238,9 +238,9 @@ DEFAULT_MUSIC_TRACK = (
     else (MUSIC_TRACK_ORDER[0] if MUSIC_TRACK_ORDER else "radical_mat")
 )
 
-# 面板不再使用 border1；border5 仅用于系统→对话（AI / 普通对话）
+# 面板不再使用 border1；对话/语音文本框统一用 border2（去白边）
 PANEL_BORDER_STEM = ""
-SPEECH_BORDER_STEM = "border5"
+SPEECH_BORDER_STEM = "border2"
 SPEECH_BORDER_UI_SCALE = 1.18
 SPEECH_BORDER2_H = 78
 SPEECH_BORDER2_SRC_LEFT = 200
@@ -1035,11 +1035,13 @@ EXIT_DISSOLVE_MS = 28
 EXIT_DISSOLVE_FRAMES = 32
 PIXEL_BLOCK_DISSOLVE_MS = EXIT_DISSOLVE_MS
 PIXEL_BLOCK_DISSOLVE_FRAMES = EXIT_DISSOLVE_FRAMES
-# 像素聚散主题色（加载环用）；出入场块色来自立绘采样
-VPET_ANIM_PALETTE = ("#4488ff", "#66aaff", "#88ccff", "#ff88cc", "#ffffff")
-COMPANION_ANIM_PALETTE = ("#44cc88", "#66dd99", "#88ffcc", "#ffdd44", "#ffffff")
+# 像素聚散主题色：Vpet 粉蓝；智能伴侣 深蓝→浅蓝
+VPET_ANIM_PALETTE = ("#ff3d9a", "#ff7ec8", "#66a8ff", "#88ccff", "#d6f0ff", "#ffffff")
+COMPANION_ANIM_PALETTE = ("#071433", "#0d2a5c", "#1a4a9a", "#2f74d6", "#6eb6ff", "#cfe8ff")
 PIXEL_REASSEMBLY_CYCLE = 36
 STARTUP_WATCHDOG_MS = 14000
+PIXEL_DISSOLVE_STYLES = ("radial", "spiral", "rain", "burst")
+PIXEL_LOAD_STYLES = ("pulse", "spiral", "rain", "orbit")
 
 EXPOSE_RING_PAD = 36
 EXPOSE_BLUE_SPAN = 60
@@ -1466,8 +1468,8 @@ HI_TEXT = "你好呀！今天也要加油哦~"
 FOLLOW_WAIT_TEXTS = ("等等我！", "别走那么快嘛~", "等等我啦！", "等等我嘛…")
 PIXEL_FONT = ("Courier New", 12, "bold")
 PIXEL_COLOR = THEME_BLUE
-MENU_BG = "#0c101c"
-MENU_FG = "#e8f0ff"
+MENU_BG = "#141824"
+MENU_FG = "#eef2ff"
 MENU_ACTIVE = "#2a3558"
 
 
@@ -2199,7 +2201,7 @@ def _ease_in_out_quad(t: float) -> float:
 
 
 def _palette_tint_color(hex_color: str, palette: tuple[str, ...] | None, seed: int) -> str:
-    """把采样色轻微偏向主题色板，保留轮廓明暗。"""
+    """把采样色偏向主题色板，保留轮廓明暗。"""
     if not palette:
         return hex_color
     try:
@@ -2209,10 +2211,11 @@ def _palette_tint_color(hex_color: str, palette: tuple[str, ...] | None, seed: i
     except Exception:
         return palette[seed % len(palette)]
     lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
-    pick = palette[seed % len(palette)]
-    if lum < 0.22:
+    # 随机挑主色，深部偏暗、亮部偏浅
+    pick = palette[(seed * 17 + int(lum * 40)) % len(palette)]
+    if lum < 0.18:
         pick = palette[0]
-    elif lum > 0.82:
+    elif lum > 0.85:
         pick = palette[-1]
     try:
         pr = int(pick[1:3], 16)
@@ -2220,11 +2223,16 @@ def _palette_tint_color(hex_color: str, palette: tuple[str, ...] | None, seed: i
         pb = int(pick[5:7], 16)
     except Exception:
         return pick
-    mix = 0.55 + 0.25 * lum
+    mix = 0.62 + 0.22 * lum
     nr = int(r * (1.0 - mix) + pr * mix)
     ng = int(g * (1.0 - mix) + pg * mix)
     nb = int(b * (1.0 - mix) + pb * mix)
     return f"#{nr:02x}{ng:02x}{nb:02x}"
+
+
+def _pick_pixel_dissolve_style(rng: random.Random | None = None) -> str:
+    r = rng or random
+    return r.choice(PIXEL_DISSOLVE_STYLES)
 
 
 def _build_pixel_block_specs(
@@ -2233,13 +2241,20 @@ def _build_pixel_block_specs(
     *,
     palette: tuple[str, ...] | None = None,
     lively: bool = True,
-) -> tuple[int, list[tuple]]:
-    """像素块规格：(block_size, [(tx, ty, color, drift_x, drift_y, delay, wobble, speed), ...])"""
-    bs = max(4, _pixel_block_size(size) - (1 if lively else 0))
+    style: str | None = None,
+) -> tuple[int, list[tuple], str]:
+    """像素块规格 + 本场随机风格。
+
+    每项: (tx, ty, color, drift_x, drift_y, delay, wobble, speed, spin)
+    """
+    rng = random.Random(time.time_ns() ^ (id(img) << 7) ^ os.getpid() ^ random.getrandbits(24))
+    style = style if style in PIXEL_DISSOLVE_STYLES else _pick_pixel_dissolve_style(rng)
+    bs_base = _pixel_block_size(size)
+    bs = max(3, bs_base + rng.randint(-1, 1) - (1 if lively else 0))
     cols = max(1, (size + bs - 1) // bs)
     rows = max(1, (size + bs - 1) // bs)
-    rng = random.Random(time.time_ns() ^ (id(img) << 7) ^ os.getpid())
     specs: list[tuple] = []
+    mid = size * 0.5
     for row in range(rows):
         for col in range(cols):
             x0, y0 = col * bs, row * bs
@@ -2250,19 +2265,42 @@ def _build_pixel_block_specs(
             color, _alpha = sampled
             if palette:
                 color = _palette_tint_color(color, palette, row * 31 + col * 17 + int(rng.random() * 10000))
-            angle = rng.uniform(0.0, math.tau)
-            mag = rng.uniform(0.45, 1.55 if lively else 1.15) * bs * (1.35 if lively else 1.05)
-            from_cx = (x0 + bs * 0.5) - size * 0.5
-            from_cy = (y0 + bs * 0.5) - size * 0.5
+            elif palette is None and lively and rng.random() < 0.12:
+                # 偶发主题闪烁，仍以立绘色为主
+                color = _palette_tint_color(color, VPET_ANIM_PALETTE, int(rng.random() * 10000))
+            cx = x0 + bs * 0.5
+            cy = y0 + bs * 0.5
+            from_cx = cx - mid
+            from_cy = cy - mid
             radial = math.hypot(from_cx, from_cy) or 1.0
-            drift_x = math.cos(angle) * mag + from_cx / radial * bs * rng.uniform(0.35, 1.4)
-            drift_y = math.sin(angle) * mag + from_cy / radial * bs * rng.uniform(0.25, 1.2)
-            delay = min(0.78, (row / max(1, rows - 1)) * 0.28 + rng.uniform(0.0, 0.45))
+            ang = math.atan2(from_cy, from_cx)
+            spin = rng.choice((-1.0, 1.0)) * rng.uniform(0.6, 1.8)
+            if style == "spiral":
+                mag = rng.uniform(0.9, 2.4) * bs * (1.5 if lively else 1.1)
+                tang = ang + spin * 0.9
+                drift_x = math.cos(tang) * mag + from_cx / radial * bs * rng.uniform(0.2, 0.9)
+                drift_y = math.sin(tang) * mag + from_cy / radial * bs * rng.uniform(0.2, 0.9)
+                delay = min(0.85, (radial / max(1.0, size * 0.72)) * 0.5 + rng.uniform(0.0, 0.35))
+            elif style == "rain":
+                drift_x = rng.uniform(-bs * 0.8, bs * 0.8)
+                drift_y = -bs * rng.uniform(2.2, 5.5) - row * bs * rng.uniform(0.02, 0.12)
+                delay = min(0.82, (col / max(1, cols - 1)) * 0.4 + rng.uniform(0.0, 0.45))
+            elif style == "burst":
+                mag = rng.uniform(1.2, 2.8) * bs * (1.6 if lively else 1.2)
+                jitter = rng.uniform(-0.7, 0.7)
+                drift_x = math.cos(ang + jitter) * mag
+                drift_y = math.sin(ang + jitter) * mag
+                delay = min(0.8, rng.uniform(0.0, 0.55) + (1.0 - radial / max(1.0, size * 0.7)) * 0.25)
+            else:  # radial
+                mag = rng.uniform(0.5, 1.7) * bs * (1.4 if lively else 1.05)
+                drift_x = math.cos(rng.uniform(0, math.tau)) * mag + from_cx / radial * bs * rng.uniform(0.4, 1.5)
+                drift_y = math.sin(rng.uniform(0, math.tau)) * mag + from_cy / radial * bs * rng.uniform(0.3, 1.3)
+                delay = min(0.8, (row / max(1, rows - 1)) * 0.3 + rng.uniform(0.0, 0.48))
             wobble = rng.uniform(0.0, math.tau)
-            speed = rng.uniform(0.75, 1.32)
-            specs.append((x0, y0, color, drift_x, drift_y, delay, wobble, speed))
+            speed = rng.uniform(0.68, 1.42)
+            specs.append((x0, y0, color, drift_x, drift_y, delay, wobble, speed, spin))
     rng.shuffle(specs)
-    return bs, specs
+    return bs, specs, style
 
 
 def _draw_pixel_block_dissolve_frame(
@@ -2274,35 +2312,52 @@ def _draw_pixel_block_dissolve_frame(
     total_phases: int,
     *,
     reverse: bool = False,
+    style: str = "radial",
     sparkle_palette: tuple[str, ...] | None = None,
 ) -> None:
     """像素聚散：入场块从外侧飘回原位；退场块向外飘散淡出。"""
     canvas.delete("all")
     if not specs:
         return
+    # 轻微主题底色闪一下（随机深色）
+    if sparkle_palette and phase == 0:
+        canvas.create_rectangle(0, 0, size, size, fill="#0c1018", outline="")
     t_global = phase / max(1, total_phases - 1)
     home = block_size * 0.5
     for item in specs:
-        tx, ty, color, drift_x, drift_y, delay, wobble, speed = item[:8]
+        if len(item) >= 9:
+            tx, ty, color, drift_x, drift_y, delay, wobble, speed, spin = item[:9]
+        else:
+            tx, ty, color, drift_x, drift_y, delay, wobble, speed = item[:8]
+            spin = 1.0
         stagger = delay * 0.42
-        denom = max(0.18, 1.0 - stagger * 0.45)
+        denom = max(0.16, 1.0 - stagger * 0.45)
         t_local = min(1.0, max(0.0, ((t_global * speed) - stagger * 0.28) / denom))
         if reverse:
             t_eased = _ease_in_cubic(t_local)
-            float_up = t_eased * block_size * 0.2
-            wobble_px = math.sin(wobble + t_eased * math.pi * 1.4) * block_size * 0.08 * (1.0 - t_eased)
-            cx = tx + home + drift_x * t_eased + wobble_px
-            cy = ty + home + drift_y * t_eased - float_up + wobble_px * 0.35
+            remain = t_eased
             alpha = 1.0 - t_eased
-            scale = 1.0 - t_eased * 0.28
+            scale = 1.0 - t_eased * 0.3
         else:
             t_eased = _ease_in_out_quad(t_local)
             remain = 1.0 - t_eased
-            wobble_px = math.sin(wobble + t_eased * math.pi) * block_size * 0.1 * remain
-            cx = tx + home + drift_x * remain + wobble_px
-            cy = ty + home + drift_y * remain + wobble_px * 0.45
             alpha = t_eased
-            scale = 0.55 + t_eased * 0.45
+            scale = 0.5 + t_eased * 0.5
+        # 风格修正轨迹
+        if style == "spiral":
+            ang = wobble + remain * spin * math.pi * 1.6
+            ox = math.cos(ang) * block_size * 0.45 * remain
+            oy = math.sin(ang) * block_size * 0.45 * remain
+        elif style == "rain":
+            ox = math.sin(wobble + remain * 4.0) * block_size * 0.12 * remain
+            oy = 0.0
+        else:
+            ox = math.sin(wobble + t_eased * math.pi) * block_size * 0.1 * remain
+            oy = ox * 0.45
+        cx = tx + home + drift_x * remain + ox
+        cy = ty + home + drift_y * remain + oy
+        if reverse:
+            cy -= t_eased * block_size * 0.15
         if alpha < 0.05:
             continue
         half = block_size * scale * 0.5
@@ -2311,6 +2366,9 @@ def _draw_pixel_block_dissolve_frame(
         if x2 <= 0 or y2 <= 0 or x1 >= size or y1 >= size:
             continue
         canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
+        # 偶尔高光边
+        if sparkle_palette and alpha > 0.55 and ((phase + int(wobble * 8)) % 7 == 0):
+            canvas.create_rectangle(x1, y1, x1 + 1, y2, fill=sparkle_palette[-1], outline="")
 
 
 def _run_pixel_block_dissolve_animation(
@@ -2327,13 +2385,14 @@ def _run_pixel_block_dissolve_animation(
     lively: bool = True,
 ) -> None:
     try:
-        block_size, specs = _build_pixel_block_specs(img, size, palette=palette, lively=lively)
+        block_size, specs, style = _build_pixel_block_specs(img, size, palette=palette, lively=lively)
     except Exception:
         if on_done:
             on_done()
         return
-    frames = max(22, min(40, frames + (random.randint(-2, 3) if lively else 0)))
-    ms = max(20, min(36, ms + (random.randint(-3, 2) if lively else 0)))
+    # 每场随机时长与帧数，避免观感雷同
+    frames = max(20, min(42, frames + random.randint(-4, 6)))
+    ms = max(18, min(38, ms + random.randint(-5, 4)))
     frame = {"n": 0}
 
     def tick() -> None:
@@ -2350,6 +2409,8 @@ def _run_pixel_block_dissolve_animation(
                 frame["n"],
                 frames,
                 reverse=reverse,
+                style=style,
+                sparkle_palette=palette,
             )
             frame["n"] += 1
             if frame["n"] < frames:
@@ -2371,34 +2432,62 @@ def _draw_themed_pixel_reassembly(
     palette: tuple[str, ...] = VPET_ANIM_PALETTE,
     label: str = "",
 ) -> None:
-    """加载：像素网格聚拢 ↔ 散开循环。"""
+    """加载：多种随机像素聚散循环（每轮换风格）。"""
     canvas.delete("all")
-    canvas.create_rectangle(0, 0, size, size, fill="#101018", outline="")
     cycle = PIXEL_REASSEMBLY_CYCLE
-    t = (phase % cycle) / max(1, cycle - 1)
+    cycle_i = phase // max(1, cycle) if phase >= 0 else (-phase) // max(1, cycle)
+    local = abs(phase) % cycle
+    t = local / max(1, cycle - 1)
+    style_rng = random.Random(cycle_i * 7919 + size * 13 + (id(palette) & 0xFFFF))
+    style = PIXEL_LOAD_STYLES[style_rng.randrange(len(PIXEL_LOAD_STYLES))]
+    bg = "#0a1020" if (palette and str(palette[0]).lower().startswith(("#07", "#08", "#09", "#0a", "#0b", "#0c", "#0d"))) else "#14081a"
+    canvas.create_rectangle(0, 0, size, size, fill=bg, outline="")
+
     if t <= 0.5:
         u = _ease_out_cubic(t * 2.0)
         scatter = u
     else:
         u = _ease_in_cubic((t - 0.5) * 2.0)
         scatter = 1.0 - u
-    bs = max(4, size // 12)
+
+    bs = max(3, size // 12 + style_rng.randint(-1, 1))
     cols = max(1, (size + bs - 1) // bs)
     rows = max(1, (size + bs - 1) // bs)
     mid = size * 0.5
-    rng = random.Random((phase // 2) * 9973 + size)
+    rng = random.Random((local // 2) * 9973 + cycle_i * 131 + size)
+    rot = style_rng.uniform(-0.4, 0.4) + local * 0.04 * style_rng.choice((-1, 1))
+
     for row in range(rows):
         for col in range(cols):
-            if (row + col + phase) % 5 == 0 and scatter < 0.15:
+            if scatter < 0.12 and (row + col + local) % (4 + cycle_i % 3) == 0:
                 continue
             tx = col * bs + bs * 0.5
             ty = row * bs + bs * 0.5
-            ang = math.atan2(ty - mid, tx - mid) + rng.uniform(-0.2, 0.2)
-            dist = math.hypot(tx - mid, ty - mid) * 0.55 + bs * 1.8
-            cx = tx + math.cos(ang) * dist * scatter
-            cy = ty + math.sin(ang) * dist * scatter
-            half = bs * (0.45 + 0.2 * (1.0 - scatter))
-            color = palette[(row * 3 + col + phase) % len(palette)]
+            dx, dy = tx - mid, ty - mid
+            ang0 = math.atan2(dy, dx)
+            dist0 = math.hypot(dx, dy)
+            if style == "spiral":
+                ang = ang0 + scatter * rot * 3.2
+                dist = dist0 * 0.5 + bs * (1.4 + 2.2 * scatter)
+                cx = mid + math.cos(ang) * dist
+                cy = mid + math.sin(ang) * dist
+            elif style == "rain":
+                cx = tx + rng.uniform(-bs, bs) * scatter
+                cy = ty - (bs * 3.5 + dist0 * 0.4) * scatter
+            elif style == "orbit":
+                ang = ang0 + local * 0.12 + scatter * 1.8
+                rad = dist0 * (0.35 + 0.9 * scatter) + bs * 1.2
+                cx = mid + math.cos(ang) * rad
+                cy = mid + math.sin(ang) * rad * 0.92
+            else:  # pulse
+                ang = ang0 + rng.uniform(-0.25, 0.25)
+                dist = dist0 * 0.55 + bs * 1.8
+                cx = tx + math.cos(ang) * dist * scatter
+                cy = ty + math.sin(ang) * dist * scatter
+            half = bs * (0.4 + 0.25 * (1.0 - scatter) + rng.uniform(-0.05, 0.08))
+            color = palette[(row * 3 + col + local + cycle_i) % len(palette)]
+            if rng.random() < 0.08:
+                color = palette[-1]
             canvas.create_rectangle(
                 int(cx - half),
                 int(cy - half),
@@ -2407,13 +2496,21 @@ def _draw_themed_pixel_reassembly(
                 fill=color,
                 outline="",
             )
-    # 中心核
-    core = max(2, int(bs * (0.8 + 0.5 * (1.0 - scatter))))
+
+    core = max(2, int(bs * (0.75 + 0.55 * (1.0 - scatter))))
     canvas.create_rectangle(
         int(mid - core),
         int(mid - core),
         int(mid + core),
         int(mid + core),
+        fill=palette[min(len(palette) - 1, 3 + (local % 2))],
+        outline="",
+    )
+    canvas.create_rectangle(
+        int(mid - core * 0.45),
+        int(mid - core * 0.45),
+        int(mid + core * 0.45),
+        int(mid + core * 0.45),
         fill=palette[-1],
         outline="",
     )
@@ -2451,7 +2548,8 @@ def _draw_size_loading_frame(
         if reverse:
             fill_ratio = 1.0 - fill_ratio
         fill_w = max(px, int(bar_w * fill_ratio))
-        canvas.create_rectangle(bar_x, bar_y, bar_x + fill_w, bar_y + px, fill=palette[2], outline="")
+        bar_col = palette[2 + (phase // 3) % max(1, len(palette) - 3)]
+        canvas.create_rectangle(bar_x, bar_y, bar_x + fill_w, bar_y + px, fill=bar_col, outline="")
 
 
 def _draw_like_sticker(canvas: tk.Canvas, x: int, y: int, px: int = 3) -> None:
@@ -2461,6 +2559,7 @@ def _draw_like_sticker(canvas: tk.Canvas, x: int, y: int, px: int = 3) -> None:
 
 
 def _draw_interact_fx(canvas: tk.Canvas, action: str, size: int, phase: int) -> None:
+    """围绕立绘边缘的粒子，避开中心以免挡住桌宠。"""
     canvas.delete("all")
     px = max(2, size // 24)
     colors = {
@@ -2476,21 +2575,28 @@ def _draw_interact_fx(canvas: tk.Canvas, action: str, size: int, phase: int) -> 
         "default": ("#4488ff", "#ff88cc"),
     }
     c1, c2 = colors.get(action, colors["default"])
-    for i in range(8):
-        ang = (phase * 0.45 + i * 0.785) % (2 * math.pi)
-        dist = size // 3 + (phase + i) % 3 * 4
-        cx = size // 2 + int(math.cos(ang) * dist)
-        cy = size // 2 + int(math.sin(ang) * dist)
+    mid = size * 0.5
+    # 粒子落在外环，留给中间立绘留白
+    inner_r = size * 0.36
+    outer_r = size * 0.48
+    for i in range(10):
+        ang = (phase * 0.42 + i * (math.tau / 10)) % math.tau
+        dist = inner_r + (outer_r - inner_r) * (0.35 + 0.65 * ((phase + i * 3) % 5) / 4.0)
+        cx = int(mid + math.cos(ang) * dist)
+        cy = int(mid + math.sin(ang) * dist)
         col = c1 if i % 2 == 0 else c2
         canvas.create_rectangle(cx, cy, cx + px * 2, cy + px * 2, fill=col, outline="")
     if action == "kick":
-        canvas.create_line(size // 4, size // 2, size * 3 // 4, size // 2, fill="#ffff88", width=3)
+        # 侧踢弧线放在下半边缘
+        y = int(size * 0.72)
+        canvas.create_line(int(size * 0.18), y, int(size * 0.82), y - px, fill="#ffff88", width=3)
     elif action == "angry":
-        cx, cy = size // 2, size // 2
+        # 怒气符号放右上外环
+        cx, cy = int(size * 0.78), int(size * 0.22)
         canvas.create_rectangle(cx - px * 2, cy - px // 2, cx + px * 2, cy + px // 2, fill="#ff3333", outline="")
         canvas.create_rectangle(cx - px // 2, cy - px * 2, cx + px // 2, cy + px * 2, fill="#ff3333", outline="")
     elif action == "like":
-        _draw_like_sticker(canvas, size // 2 - px * 2, size // 2 - px * 2, px=px)
+        _draw_like_sticker(canvas, int(size * 0.72), int(size * 0.18), px=px)
 
 
 def _subprocess_no_window_kwargs() -> dict:
@@ -3382,16 +3488,17 @@ def _draw_glitch_fault(canvas: tk.Canvas, width: int, height: int, message: str,
         font=("Courier New", 9, "bold"),
     )
 def _draw_music_wave(canvas: tk.Canvas, width: int, height: int, phase: int, *, beat: float = 1.0) -> None:
-    """Pixel concentric rings around the pet (music mode aura)."""
+    """像素音波：外环光圈 + 底部节拍条，避开中央立绘区域。"""
     canvas.delete("all")
     cx, cy = width // 2, height // 2
     amp = max(0.25, min(1.0, beat))
     px = max(4, min(width, height) // 18)
     colors = ("#88ccff", "#4488ff", "#66aaff", "#aadfff", "#ffcc66")
-    for ring in range(5):
+    # 内半径从立绘外侧开始，避免盖住桌宠身体
+    for ring in range(4):
         glow = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(phase * 0.22 + ring * 0.85))
-        base = min(width, height) * (0.20 + ring * 0.09)
-        r = int(base * (0.75 + 0.35 * amp) * glow)
+        base = min(width, height) * (0.40 + ring * 0.08)
+        r = int(base * (0.82 + 0.25 * amp) * glow)
         _draw_pixel_ring(canvas, cx, cy, r, px, colors[ring % len(colors)])
     bars = 7
     bar_w = max(px, width // (bars * 3))
@@ -3401,9 +3508,17 @@ def _draw_music_wave(canvas: tk.Canvas, width: int, height: int, phase: int, *, 
     for i in range(bars):
         x = x0 + i * (bar_w + gap)
         wave = math.sin(phase * 0.35 + i * 0.8) * 0.5 + 0.5
-        h = int(wave * amp * (height // 5) + px)
+        h = int(wave * amp * (height // 7) + px)
         col = "#88ccff" if i % 2 == 0 else "#4488ff"
-        canvas.create_rectangle(x, height - h - 4, x + bar_w, height - 4, fill=col, outline="")
+        canvas.create_rectangle(x, height - h - 2, x + bar_w, height - 2, fill=col, outline="")
+
+
+def _scatter_xy_on_ring(size: int, *, rng: random.Random | None = None) -> tuple[int, int]:
+    """在外环随机取点，用于星星/花/心等装饰，避开立绘中心。"""
+    r = rng or random
+    ang = r.uniform(0, math.tau)
+    rad = size * r.uniform(0.34, 0.48)
+    return int(size * 0.5 + math.cos(ang) * rad), int(size * 0.5 + math.sin(ang) * rad)
 
 
 def _music_track(track_id: str | None) -> dict:
@@ -4514,7 +4629,8 @@ def _draw_like_glow(canvas: tk.Canvas, size: int, phase: int) -> None:
     px = max(3, size // 22)
     for ring in range(3):
         glow = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(phase * 0.18 + ring))
-        r = int(size * (0.22 + ring * 0.08) * glow)
+        # 外扩光环，不压住立绘
+        r = int(size * (0.38 + ring * 0.07) * (0.85 + 0.2 * glow))
         col = ("#ffff88", "#ffcc66", "#ffaa88")[ring]
         _draw_pixel_ring(canvas, cx, cy, r, px, col)
 
@@ -5934,7 +6050,7 @@ class DesktopPet:
             self.display_size,
             reverse=False,
             on_done=finish,
-            palette=None,
+            palette=VPET_ANIM_PALETTE,
             lively=True,
         )
 
@@ -6351,17 +6467,11 @@ class DesktopPet:
         dialog_fn,
         voice_available: bool | None = None,
     ) -> str:
-        """语音模式开启时，语音与原有打字框随机二选一；关语音则仅对话框。"""
+        """语音模式开启时优先播语音（自带标题文本框）；失败或关语音则对话框。"""
         if voice_available is None:
             voice_available = self._voice_enabled()
-        if not voice_available:
-            dialog_fn()
-            return "dialog"
-        if random.random() < 0.5:
-            if voice_fn():
-                return "voice"
-            dialog_fn()
-            return "dialog"
+        if voice_available and voice_fn():
+            return "voice"
         dialog_fn()
         return "dialog"
 
@@ -6575,17 +6685,19 @@ class DesktopPet:
         self.voice_subtitle_hide_job = self.root.after(hide_ms, _deadline_hide)
 
     def _show_voice_subtitle(self, title: str, duration_ms: int) -> None:
-        """语音台词：普通扁平文本框，内容为语音标题（已去数字/字母前缀），时长 = 语音 + 1s。"""
-        display = re.sub(r"^((?:\d+)|(?:[a-zA-Z]))(?:[\s._\-]+)", "", (title or "").strip()).strip()
+        """语音台词文本框：border2 边框；内容为标题（去数字/字母前缀）；时长 = 语音 + 1s。"""
+        display = (title or "").strip()
+        display = re.sub(r"^((?:\d+)|(?:[a-zA-Z]))(?:[\s._\-]+)?", "", display).strip()
         if not display:
-            self._hide_voice_subtitle()
-            return
+            # 无可用标题时仍给兜底，避免「有声无框」
+            display = "……"
         hide_ms = max(800, int(duration_ms) + 1000)
+        # use_border5=True 走 border 合成路径；SPEECH_BORDER_STEM 已切到 border2
         self._show_speech_dialog(
             display,
             auto_hide_ms=hide_ms,
             instant=True,
-            use_border5=False,
+            use_border5=True,
             from_voice=True,
         )
         self._schedule_pet_menu_follow()
@@ -7970,10 +8082,27 @@ class DesktopPet:
         self._place_bulb_fx()
         self._place_food_fx()
         self._place_shy_fx()
+        self._place_like_fx()
+        self._place_wink_fx()
         self._place_follow_dizzy_fx()
         self._place_all_mini_pet_waves()
         self._sync_all_mini_pet_bg_fx(place_only=True)
         self._place_wait_hint()
+        self._lift_pet_above_bg_fx()
+
+    def _lift_pet_above_bg_fx(self) -> None:
+        """氛围/背景特效窗口必须在桌宠（和金目）之下，避免挡住立绘。"""
+        try:
+            self.root.lift()
+        except Exception:
+            pass
+        for entry in list(getattr(self, "mini_pets", []) or []):
+            win = entry.get("win")
+            try:
+                if win is not None and win.winfo_exists():
+                    win.lift()
+            except Exception:
+                pass
 
     def _set_image(self, photo: ImageTk.PhotoImage) -> None:
         self.label.config(image=photo)
@@ -9464,6 +9593,7 @@ class DesktopPet:
         pad = 28
         display_y = self.y + self.click_bounce_offset
         self.music_wave_win.geometry(f"+{self.x - pad}+{display_y - pad}")
+        self._lift_pet_above_bg_fx()
 
     def _animate_music_wave(self) -> None:
         if not self.music_wave_canvas or not self.music_sprite_mode:
@@ -13173,6 +13303,7 @@ class DesktopPet:
         pad = INTERACT_FX_PAD
         display_y = self.y + self.click_bounce_offset
         self.interact_fx_win.geometry(f"+{self.x - pad}+{display_y - pad}")
+        self._lift_pet_above_bg_fx()
 
     def _show_interact_fx(self, action: str) -> None:
         self._hide_interact_fx()
@@ -13195,6 +13326,7 @@ class DesktopPet:
             self.root.after_cancel(self.interact_fx_stop_job)
         self.interact_fx_stop_job = self.root.after(INTERACT_FX_DURATION_MS, self._hide_interact_fx)
         self._notify_bg_fx_change()
+        self._lift_pet_above_bg_fx()
 
     def _animate_interact_fx(self) -> None:
         if not self.interact_fx_canvas or not self.interact_fx_action:
@@ -13247,6 +13379,7 @@ class DesktopPet:
         pad = 20
         display_y = self.y + self.click_bounce_offset
         self.wink_fx_win.geometry(f"+{self.x - pad}+{display_y - pad}")
+        self._lift_pet_above_bg_fx()
 
     def _animate_wink_fx(self) -> None:
         if not self.wink_fx_canvas:
@@ -13293,6 +13426,7 @@ class DesktopPet:
         pad = 20
         display_y = self.y + self.click_bounce_offset
         self.like_fx_win.geometry(f"+{self.x - pad}+{display_y - pad}")
+        self._lift_pet_above_bg_fx()
 
     def _show_like_fx(self) -> None:
         self._hide_like_fx()
@@ -13312,18 +13446,17 @@ class DesktopPet:
         self.like_fx_canvas.pack()
         px = max(3, self.display_size // 28)
         star_colors = ("#ffff88", "#ffcc44", "#ffffff", "#88ccff", "#ff88cc", "#88ffcc")
-        for _ in range(22):
-            sx = random.randint(2, size - 14)
-            sy = random.randint(2, size - 14)
+        for _ in range(18):
+            sx, sy = _scatter_xy_on_ring(size)
             _draw_pixel_star(self.like_fx_canvas, sx, sy, px=max(2, px - 1), color=random.choice(star_colors))
-        for _ in range(8):
-            sx = random.randint(0, size - 10)
-            sy = random.randint(0, size - 10)
+        for _ in range(6):
+            sx, sy = _scatter_xy_on_ring(size)
             _draw_pixel_star(
                 self.like_fx_canvas, sx, sy, px=max(1, px - 2), color=random.choice(star_colors)
             )
         self._place_like_fx()
         self._notify_bg_fx_change()
+        self._lift_pet_above_bg_fx()
 
     def _hide_shy_fx(self) -> None:
         if self.shy_fx_win and self.shy_fx_win.winfo_exists():
@@ -13338,6 +13471,7 @@ class DesktopPet:
         pad = 20
         display_y = self.y + self.click_bounce_offset
         self.shy_fx_win.geometry(f"+{self.x - pad}+{display_y - pad}")
+        self._lift_pet_above_bg_fx()
 
     def _show_shy_fx(self) -> None:
         self._hide_shy_fx()
@@ -13355,11 +13489,11 @@ class DesktopPet:
         px = max(2, self.display_size // 36)
         heart_colors = ("#ff6688", "#ff88aa", "#ff4466", "#ff99bb")
         for _ in range(8):
-            hx = random.randint(4, size - 16)
-            hy = random.randint(4, size - 16)
+            hx, hy = _scatter_xy_on_ring(size)
             _draw_pixel_heart(self.shy_fx_canvas, hx, hy, px=px, color=random.choice(heart_colors))
         self._place_shy_fx()
         self._notify_bg_fx_change()
+        self._lift_pet_above_bg_fx()
 
     def _interact_flair(self, action: str, *, banter: bool = True, show_fx: bool = True) -> None:
         if self.music_sprite_mode:
@@ -13691,6 +13825,12 @@ class DesktopPet:
         entry_x = int(entry["x"])
         entry_y = int(entry["y"]) + int(entry.get("bounce_offset", 0))
         win.geometry(f"+{entry_x - pad}+{entry_y - pad}")
+        try:
+            pet_win = entry.get("win")
+            if pet_win is not None and pet_win.winfo_exists():
+                pet_win.lift()
+        except Exception:
+            pass
 
     def _create_mini_pet_bg_fx_window(self, entry: dict, pad: int) -> tuple[tk.Canvas, int]:
         size = entry["size"]
@@ -13783,8 +13923,7 @@ class DesktopPet:
             px = max(2, int(3 * scale))
             colors = ("#ff88cc", "#ffcc44", "#88dd88", "#ff6688", "#cc88ff", "#88ccff")
             for _ in range(8):
-                fx = random.randint(4, canvas_size - 16)
-                fy = random.randint(4, canvas_size - 20)
+                fx, fy = _scatter_xy_on_ring(canvas_size)
                 self._draw_pixel_flower(canvas, fx, fy, random.choice(colors), px=px)
         elif kind == "shy":
             pad = self._mini_pet_bg_pad(entry, 20)
@@ -13792,8 +13931,7 @@ class DesktopPet:
             px = max(2, int(max(2, self.display_size // 36) * scale))
             heart_colors = ("#ff6688", "#ff88aa", "#ff4466", "#ff99bb")
             for _ in range(6):
-                hx = random.randint(4, canvas_size - 16)
-                hy = random.randint(4, canvas_size - 16)
+                hx, hy = _scatter_xy_on_ring(canvas_size)
                 _draw_pixel_heart(canvas, hx, hy, px=px, color=random.choice(heart_colors))
         elif kind == "wink":
             pad = self._mini_pet_bg_pad(entry, 20)
@@ -13877,6 +14015,12 @@ class DesktopPet:
         wx = int(entry["x"] - pad)
         wy = int(entry["y"] + bounce - pad)
         wave_win.geometry(f"+{wx}+{wy}")
+        try:
+            pet_win = entry.get("win")
+            if pet_win is not None and pet_win.winfo_exists():
+                pet_win.lift()
+        except Exception:
+            pass
 
     def _place_all_mini_pet_waves(self) -> None:
         for entry in self.mini_pets:
@@ -15910,7 +16054,7 @@ class DesktopPet:
         pad = FOOD_FX_PAD
         display_y = self.y + self.click_bounce_offset
         self.food_fx_win.geometry(f"+{self.x - pad}+{display_y - pad}")
-        self.root.lift()
+        self._lift_pet_above_bg_fx()
 
     def _show_food_fx(self, food_id: str) -> None:
         self._hide_food_fx()
@@ -16002,12 +16146,12 @@ class DesktopPet:
 
         colors = ("#ff88cc", "#ffcc44", "#88dd88", "#ff6688", "#cc88ff", "#88ccff")
         for _ in range(10):
-            fx = random.randint(4, size - 16)
-            fy = random.randint(4, size - 20)
+            fx, fy = _scatter_xy_on_ring(size)
             self._draw_pixel_flower(self.happy_fx_canvas, fx, fy, random.choice(colors))
 
         self._place_happy_fx()
         self._notify_bg_fx_change()
+        self._lift_pet_above_bg_fx()
 
     def _place_happy_fx(self) -> None:
         if not self.happy_fx_win or not self.happy_fx_win.winfo_exists():
@@ -16015,7 +16159,7 @@ class DesktopPet:
         pad = 24
         display_y = self.y + self.click_bounce_offset
         self.happy_fx_win.geometry(f"+{self.x - pad}+{display_y - pad}")
-        self.root.lift()
+        self._lift_pet_above_bg_fx()
 
     def _show_hi_dialog(self) -> str:
         """打招呼：开语音时与 HI_TEXT 打字框随机二选一。"""
@@ -17469,7 +17613,7 @@ class DesktopPet:
         pad = 20
         display_y = self.y + self.click_bounce_offset
         self.rain_fx_win.geometry(f"+{self.x - pad}+{display_y - pad - 30}")
-        self.root.lift()
+        self._lift_pet_above_bg_fx()
 
     def _show_rain_fx(self) -> None:
         self._hide_rain_fx()
@@ -17534,7 +17678,7 @@ class DesktopPet:
         self.bulb_fx_win.geometry(
             f"+{max(0, self.x + self.display_size // 2 - BULB_FX_SIZE // 2 + pad)}+{win_y}"
         )
-        self.root.lift()
+        self._lift_pet_above_bg_fx()
 
     def _animate_bulb_glow(self) -> None:
         if not self.bulb_fx_canvas or self.action_name != "idea":

@@ -1,20 +1,18 @@
-"""像素风 UI 装饰：霓虹潮科技条纹 + 蓝粉黑白配色。"""
+"""像素风 UI 装饰：Vpetsign 素材 + 蓝粉黑白配色。"""
 from __future__ import annotations
 
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageTk
 
-THEME_BLUE = "#66f0ff"
-THEME_PINK = "#ff4db8"
-THEME_BLUE_DEEP = "#2a6fd6"
+THEME_BLUE = "#66ccff"
+THEME_PINK = "#ff88cc"
+THEME_BLUE_DEEP = "#4488dd"
 THEME_WHITE = "#f4f8ff"
-THEME_BLACK = "#070a12"
-THEME_BG_INNER_RGBA = (10, 14, 26, 255)
-THEME_PANEL_INNER = "#0e1424"
-THEME_ITEM_BG = "#161e32"
-THEME_NEON_CYAN = "#39ffe0"
-THEME_NEON_MAGENTA = "#ff2f9f"
+THEME_BLACK = "#0a0c12"
+THEME_BG_INNER_RGBA = (14, 18, 30, 255)
+THEME_PANEL_INNER = "#12182a"
+THEME_ITEM_BG = "#181f34"
 
 _VPETSIGN_DESKTOP = Path(r"C:\Users\36255\Desktop\Vpetsign")
 _SIGN_IMG_CACHE: dict[tuple[str, int, int], Image.Image] = {}
@@ -71,40 +69,34 @@ def sign_photo(signs_dir: Path, index: int, size: int) -> ImageTk.PhotoImage | N
 
 
 def decorate_panel_border(img: Image.Image, corner: int, signs_dir: Path) -> Image.Image:
-    """在九宫格边框上叠加霓虹像素条纹与四角标牌装饰。"""
+    """在九宫格边框上叠加像素条纹与四角标牌装饰。"""
     out = img.convert("RGBA").copy()
     draw = ImageDraw.Draw(out)
     w, h = out.size
-    pink = (255, 77, 184, 255)
-    blue = (102, 240, 255, 255)
+    pink = (255, 136, 204, 255)
+    blue = (102, 204, 255, 255)
     white = (220, 230, 255, 180)
-    cyan = (57, 255, 224, 220)
 
     for x in range(corner, max(corner + 1, w - corner), 3):
-        draw.rectangle((x, 1, min(w - 2, x + 1), 3), fill=pink)
-        draw.rectangle((x + 1, h - 4, min(w - 2, x + 2), h - 2), fill=blue)
-    for y in range(corner, max(corner + 1, h - corner), 4):
-        draw.rectangle((1, y, 3, min(h - 2, y + 1)), fill=cyan)
-        draw.rectangle((w - 4, y + 1, w - 2, min(h - 2, y + 2)), fill=pink)
+        c = pink if (x // 3) % 2 == 0 else blue
+        if corner >= 2:
+            draw.point((x, max(0, corner - 2)), fill=c)
+            draw.point((x + 1, max(0, corner - 1)), fill=white)
+        if h > corner + 2:
+            c2 = blue if (x // 3) % 2 == 0 else pink
+            draw.point((x, min(h - 1, h - corner + 1)), fill=c2)
 
-    # 霓虹角括号
-    arm = max(10, corner // 2)
-    for x0, y0, dx, dy in (
-        (2, 2, 1, 1),
-        (w - 3, 2, -1, 1),
-        (2, h - 3, 1, -1),
-        (w - 3, h - 3, -1, -1),
-    ):
-        draw.rectangle((x0, y0, x0 + dx * arm, y0 + dy * 1), fill=white)
-        draw.rectangle((x0, y0, x0 + dx * 1, y0 + dy * arm), fill=white)
+    for y in range(corner + 2, max(corner + 3, h - corner), 5):
+        draw.point((max(0, corner - 1), y), fill=pink)
+        draw.point((min(w - 1, w - corner), y + 1), fill=blue)
 
-    ornament = max(18, min(42, corner))
     placements = (
-        (0, 4, 4),
-        (1, w - ornament - 4, 4),
-        (2, 4, h - ornament - 4),
-        (3, w - ornament - 4, h - ornament - 4),
+        (1, 2, 2),
+        (2, w - corner - 18, 2),
+        (8, 2, h - corner - 16),
+        (9, w - corner - 18, h - corner - 16),
     )
+    ornament = min(20, max(12, corner))
     for sign_idx, px, py in placements:
         sign = load_sign_image(signs_dir, sign_idx)
         if sign is None:
@@ -117,52 +109,192 @@ def decorate_panel_border(img: Image.Image, corner: int, signs_dir: Path) -> Ima
     return out
 
 
-def draw_pixel_divider(canvas, width: int, *, height: int = 6, bg: str = THEME_PANEL_INNER) -> None:
+def draw_pixel_divider(canvas, width: int, *, height: int = 5, bg: str = THEME_PANEL_INNER) -> None:
     canvas.delete("all")
     canvas.config(height=height, bg=bg)
     w = max(40, int(width))
-    for i in range(0, w, 10):
-        canvas.create_rectangle(i, 0, i + 4, height - 2, fill=THEME_PINK, outline="")
-        canvas.create_rectangle(i + 4, 1, i + 7, height - 1, fill=THEME_BLUE, outline="")
-        canvas.create_rectangle(i + 7, 0, i + 10, height - 2, fill=THEME_NEON_CYAN, outline="")
+    for i in range(0, w, 8):
+        canvas.create_rectangle(i, 0, i + 4, height - 1, fill=THEME_PINK, outline="")
+        canvas.create_rectangle(i + 4, 1, i + 8, height, fill=THEME_BLUE, outline="")
     canvas.create_rectangle(0, height - 1, w, height, fill=THEME_WHITE, outline="")
 
 
 def pack_menu_chrome(parent, *, bg: str):
     import tkinter as tk
 
-    # 外层霓虹壳：双色描边 + 角标感
-    shell = tk.Frame(parent, bg=THEME_NEON_CYAN, padx=1, pady=1)
+    shell = tk.Frame(parent, bg=THEME_BLUE, padx=1, pady=1)
     shell.pack()
-    mid = tk.Frame(shell, bg=THEME_PINK, padx=1, pady=1)
-    mid.pack(fill=tk.BOTH, expand=True)
-    tk.Frame(mid, bg=THEME_BLUE, height=2).pack(fill=tk.X)
-    # 科技点阵条
-    dash = tk.Canvas(mid, height=4, bg=THEME_BLACK, highlightthickness=0, borderwidth=0)
-    dash.pack(fill=tk.X)
-    for i in range(0, 220, 8):
-        col = THEME_PINK if (i // 8) % 2 == 0 else THEME_BLUE
-        dash.create_rectangle(i, 1, i + 4, 3, fill=col, outline="")
-    inner = tk.Frame(mid, bg=bg, padx=4, pady=4)
+    tk.Frame(shell, bg=THEME_PINK, height=2).pack(fill=tk.X)
+    inner = tk.Frame(shell, bg=bg, padx=3, pady=3)
     inner.pack(fill=tk.BOTH, expand=True)
-    tk.Frame(mid, bg=THEME_BLUE_DEEP, height=2).pack(fill=tk.X)
+    tk.Frame(shell, bg=THEME_BLUE_DEEP, height=1).pack(fill=tk.X)
     return inner
 
 
 def pack_panel_accent_bar(parent, *, bg: str) -> None:
     import tkinter as tk
 
-    # 多层霓虹顶栏：粉 / 青 / 点阵 / 深层蓝
-    tk.Frame(parent, bg=THEME_PINK, height=2).pack(fill=tk.X)
-    tk.Frame(parent, bg=THEME_NEON_CYAN, height=1).pack(fill=tk.X)
-    strip = tk.Canvas(parent, height=5, bg=THEME_BLACK, highlightthickness=0, borderwidth=0)
-    strip.pack(fill=tk.X)
-    for i in range(0, 640, 6):
-        if (i // 6) % 3 == 0:
-            strip.create_rectangle(i, 1, i + 3, 4, fill=THEME_PINK, outline="")
-        elif (i // 6) % 3 == 1:
-            strip.create_rectangle(i, 0, i + 3, 3, fill=THEME_BLUE, outline="")
-        else:
-            strip.create_rectangle(i, 2, i + 2, 4, fill=THEME_NEON_CYAN, outline="")
-    tk.Frame(parent, bg=THEME_BLUE_DEEP, height=1).pack(fill=tk.X)
+    tk.Frame(parent, bg=THEME_PINK, height=3).pack(fill=tk.X)
+    tk.Frame(parent, bg=THEME_BLUE, height=1).pack(fill=tk.X)
     tk.Frame(parent, bg=bg, height=2).pack(fill=tk.X)
+
+
+# 深蓝 / 浅蓝 / 粉 / 黑 / 白 —— 菜单像素小图标与点击动画
+_GLYPH_COLORS = (THEME_BLUE_DEEP, THEME_BLUE, THEME_PINK, THEME_BLACK, THEME_WHITE)
+_GLYPH_PHOTO_CACHE: dict[tuple[str, int], ImageTk.PhotoImage] = {}
+
+
+def _glyph_pattern(seed: int) -> list[tuple[int, int, str]]:
+    """生成 8×8 像素图案坐标（相对原点）。"""
+    colors = _GLYPH_COLORS
+    c0 = colors[seed % len(colors)]
+    c1 = colors[(seed + 1) % len(colors)]
+    c2 = colors[(seed + 2) % len(colors)]
+    style = seed % 6
+    pts: list[tuple[int, int, str]] = []
+    if style == 0:  # 菱形
+        for x, y in ((3, 1), (2, 2), (4, 2), (1, 3), (5, 3), (2, 4), (4, 4), (3, 5)):
+            pts.append((x, y, c0 if (x + y) % 2 == 0 else c1))
+        pts.append((3, 3, c2))
+    elif style == 1:  # 星点
+        for x, y in ((3, 0), (3, 1), (2, 2), (3, 2), (4, 2), (1, 3), (2, 3), (3, 3), (4, 3), (5, 3), (3, 4), (3, 5), (3, 6)):
+            pts.append((x, y, c0 if y < 3 else c1))
+        pts.append((3, 3, THEME_WHITE))
+    elif style == 2:  # 心形小像素
+        for x, y in ((2, 1), (4, 1), (1, 2), (2, 2), (3, 2), (4, 2), (5, 2), (1, 3), (2, 3), (3, 3), (4, 3), (5, 3), (2, 4), (3, 4), (4, 4), (3, 5)):
+            pts.append((x, y, THEME_PINK if y < 4 else c0))
+    elif style == 3:  # 对勾 / 箭头
+        for x, y in ((1, 3), (2, 4), (3, 5), (4, 4), (5, 3), (6, 2)):
+            pts.append((x, y, c0))
+        pts.append((3, 3, c1))
+    elif style == 4:  # 方框宝石
+        for x in range(1, 7):
+            pts.append((x, 1, c0))
+            pts.append((x, 6, c1))
+        for y in range(2, 6):
+            pts.append((1, y, c0))
+            pts.append((6, y, c1))
+        pts.append((3, 3, THEME_PINK))
+        pts.append((4, 3, THEME_WHITE))
+        pts.append((3, 4, THEME_WHITE))
+        pts.append((4, 4, THEME_BLUE))
+    else:  # 波浪
+        for i, (x, y) in enumerate(((1, 3), (2, 2), (3, 1), (4, 2), (5, 3), (6, 4), (2, 5), (4, 5), (5, 5))):
+            pts.append((x, y, colors[i % len(colors)]))
+    return pts
+
+
+def make_menu_glyph_image(seed: int, size: int = 14) -> Image.Image:
+    img = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
+    px = img.load()
+    for x, y, col in _glyph_pattern(abs(int(seed))):
+        if 0 <= x < 8 and 0 <= y < 8:
+            r = int(col[1:3], 16)
+            g = int(col[3:5], 16)
+            b = int(col[5:7], 16)
+            px[x, y] = (r, g, b, 255)
+    # 细黑描边，贴合像素风
+    out = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
+    base = img.load()
+    out_px = out.load()
+    for y in range(8):
+        for x in range(8):
+            if base[x, y][3] == 0:
+                continue
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < 8 and 0 <= ny < 8 and base[nx, ny][3] == 0:
+                    out_px[nx, ny] = (10, 12, 18, 220)
+            out_px[x, y] = base[x, y]
+    return out.resize((max(8, size), max(8, size)), Image.NEAREST)
+
+
+def menu_glyph_photo(label: str, size: int = 14) -> ImageTk.PhotoImage:
+    key = (label, int(size))
+    cached = _GLYPH_PHOTO_CACHE.get(key)
+    if cached is not None:
+        return cached
+    photo = ImageTk.PhotoImage(make_menu_glyph_image(hash(label) & 0xFFFF, size))
+    _GLYPH_PHOTO_CACHE[key] = photo
+    return photo
+
+
+def play_pixel_click_burst(root, anchor_widget, *, bg: str = THEME_BLACK) -> None:
+    """在按钮旁弹出短促像素粒子散开动画（蓝粉黑白）。"""
+    import tkinter as tk
+
+    try:
+        if not anchor_widget or not anchor_widget.winfo_exists():
+            return
+        ax = int(anchor_widget.winfo_rootx())
+        ay = int(anchor_widget.winfo_rooty())
+        aw = max(20, int(anchor_widget.winfo_width()))
+        ah = max(16, int(anchor_widget.winfo_height()))
+    except Exception:
+        return
+
+    size = 56
+    win = tk.Toplevel(root)
+    win.overrideredirect(True)
+    try:
+        win.attributes("-topmost", True)
+    except Exception:
+        pass
+    win.configure(bg="magenta")
+    try:
+        win.wm_attributes("-transparentcolor", "magenta")
+    except Exception:
+        pass
+    canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0, bd=0)
+    canvas.pack()
+    cx, cy = size // 2, size // 2
+    win.geometry(f"+{ax + aw // 2 - cx}+{ay + ah // 2 - cy}")
+
+    particles = []
+    for i, col in enumerate(_GLYPH_COLORS * 2):
+        ang = (i / 10.0) * 6.28318
+        particles.append(
+            {
+                "x": float(cx),
+                "y": float(cy),
+                "vx": 1.6 * (1 if i % 2 == 0 else -1) * (0.6 + (i % 3) * 0.35) * (1 if i < 5 else -0.4),
+                "vy": -2.2 - (i % 4) * 0.35,
+                "col": col,
+                "life": 10 + (i % 4),
+                "ang": ang,
+            }
+        )
+        particles[-1]["vx"] = 2.4 * __import__("math").cos(ang)
+        particles[-1]["vy"] = 2.4 * __import__("math").sin(ang)
+
+    frame = {"n": 0}
+
+    def tick() -> None:
+        if not win.winfo_exists():
+            return
+        canvas.delete("all")
+        alive = False
+        for p in particles:
+            if p["life"] <= 0:
+                continue
+            alive = True
+            px = int(p["x"])
+            py = int(p["y"])
+            s = 3 if p["life"] > 5 else 2
+            canvas.create_rectangle(px, py, px + s, py + s, fill=p["col"], outline="")
+            if p["life"] > 6:
+                canvas.create_rectangle(px + 1, py - 2, px + 2, py - 1, fill=THEME_WHITE, outline="")
+            p["x"] += p["vx"]
+            p["y"] += p["vy"]
+            p["vy"] += 0.18
+            p["life"] -= 1
+        frame["n"] += 1
+        if alive and frame["n"] < 18:
+            root.after(28, tick)
+        else:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+    root.after(0, tick)

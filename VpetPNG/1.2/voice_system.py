@@ -673,7 +673,7 @@ class VoicePlayer:
         finished = self._current
         self._current = None
         self._playing = False
-        self._hide_subtitle_now()
+        # 不在片段结束时立刻关字幕：字幕框由桌宠侧按时长+1s 自行关闭
         if finished and chain:
             self._maybe_chain(finished)
         if self._queue:
@@ -760,7 +760,7 @@ class VoicePlayer:
         self._current = None
         self._session_priority = 0
         self._mark_session_end()
-        self._hide_subtitle_now()
+        # 会话结束也不强行关字幕，保留「语音时长 + 1s」显示窗口
         cb = self._done_cb
         self._done_cb = None
         if cb:
