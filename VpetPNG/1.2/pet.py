@@ -857,11 +857,11 @@ GAME_DIZZY_LINES: tuple[str, ...] = (
     "别扔了…我晕…",
     "像是被像素砸中了脑袋…",
 )
-GAME_CLEAR_W = 320
-GAME_CLEAR_H = 220
-GAME_CLEAR_MS = 80
-GAME_CLEAR_HOLD_MS = 1800
-GAME_CLEAR_FRAMES = 16
+GAME_CLEAR_W = 340
+GAME_CLEAR_H = 240
+GAME_CLEAR_MS = 55
+GAME_CLEAR_HOLD_MS = 2000
+GAME_CLEAR_FRAMES = 28
 VOCAB_CLEAR_STREAK = 5
 VOCAB_CORRECT_ADVANCE_MS = 120
 VOCAB_WRONG_ADVANCE_MS = 1400
@@ -1035,11 +1035,11 @@ EXIT_DISSOLVE_MS = 26
 EXIT_DISSOLVE_FRAMES = 36
 PIXEL_BLOCK_DISSOLVE_MS = EXIT_DISSOLVE_MS
 PIXEL_BLOCK_DISSOLVE_FRAMES = EXIT_DISSOLVE_FRAMES
-# 星屑绽放主题：桌宠粉蓝 / 智能伴侣深蓝浅蓝
-VPET_ANIM_PALETTE = ("#ff66aa", "#ff88cc", "#ffd1ec", "#66ccff", "#9ae2ff", "#ffffff")
-COMPANION_ANIM_PALETTE = ("#0f2a4a", "#1a4578", "#2a6fc0", "#66b0ee", "#a8dcff", "#e8f6ff")
-PIXEL_REASSEMBLY_CYCLE = 48
-SPARK_BURST_BLOOM = 0.40  # 入场：前段中心绽开，后段收束成角色
+# 潮科技像素：霓虹粉青 + 网格光
+VPET_ANIM_PALETTE = ("#ff2d95", "#ff66cc", "#66f0ff", "#2ad4ff", "#a8f6ff", "#ffffff")
+COMPANION_ANIM_PALETTE = ("#1a3a6e", "#2458a8", "#3d8dff", "#66c8ff", "#9ee0ff", "#e8f7ff")
+PIXEL_REASSEMBLY_CYCLE = 44
+NEON_GRID_STEP = 10
 
 EXPOSE_RING_PAD = 36
 EXPOSE_BLUE_SPAN = 60
@@ -1461,8 +1461,8 @@ HI_TEXT = "你好呀！今天也要加油哦~"
 FOLLOW_WAIT_TEXTS = ("等等我！", "别走那么快嘛~", "等等我啦！", "等等我嘛…")
 PIXEL_FONT = ("Courier New", 12, "bold")
 PIXEL_COLOR = THEME_BLUE
-MENU_BG = "#141824"
-MENU_FG = "#eef2ff"
+MENU_BG = "#0c101c"
+MENU_FG = "#e8f0ff"
 MENU_ACTIVE = "#2a3558"
 
 
