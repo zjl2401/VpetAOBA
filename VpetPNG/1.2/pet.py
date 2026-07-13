@@ -1031,10 +1031,16 @@ FAULT_ALERT_MESSAGES = (
 FACE_DCLICK_MS = 350
 FACE_DCLICK_COMBOS_NEEDED = 3
 FACE_DCLICK_COMBO_RESET_MS = 4500
-EXIT_DISSOLVE_MS = 32
-EXIT_DISSOLVE_FRAMES = 28
+EXIT_DISSOLVE_MS = 26
+EXIT_DISSOLVE_FRAMES = 36
 PIXEL_BLOCK_DISSOLVE_MS = EXIT_DISSOLVE_MS
 PIXEL_BLOCK_DISSOLVE_FRAMES = EXIT_DISSOLVE_FRAMES
+# 星屑绽放主题：桌宠粉蓝 / 智能伴侣深蓝浅蓝
+VPET_ANIM_PALETTE = ("#ff66aa", "#ff88cc", "#ffd1ec", "#66ccff", "#9ae2ff", "#ffffff")
+COMPANION_ANIM_PALETTE = ("#0f2a4a", "#1a4578", "#2a6fc0", "#66b0ee", "#a8dcff", "#e8f6ff")
+PIXEL_REASSEMBLY_CYCLE = 48
+SPARK_BURST_BLOOM = 0.40  # 入场：前段中心绽开，后段收束成角色
+
 EXPOSE_RING_PAD = 36
 EXPOSE_BLUE_SPAN = 60
 EXPOSE_BLUE_SPAN_MIN = 18
@@ -1082,6 +1088,7 @@ RHYTHM_KEY_LABELS = ("D", "F", "J", "K")
 RHYTHM_LANE_COLORS = ("#66ccff", "#88ffaa", "#ffcc66", "#ff88cc")
 RHYTHM_W = 420
 RHYTHM_H = 600
+RHYTHM_TOP_CHROME_H = 52
 RHYTHM_TRAVEL_MS = 1400
 RHYTHM_SPEED_TRAVEL_MS: dict[str, int] = {"慢": 1800, "中": 1400, "快": 1000}
 RHYTHM_HIT_PERFECT_MS = 55
@@ -1096,6 +1103,7 @@ RHYTHM_PLAY_CAP_MS = 0  # 默认：0 = 不截断；开局可选 90s
 RHYTHM_SHORT_CAP_MS = 90000
 RHYTHM_GRADE_BAR_REFRESH_MS = 200
 RHYTHM_GRADE_BAR_H = 40
+RHYTHM_PLAY_H = RHYTHM_H - RHYTHM_GRADE_BAR_H - RHYTHM_TOP_CHROME_H
 RHYTHM_GRADE_TIERS: tuple[tuple[str, int, str], ...] = (
     ("D", 0, "#ff6666"),
     ("C", 50, "#ffaa44"),
@@ -1234,7 +1242,7 @@ GUIDE_TOPICS: dict[str, dict] = {
             "· 跟随：桌宠跟上鼠标，过远会喊「等等我」\n"
             "· 漫步：只走路，不触发自由模式那套随机动作\n"
             "· 睡眠：安静休息，体力低会自动入睡；连点可偷看/唤醒\n"
-            "· 音乐（模式菜单）：音乐漫步＝边走边听（声音设置可选列表循环/随机），不触发动作\n"
+            "· 音乐（模式菜单）：音乐漫步＝边走边听（声音设置可选列表循环/随机），不触发动作与语音\n"
             "  （与「游戏→音乐」节奏玩法不同）\n"
             "· 工作 ▶\n"
             "    - 开始工作：持续运送，终点旗可拖，点「结束」停止\n"
@@ -1286,7 +1294,7 @@ GUIDE_TOPICS: dict[str, dict] = {
             "【互动】\n"
             "· 动作：吃东西 / 打招呼 / 打电话 / ×生活 / 工作 / 睡眠 / 下蹲 / 侧踢 / 判断 / 是 / 否\n"
             "· 表情 / 工作运送等\n"
-            "· 音乐漫步开启时，互动动作会被抑制，只走路听歌"
+            "· 音乐漫步开启时，互动动作与语音都会被抑制，只走路听歌"
         ),
     },
     "system": {
@@ -1294,11 +1302,14 @@ GUIDE_TOPICS: dict[str, dict] = {
         "body": (
             "【系统菜单】\n"
             "· 回忆（画廊 / 留声）· 我的（日记 / 日程 / 天气预报）\n"
-            "· 设置（字体、体型、难度、声音等）· 对话（AI / 普通问答）\n"
+            "· 设置（字体、体型、难度、声音、显示层级等）· 对话（AI / 普通问答）\n"
             "· 重置 / 关于 / 退出 / 操作说明 / 问题反馈\n\n"
             "【快捷键 Ctrl+Shift+】\n"
             "  H 打招呼   E 喂食   T 电话   J 下蹲\n"
             "  N 睡眠     A AI对话  V 开关菜单\n\n"
+            "【显示层级 顶部/底部】\n"
+            "顶部：桌宠与所有菜单、面板、对话框、特效置于所有窗口最上层；\n"
+            "底部：取消置顶，显示在其他窗口之下。\n\n"
             "【难度 低/中/高】\n"
             "影响体力心情下降、采集、暴露 QTE、莱姆对战等；\n"
             "暴露失败会按难度扣当前心情/体力比例。"
@@ -1389,7 +1400,7 @@ ONCE_HINTS: dict[str, str] = {
     "game_mode": "采集：移动接食物，注意 ±3s 与晕眩物，Esc 可退出~",
     "rhythm_game": "音乐：D F J K · 长音需长按 · 右上可调流速 · Esc 退出~",
     "companion_bar": "智能伴侣已开启~ 金目会跟在左右两侧；游戏模式会跟紧你哦！",
-    "music_mode": "音乐漫步：边走边听，不会触发动作；再点一次可关闭音乐~",
+    "music_mode": "音乐漫步：边走边听，不会触发动作与语音；再点一次可关闭音乐~",
     "rhyme_invite": "邀请对战需要联机服务器，目前可先「练习对战」体验！",
 }
 DEFAULT_VOCAB_WORDS: list[dict[str, str]] = [
@@ -1568,6 +1579,19 @@ def _fit_panel_wh(
     except Exception:
         pass
     return w, h
+
+
+def _mark_game_play_panel(win: tk.Misc) -> None:
+    """正式游玩窗：按内容撑开显示全，不走固定滚动壳。"""
+    try:
+        setattr(win, "_panel_full_size", True)
+    except Exception:
+        pass
+    try:
+        if hasattr(win, "_panel_fixed_size"):
+            delattr(win, "_panel_fixed_size")
+    except Exception:
+        pass
 
 
 def _pack_fixed_scroll_panel(
@@ -2168,13 +2192,61 @@ def _ease_in_out_quad(t: float) -> float:
     return 1.0 - (-2.0 * t + 2.0) ** 2 / 2.0
 
 
-def _build_pixel_block_specs(img: Image.Image, size: int) -> tuple[int, list[tuple[int, int, str, float, float, float, float, float]]]:
-    """(block_size, [(tx, ty, color, drift_x, drift_y, delay, wobble, speed), ...])"""
-    bs = _pixel_block_size(size)
+def _palette_tint_color(hex_color: str, palette: tuple[str, ...] | None, seed: int) -> str:
+    """把采样色轻微偏向主题色板，保留轮廓明暗。"""
+    if not palette:
+        return hex_color
+    try:
+        r = int(hex_color[1:3], 16)
+        g = int(hex_color[3:5], 16)
+        b = int(hex_color[5:7], 16)
+    except Exception:
+        return palette[seed % len(palette)]
+    lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+    pick = palette[seed % len(palette)]
+    if lum < 0.22:
+        pick = palette[0]
+    elif lum > 0.82:
+        pick = palette[-1]
+    try:
+        pr = int(pick[1:3], 16)
+        pg = int(pick[3:5], 16)
+        pb = int(pick[5:7], 16)
+    except Exception:
+        return pick
+    mix = 0.55 + 0.25 * lum
+    nr = int(r * (1.0 - mix) + pr * mix)
+    ng = int(g * (1.0 - mix) + pg * mix)
+    nb = int(b * (1.0 - mix) + pb * mix)
+    return f"#{nr:02x}{ng:02x}{nb:02x}"
+
+
+def _draw_spark_chip(canvas: tk.Canvas, cx: float, cy: float, half: float, color: str, *, tip: bool = False) -> None:
+    """菱形星屑；tip 时加十字闪光。"""
+    hx = max(1.0, half)
+    x, y = int(cx), int(cy)
+    pts = (x, int(y - hx), int(x + hx), y, x, int(y + hx), int(x - hx), y)
+    canvas.create_polygon(pts, fill=color, outline="")
+    if tip and hx >= 2.0:
+        arm = max(1, int(hx * 1.6))
+        canvas.create_rectangle(x - 1, y - arm, x + 1, y + arm, fill=color, outline="")
+        canvas.create_rectangle(x - arm, y - 1, x + arm, y + 1, fill=color, outline="")
+
+
+def _build_pixel_block_specs(
+    img: Image.Image,
+    size: int,
+    *,
+    palette: tuple[str, ...] | None = None,
+    lively: bool = True,
+) -> tuple[int, list[tuple]]:
+    """星屑采样：(block_size, [(tx, ty, color, angle, burst, delay, wobble, speed, spark), ...])"""
+    bs = max(3, _pixel_block_size(size) - (1 if lively else 0))
     cols = max(1, (size + bs - 1) // bs)
     rows = max(1, (size + bs - 1) // bs)
     rng = random.Random(time.time_ns() ^ (id(img) << 7) ^ os.getpid())
-    specs: list[tuple[int, int, str, float, float, float, float, float]] = []
+    specs: list[tuple] = []
+    mid = size * 0.5
     for row in range(rows):
         for col in range(cols):
             x0, y0 = col * bs, row * bs
@@ -2183,63 +2255,137 @@ def _build_pixel_block_specs(img: Image.Image, size: int) -> tuple[int, list[tup
             if sampled is None:
                 continue
             color, _alpha = sampled
-            angle = rng.uniform(0.0, math.tau)
-            mag = rng.uniform(0.25, 1.35) * bs
-            drift_x = math.cos(angle) * mag + rng.uniform(-bs * 0.18, bs * 0.18)
-            drift_y = math.sin(angle) * mag + rng.uniform(-bs * 0.18, bs * 0.18)
-            row_wave = rng.uniform(0.0, 0.28) + (row / max(1, rows - 1)) * rng.uniform(0.08, 0.32)
-            delay = min(0.82, row_wave + rng.uniform(0.0, 0.52))
+            color = _palette_tint_color(color, palette, row * 31 + col * 17 + int(rng.random() * 10000))
+            tx = x0 + bs * 0.5
+            ty = y0 + bs * 0.5
+            base_ang = math.atan2(ty - mid, tx - mid)
+            jitter = rng.uniform(-0.55, 0.55)
+            angle = base_ang + jitter
+            dist = math.hypot(tx - mid, ty - mid)
+            burst = max(size * 0.18, dist * rng.uniform(1.15, 1.85) + bs * rng.uniform(2.2, 5.5))
+            delay = min(0.72, (dist / max(1.0, size * 0.72)) * 0.35 + rng.uniform(0.0, 0.42))
             wobble = rng.uniform(0.0, math.tau)
-            speed = rng.uniform(0.72, 1.38)
-            specs.append((x0, y0, color, drift_x, drift_y, delay, wobble, speed))
+            speed = rng.uniform(0.78, 1.28)
+            spark = 1 if rng.random() < (0.28 if lively else 0.12) else 0
+            specs.append((tx, ty, color, angle, burst, delay, wobble, speed, spark))
     rng.shuffle(specs)
     return bs, specs
 
 
 def _draw_pixel_block_dissolve_frame(
     canvas: tk.Canvas,
-    specs: list[tuple[int, int, str, float, float, float, float, float]],
+    specs: list[tuple],
     block_size: int,
     size: int,
     phase: int,
     total_phases: int,
     *,
     reverse: bool = False,
+    sparkle_palette: tuple[str, ...] | None = None,
 ) -> None:
+    """星屑绽放：入场中心绽开再收束成角色；退场由角色位向外炸开。"""
     canvas.delete("all")
     if not specs:
         return
     t_global = phase / max(1, total_phases - 1)
-    home_x = block_size * 0.5
-    home_y = block_size * 0.5
-    for tx, ty, color, drift_x, drift_y, delay, wobble, speed in specs:
-        stagger = delay * 0.42
-        denom = max(0.18, 1.0 - stagger * 0.45)
-        t_local = min(1.0, max(0.0, ((t_global * speed) - stagger * 0.28) / denom))
-        if reverse:
-            t_eased = _ease_in_cubic(t_local)
-            float_up = t_eased * block_size * 0.18
-            wobble_px = math.sin(wobble + t_eased * math.pi * 1.4) * block_size * 0.06 * (1.0 - t_eased)
-            cx = tx + home_x + drift_x * t_eased + wobble_px
-            cy = ty + home_y + drift_y * t_eased - float_up + wobble_px * 0.35
-            alpha = 1.0 - t_eased
-            scale = 1.0 - t_eased * 0.22
+    mid = size * 0.5
+    bloom_end = SPARK_BURST_BLOOM
+    palette = sparkle_palette or VPET_ANIM_PALETTE
+
+    # 中心光核 / 冲击环
+    if reverse:
+        ring_u = _ease_out_cubic(t_global)
+        core_r = max(1, int(block_size * (1.2 - ring_u * 0.9)))
+        ring_r = int(size * 0.08 + ring_u * size * 0.55)
+    else:
+        if t_global < bloom_end:
+            ring_u = _ease_out_cubic(t_global / bloom_end)
+            core_r = max(2, int(block_size * (0.8 + ring_u * 1.6)))
+            ring_r = int(size * 0.06 + ring_u * size * 0.42)
         else:
-            t_eased = _ease_in_out_quad(t_local)
-            remain = 1.0 - t_eased
-            wobble_px = math.sin(wobble + t_eased * math.pi) * block_size * 0.1 * remain
-            cx = tx + home_x + drift_x * remain + wobble_px
-            cy = ty + home_y + drift_y * remain + wobble_px * 0.45
-            alpha = t_eased
-            scale = 0.6 + t_eased * 0.4
+            settle = _ease_in_out_quad((t_global - bloom_end) / max(0.001, 1.0 - bloom_end))
+            core_r = max(1, int(block_size * (1.4 - settle * 1.1)))
+            ring_r = int(size * (0.48 - settle * 0.38))
+    glow = palette[min(len(palette) - 1, 3)]
+    canvas.create_oval(
+        int(mid - core_r),
+        int(mid - core_r),
+        int(mid + core_r),
+        int(mid + core_r),
+        fill=palette[-1],
+        outline="",
+    )
+    if ring_r > 2:
+        thick = max(1, block_size // 3)
+        canvas.create_oval(
+            int(mid - ring_r),
+            int(mid - ring_r),
+            int(mid + ring_r),
+            int(mid + ring_r),
+            outline=glow,
+            width=thick,
+        )
+
+    for item in specs:
+        if len(item) >= 9:
+            tx, ty, color, angle, burst, delay, wobble, speed, spark = item[:9]
+        else:
+            tx, ty, color, angle, burst, delay, wobble, speed = item[:8]
+            spark = 0
+        stagger = delay * 0.55
+        denom = max(0.18, 1.0 - stagger * 0.5)
+        t_local = min(1.0, max(0.0, ((t_global * speed) - stagger * 0.22) / denom))
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+
+        if reverse:
+            u = _ease_in_cubic(t_local)
+            spin = wobble + u * 4.2
+            radius = burst * u
+            cx = tx + cos_a * radius + math.cos(spin) * block_size * 0.35 * u
+            cy = ty + sin_a * radius + math.sin(spin * 1.1) * block_size * 0.35 * u
+            alpha = 1.0 - u
+            scale = 1.05 - u * 0.55
+            tip = bool(spark) and u > 0.15
+        else:
+            if t_local <= bloom_end:
+                u = _ease_out_cubic(t_local / bloom_end)
+                # 中心绽开：冲到 overshoot 半径
+                peak = burst * (0.55 + 0.45 * (burst / max(1.0, size)))
+                radius = peak * u
+                cx = mid + cos_a * radius
+                cy = mid + sin_a * radius
+                alpha = 0.25 + 0.75 * u
+                scale = 0.35 + 0.85 * u
+                tip = bool(spark)
+            else:
+                u = _ease_in_out_quad((t_local - bloom_end) / max(0.001, 1.0 - bloom_end))
+                peak = burst * (0.55 + 0.45 * (burst / max(1.0, size)))
+                sx = mid + cos_a * peak
+                sy = mid + sin_a * peak
+                cx = sx + (tx - sx) * u
+                cy = sy + (ty - sy) * u
+                # 收束时轻微螺旋
+                swirl = (1.0 - u) * 0.35
+                cx += math.cos(wobble + u * math.pi) * block_size * swirl
+                cy += math.sin(wobble + u * math.pi) * block_size * swirl
+                alpha = 0.55 + 0.45 * u
+                scale = 1.15 - 0.25 * u
+                tip = bool(spark) and u < 0.85
+
         if alpha < 0.05:
             continue
-        half = block_size * scale * 0.5
-        x1, y1 = int(cx - half), int(cy - half)
-        x2, y2 = int(cx + half), int(cy + half)
-        if x2 <= 0 or y2 <= 0 or x1 >= size or y1 >= size:
+        half = max(1.2, block_size * 0.55 * scale * (0.75 + 0.25 * alpha))
+        if cx + half < 0 or cy + half < 0 or cx - half > size or cy - half > size:
             continue
-        canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
+        draw_color = color if alpha > 0.55 else palette[(int(wobble * 10) + phase) % len(palette)]
+        _draw_spark_chip(canvas, cx, cy, half, draw_color, tip=tip and phase % 2 == 0)
+
+        # 拖尾星点
+        if alpha > 0.3 and (spark or (phase + int(wobble * 8)) % 5 == 0):
+            trail = half * (1.8 if reverse else 1.4)
+            tx2 = cx - cos_a * trail
+            ty2 = cy - sin_a * trail
+            _draw_spark_chip(canvas, tx2, ty2, max(1.0, half * 0.35), palette[-1], tip=False)
 
 
 def _run_pixel_block_dissolve_animation(
@@ -2252,11 +2398,14 @@ def _run_pixel_block_dissolve_animation(
     on_done=None,
     ms: int = PIXEL_BLOCK_DISSOLVE_MS,
     frames: int = PIXEL_BLOCK_DISSOLVE_FRAMES,
+    palette: tuple[str, ...] | None = None,
+    lively: bool = True,
 ) -> None:
-    block_size, specs = _build_pixel_block_specs(img, size)
-    frames = max(18, min(36, frames + random.randint(-5, 5)))
-    ms = max(22, min(42, ms + random.randint(-6, 6)))
+    block_size, specs = _build_pixel_block_specs(img, size, palette=palette, lively=lively)
+    frames = max(24, min(48, frames + (random.randint(0, 6) if lively else random.randint(-2, 2))))
+    ms = max(18, min(36, ms + (random.randint(-4, 2) if lively else random.randint(-4, 4))))
     frame = {"n": 0}
+    sparkle = palette
 
     def tick() -> None:
         if not canvas.winfo_exists():
@@ -2264,7 +2413,14 @@ def _run_pixel_block_dissolve_animation(
                 on_done()
             return
         _draw_pixel_block_dissolve_frame(
-            canvas, specs, block_size, size, frame["n"], frames, reverse=reverse
+            canvas,
+            specs,
+            block_size,
+            size,
+            frame["n"],
+            frames,
+            reverse=reverse,
+            sparkle_palette=sparkle,
         )
         frame["n"] += 1
         if frame["n"] < frames:
@@ -2276,6 +2432,91 @@ def _run_pixel_block_dissolve_animation(
     tick()
 
 
+def _draw_themed_pixel_reassembly(
+    canvas: tk.Canvas,
+    size: int,
+    phase: int,
+    *,
+    palette: tuple[str, ...] = VPET_ANIM_PALETTE,
+    label: str = "",
+) -> None:
+    """加载用星芒脉冲：中心绽放 → 收束 → 再绽放，循环。"""
+    canvas.delete("all")
+    mid = size * 0.5
+    cycle = PIXEL_REASSEMBLY_CYCLE
+    t = (phase % cycle) / max(1, cycle - 1)
+    if t <= 0.5:
+        u = _ease_out_cubic(t * 2.0)
+        blooming = True
+    else:
+        u = _ease_in_cubic((t - 0.5) * 2.0)
+        blooming = False
+    px = max(3, size // 18)
+    pulse = 0.55 + 0.45 * (u if blooming else 1.0 - u)
+
+    # 旋转星芒射线
+    rays = 10
+    rot = phase * 0.11
+    ray_len = size * (0.18 + 0.34 * pulse)
+    for i in range(rays):
+        ang = rot + i * (math.tau / rays)
+        cos_a, sin_a = math.cos(ang), math.sin(ang)
+        color = palette[i % len(palette)]
+        x1 = mid + cos_a * px * 0.6
+        y1 = mid + sin_a * px * 0.6
+        x2 = mid + cos_a * ray_len
+        y2 = mid + sin_a * ray_len
+        thick = max(1, int(px * (0.55 + 0.35 * math.sin(phase * 0.3 + i))))
+        canvas.create_line(x1, y1, x2, y2, fill=color, width=thick)
+
+    # 冲击环
+    for k, mul in enumerate((0.55, 0.85, 1.15)):
+        rr = int(size * 0.08 * mul + pulse * size * 0.22 * mul)
+        col = palette[(k + phase) % len(palette)]
+        canvas.create_oval(int(mid - rr), int(mid - rr), int(mid + rr), int(mid + rr), outline=col, width=max(1, px // 2))
+
+    # 漂浮星屑
+    rng = random.Random((phase // 2) * 4243 + size * 17)
+    spark_n = 18
+    for i in range(spark_n):
+        ang = rng.random() * math.tau + phase * 0.07
+        rad = size * (0.12 + 0.38 * ((i * 0.17 + u) % 1.0))
+        if not blooming:
+            rad *= 1.0 - 0.35 * u
+        sx = mid + math.cos(ang) * rad
+        sy = mid + math.sin(ang) * rad * 0.92
+        half = px * (0.35 + 0.55 * rng.random()) * (1.15 if blooming else 0.85)
+        tip = (i + phase) % 4 == 0
+        _draw_spark_chip(canvas, sx, sy, half, palette[i % len(palette)], tip=tip)
+
+    # 核心
+    core = max(2, int(px * (1.1 + 0.7 * pulse)))
+    canvas.create_oval(
+        int(mid - core),
+        int(mid - core),
+        int(mid + core),
+        int(mid + core),
+        fill=palette[-1],
+        outline="",
+    )
+    canvas.create_oval(
+        int(mid - core * 0.45),
+        int(mid - core * 0.45),
+        int(mid + core * 0.45),
+        int(mid + core * 0.45),
+        fill=palette[1],
+        outline="",
+    )
+    if label:
+        canvas.create_text(
+            size // 2,
+            size - max(px * 2, 12),
+            text=label,
+            fill=palette[-1],
+            font=("Courier New", max(8, px), "bold"),
+        )
+
+
 def _draw_size_loading_frame(
     canvas: tk.Canvas,
     size: int,
@@ -2284,82 +2525,19 @@ def _draw_size_loading_frame(
     label: str = "",
     simple: bool = False,
     reverse: bool = False,
+    theme: str = "vpet",
 ) -> None:
-    canvas.delete("all")
-    px = max(4, size // 12)
-
-    if simple:
-        canvas.create_rectangle(0, 0, size, size, fill="#161d2a", outline="")
-        bar_px = max(3, size // 16)
-        bar_w = size - bar_px * 8
-        bar_x = (size - bar_w) // 2
-        bar_y = size * 2 // 5
-        canvas.create_rectangle(bar_x, bar_y, bar_x + bar_w, bar_y + bar_px, fill="#253246", outline="")
-        seg_w = max(bar_px * 3, bar_w // 4)
-        span = max(1, bar_w - seg_w)
-        if reverse:
-            ratio = max(0.0, 1.0 - min(phase, 20) / 20.0)
-            fill_w = max(0, int(bar_w * ratio))
-            if fill_w > 0:
-                canvas.create_rectangle(
-                    bar_x, bar_y, bar_x + fill_w, bar_y + bar_px, fill="#5a8ec8", outline=""
-                )
-            if ratio > 0.05:
-                offset = int(ratio * span)
-                canvas.create_rectangle(
-                    bar_x + offset,
-                    bar_y,
-                    bar_x + offset + seg_w,
-                    bar_y + bar_px,
-                    fill="#88ccff",
-                    outline="",
-                )
-        else:
-            offset = int((phase % 20) / 19 * span)
-            canvas.create_rectangle(
-                bar_x + offset, bar_y, bar_x + offset + seg_w, bar_y + bar_px, fill="#5a8ec8", outline=""
-            )
-        return
-
-    cols = max(4, size // px)
-    rows = max(4, size // px)
-    total = cols * rows
-    eff = max(0, _loading_peak_phase(size) - phase) if reverse else phase
-    scan_row = eff % (rows + 2)
-    lit = min(total, int(total * min(1.0, (eff + 1) / max(6, rows))) + eff * 2)
-    palette = ("#141c28", "#243048", "#4488ff", "#66aaff", "#a8ddff")
-    for row in range(rows):
-        for col in range(cols):
-            idx = row * cols + col
-            x, y = col * px, row * px
-            if row == scan_row or row == scan_row - 1:
-                c = palette[4]
-            elif idx < lit:
-                c = palette[2 + (idx + eff) % 3]
-            elif (row + col + eff) % 6 == 0:
-                c = palette[1]
-            else:
-                c = palette[0]
-            canvas.create_rectangle(x, y, x + px - 1, y + px - 1, fill=c, outline="")
-    cx, cy = size // 2, size // 2
-    pulse = px + (eff % 3)
-    canvas.create_rectangle(cx - pulse, cy - pulse, cx + pulse, cy + pulse, fill="#ffffff", outline="")
-    canvas.create_rectangle(cx - px, cy - px, cx + px, cy + px, fill="#4488ff", outline="")
-    bar_w = size - px * 4
-    bar_x = px * 2
-    bar_y = size - px * 3
-    canvas.create_rectangle(bar_x, bar_y, bar_x + bar_w, bar_y + px, fill="#223355", outline="")
-    progress = min(1.0, lit / max(1, total))
-    fill_w = max(px, int(bar_w * progress))
-    canvas.create_rectangle(bar_x, bar_y, bar_x + fill_w, bar_y + px, fill="#88ccff", outline="")
-    if label:
-        canvas.create_text(
-            size // 2,
-            max(px * 2, bar_y - px),
-            text=label,
-            fill="#aaccee",
-            font=("Courier New", max(8, px), "bold"),
-        )
+    palette = COMPANION_ANIM_PALETTE if theme == "companion" else VPET_ANIM_PALETTE
+    _draw_themed_pixel_reassembly(canvas, size, phase, palette=palette, label=label)
+    if not simple:
+        px = max(3, size // 16)
+        bar_w = size - px * 4
+        bar_x = px * 2
+        bar_y = size - px * 2
+        canvas.create_rectangle(bar_x, bar_y, bar_x + bar_w, bar_y + px, fill="#1a2233", outline="")
+        cycle = PIXEL_REASSEMBLY_CYCLE
+        fill_w = max(px, int(bar_w * ((phase % cycle) / max(1, cycle - 1))))
+        canvas.create_rectangle(bar_x, bar_y, bar_x + fill_w, bar_y + px, fill=palette[3], outline="")
 
 
 def _draw_like_sticker(canvas: tk.Canvas, x: int, y: int, px: int = 3) -> None:
@@ -3317,6 +3495,7 @@ def _load_app_config() -> dict:
         "seen_hints": {},
         "work_mode": {"show_props": True, "show_stack": True},
         "voice_mode": False,
+        "display_layer": "top",  # top=置顶最上层 / bottom=不置顶靠后
     }
     if not APP_CONFIG_FILE.exists():
         return default
@@ -5083,7 +5262,7 @@ class DesktopPet:
         self.root = tk.Tk()
         self.root.title("Vpet")
         self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
+        self._apply_window_layer(self.root)
         self.root.config(bg="magenta")
         self.root.wm_attributes("-transparentcolor", "magenta")
 
@@ -5595,7 +5774,7 @@ class DesktopPet:
 
         self.wait_hint_win = tk.Toplevel(self.root)
         self.wait_hint_win.overrideredirect(True)
-        self.wait_hint_win.attributes("-topmost", True)
+        self._apply_window_layer(self.wait_hint_win)
         self.wait_hint_win.configure(bg="#ffcc66")
 
         border = tk.Frame(self.wait_hint_win, bg="#ffcc66", padx=2, pady=2)
@@ -5764,6 +5943,8 @@ class DesktopPet:
             self.display_size,
             reverse=False,
             on_done=finish,
+            palette=VPET_ANIM_PALETTE,
+            lively=True,
         )
 
     def _complete_startup_after_sprites(self) -> None:
@@ -5803,7 +5984,7 @@ class DesktopPet:
             return
         if self._startup_canvas and self._startup_canvas.winfo_exists():
             _draw_size_loading_frame(
-                self._startup_canvas, self.display_size, self._startup_loading_phase, simple=True
+                self._startup_canvas, self.display_size, self._startup_loading_phase, simple=True, theme="vpet"
             )
         self._startup_loading_phase += 1
         self._place_wait_hint()
@@ -5997,7 +6178,22 @@ class DesktopPet:
             pass
 
     def _voice_enabled(self) -> bool:
+        """语音可播：配置开启，且非音乐漫步模式。"""
+        if getattr(self, "music_sprite_mode", False):
+            return False
         return bool(self.app_config.get("voice_mode"))
+
+    def _stop_voice_for_music_mode(self) -> None:
+        """进入音乐漫步时立即停语音，避免与背景音乐抢声道。"""
+        try:
+            self._stop_voice_audio()
+        except Exception:
+            pass
+        try:
+            self._hide_voice_subtitle()
+        except Exception:
+            pass
+        self._sync_voice_player()
 
     def _sfx_conflicts_with_voice(self) -> bool:
         """语音模式开启且语音声道正在播放时，音效（含打字滴答）让路。"""
@@ -6085,12 +6281,6 @@ class DesktopPet:
         if not self._voice_enabled():
             return False
         return self.voice_player.play_laimu_open(priority=VOICE_PRIORITY_SCENE)
-
-    def _play_rhythm_laimu_open_once(self) -> None:
-        if getattr(self, "_rhythm_laimu_open_played", False):
-            return
-        self._rhythm_laimu_open_played = True
-        self._try_voice_laimu_open()
 
     def _try_voice_call(
         self,
@@ -6266,7 +6456,7 @@ class DesktopPet:
         win = tk.Toplevel(self.root)
         win.withdraw()
         win.overrideredirect(True)
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg="magenta")
         win.wm_attributes("-transparentcolor", "magenta")
         canvas = tk.Canvas(
@@ -6374,7 +6564,7 @@ class DesktopPet:
 
     def _show_voice_subtitle(self, title: str, duration_ms: int) -> None:
         """语音台词：普通扁平文本框，内容为语音标题（已去数字/字母前缀），时长 = 语音 + 1s。"""
-        display = title.strip()
+        display = re.sub(r"^((?:\d+)|(?:[a-zA-Z]))(?:[\s._\-]+)", "", (title or "").strip()).strip()
         if not display:
             self._hide_voice_subtitle()
             return
@@ -6449,6 +6639,71 @@ class DesktopPet:
         self.voice_player.catalog = VoiceCatalog.build()
         total, _ = self._voice_catalog_stats()
         return total
+
+    def _display_topmost(self) -> bool:
+        """True=顶部置顶，False=底部不置顶。"""
+        return str(self.app_config.get("display_layer", "top")).lower() != "bottom"
+
+    def _apply_window_layer(self, win: tk.Misc | None) -> None:
+        """按系统设置统一窗口置顶层级。"""
+        if win is None:
+            return
+        try:
+            if not win.winfo_exists():
+                return
+        except Exception:
+            return
+        try:
+            win.attributes("-topmost", self._display_topmost())
+        except Exception:
+            pass
+
+    def _iter_open_layer_windows(self) -> list[tk.Misc]:
+        wins: list[tk.Misc] = []
+        seen: set[int] = set()
+
+        def add(w: object) -> None:
+            if not isinstance(w, (tk.Tk, tk.Toplevel)):
+                return
+            try:
+                if not w.winfo_exists():
+                    return
+            except Exception:
+                return
+            wid = id(w)
+            if wid in seen:
+                return
+            seen.add(wid)
+            wins.append(w)
+
+        add(getattr(self, "root", None))
+        for value in vars(self).values():
+            add(value)
+            if isinstance(value, (list, tuple, set)):
+                for item in value:
+                    add(item)
+            elif isinstance(value, dict):
+                for item in value.values():
+                    add(item)
+        return wins
+
+    def _apply_all_window_layers(self) -> None:
+        for win in self._iter_open_layer_windows():
+            self._apply_window_layer(win)
+
+    def _set_display_layer(self, layer: str) -> None:
+        layer = "bottom" if str(layer).lower() == "bottom" else "top"
+        if self.app_config.get("display_layer") == layer:
+            return
+        self.app_config["display_layer"] = layer
+        _save_app_config(self.app_config)
+        self._apply_all_window_layers()
+        label = "顶部（最上层）" if layer == "top" else "底部（靠后）"
+        self._show_toast(f"显示层级：{label}", PIXEL_COLOR)
+        if self.panel_settings_win and self.panel_settings_win.winfo_exists():
+            self.panel_settings_win.destroy()
+            self.panel_settings_win = None
+            self._open_panel_settings()
 
     def _set_voice_mode(self, enabled: bool) -> None:
         self.app_config["voice_mode"] = bool(enabled)
@@ -6621,6 +6876,7 @@ class DesktopPet:
         self._sync_mini_pet_music_waves()
         if self.state in ("stand", "walk"):
             self._set_image(self._current_stand_sprite())
+        self._sync_voice_player()
         self._show_toast("音乐已关闭（仍为漫步）", PIXEL_COLOR)
 
     def _apply_music_on(self) -> None:
@@ -6639,6 +6895,7 @@ class DesktopPet:
         self.action_name = ""
         self._clear_all_action_fx()
         self.music_sprite_mode = True
+        self._stop_voice_for_music_mode()
         self._start_bg_music()
         self._start_music_wave_fx()
         self._sync_mini_pet_music_waves()
@@ -6671,7 +6928,7 @@ class DesktopPet:
         self.sound_settings_win = tk.Toplevel(self.root)
         self.music_settings_win = self.sound_settings_win
         self.sound_settings_win.title("声音设置")
-        self.sound_settings_win.attributes("-topmost", True)
+        self._apply_window_layer(self.sound_settings_win)
         self.sound_settings_win.configure(bg=MENU_BG)
 
         _, frame = _pack_fixed_scroll_panel(self.sound_settings_win)
@@ -6995,10 +7252,23 @@ class DesktopPet:
     def _place_panel_popup(self, win: tk.Toplevel | None) -> None:
         if not win or not win.winfo_exists():
             return
+        try:
+            win.update_idletasks()
+        except Exception:
+            pass
         fixed = getattr(win, "_panel_fixed_size", None)
         if isinstance(fixed, tuple) and len(fixed) == 2:
             pw, ph = int(fixed[0]), int(fixed[1])
+        elif getattr(win, "_panel_full_size", False):
+            # 游戏游玩窗：按内容完整显示，仅受屏幕限制
+            pw = max(int(win.winfo_reqwidth()), 220)
+            ph = max(int(win.winfo_reqheight()), 80)
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            pw = min(pw, max(280, sw - 40))
+            ph = min(ph, max(240, sh - 60))
         else:
+            # 其它面板：固定壳，超出内容靠内部滚动
             pw = max(win.winfo_reqwidth(), 220)
             ph = max(win.winfo_reqheight(), 80)
             sw = self.root.winfo_screenwidth()
@@ -7362,7 +7632,7 @@ class DesktopPet:
             self._mark_hint_seen("operation_guide")
         self.operation_guide_win = tk.Toplevel(self.root)
         self.operation_guide_win.title("操作说明")
-        self.operation_guide_win.attributes("-topmost", True)
+        self._apply_window_layer(self.operation_guide_win)
         self.operation_guide_win.configure(bg=MENU_BG)
         _, frame = _pack_fixed_scroll_panel(self.operation_guide_win)
         tk.Label(frame, text="操作说明", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
@@ -7409,7 +7679,7 @@ class DesktopPet:
             return
         win = tk.Toplevel(self.root)
         win.title(str(info["title"]))
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg=MENU_BG)
         _, outer = _pack_fixed_scroll_panel(win)
         tk.Label(outer, text=str(info["title"]), font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
@@ -7440,7 +7710,7 @@ class DesktopPet:
         self._hide_main_menu()
         win = tk.Toplevel(self.root)
         win.title("官方音游说明")
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg=MENU_BG)
         _, frame = _pack_fixed_scroll_panel(win)
         tk.Label(frame, text="官方音游介绍", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
@@ -7479,7 +7749,7 @@ class DesktopPet:
         self._hide_main_menu()
         win = tk.Toplevel(self.root)
         win.title(str(info.get("title", "操作指南")))
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg=MENU_BG)
         _, frame = _pack_fixed_scroll_panel(win)
         tk.Label(
@@ -7690,7 +7960,7 @@ class DesktopPet:
         self._hide_sub_menu()
         self.sub_menu = tk.Toplevel(self.root)
         self.sub_menu.overrideredirect(True)
-        self.sub_menu.attributes("-topmost", True)
+        self._apply_window_layer(self.sub_menu)
         self.sub_menu.configure(bg=MENU_BG)
 
         frame = pack_menu_chrome(self.sub_menu, bg=MENU_BG)
@@ -7721,7 +7991,7 @@ class DesktopPet:
 
         self.menu_bar = tk.Toplevel(self.root)
         self.menu_bar.overrideredirect(True)
-        self.menu_bar.attributes("-topmost", True)
+        self._apply_window_layer(self.menu_bar)
         self.menu_bar.configure(bg=MENU_BG)
 
         frame = pack_menu_chrome(self.menu_bar, bg=MENU_BG)
@@ -7858,7 +8128,7 @@ class DesktopPet:
         win = tk.Toplevel(self.root)
         self.music_track_picker_win = win
         win.title(title)
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg="#161822")
         _fit_panel_wh(win, 420, 460)
         setattr(win, "_panel_scroll_installed", True)
@@ -7970,7 +8240,7 @@ class DesktopPet:
         win = tk.Toplevel(self.root)
         self.music_track_picker_win = win
         win.title("播放列表")
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg="#161822")
         _fit_panel_wh(win, 420, 500)
         setattr(win, "_panel_scroll_installed", True)
@@ -8183,7 +8453,7 @@ class DesktopPet:
         win = tk.Toplevel(self.root)
         self.vocab_notebook_win = win
         win.title(f"生词本 · {lang}")
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg=MENU_BG)
         win.protocol("WM_DELETE_WINDOW", self._close_vocab_notebook)
         w, h = _fit_panel_wh(win, PANEL_FIXED_W, PANEL_FIXED_H)
@@ -8674,7 +8944,7 @@ class DesktopPet:
             self.game_hud_win.destroy()
         self.game_hud_win = tk.Toplevel(self.root)
         self.game_hud_win.overrideredirect(True)
-        self.game_hud_win.attributes("-topmost", True)
+        self._apply_window_layer(self.game_hud_win)
         self.game_hud_win.configure(bg="#111122")
         border = tk.Frame(self.game_hud_win, bg="#88ccff", padx=1, pady=1)
         border.pack()
@@ -8767,7 +9037,7 @@ class DesktopPet:
         win = tk.Toplevel(self.root)
         self.game_clear_win = win
         win.overrideredirect(True)
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg="#060612")
         win.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
         canvas = tk.Canvas(win, width=w, height=h, bg="#060612", highlightthickness=0)
@@ -8893,7 +9163,7 @@ class DesktopPet:
         self._hide_sub_menu()
         self.sub_menu = tk.Toplevel(self.root)
         self.sub_menu.overrideredirect(True)
-        self.sub_menu.attributes("-topmost", True)
+        self._apply_window_layer(self.sub_menu)
         self.sub_menu.configure(bg=MENU_BG)
         frame = tk.Frame(self.sub_menu, bg=MENU_BG, padx=2, pady=2)
         frame.pack()
@@ -8946,7 +9216,7 @@ class DesktopPet:
         size = FOOD_DRAG_ICON
         self.food_drag_win = tk.Toplevel(self.root)
         self.food_drag_win.overrideredirect(True)
-        self.food_drag_win.attributes("-topmost", True)
+        self._apply_window_layer(self.food_drag_win)
         self.food_drag_win.configure(bg="magenta")
         self.food_drag_win.wm_attributes("-transparentcolor", "magenta")
         self.food_drag_canvas = tk.Canvas(
@@ -8999,7 +9269,7 @@ class DesktopPet:
         size = FOOD_DRAG_ICON
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg="magenta")
         win.wm_attributes("-transparentcolor", "magenta")
         canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
@@ -9086,7 +9356,7 @@ class DesktopPet:
         size = self.display_size + pad * 2
         self.music_wave_win = tk.Toplevel(self.root)
         self.music_wave_win.overrideredirect(True)
-        self.music_wave_win.attributes("-topmost", False)
+        self._apply_window_layer(self.music_wave_win)
         self.music_wave_win.configure(bg="magenta")
         self.music_wave_win.wm_attributes("-transparentcolor", "magenta")
         self.music_wave_canvas = tk.Canvas(
@@ -9219,7 +9489,7 @@ class DesktopPet:
 
         self.diary_win = tk.Toplevel(self.root)
         self.diary_win.title("日记")
-        self.diary_win.attributes("-topmost", True)
+        self._apply_window_layer(self.diary_win)
         self.diary_win.configure(bg=MENU_BG)
 
         _, frame = _pack_fixed_scroll_panel(self.diary_win)
@@ -9282,7 +9552,7 @@ class DesktopPet:
 
         self.weather_win = tk.Toplevel(self.root)
         self.weather_win.title("天气预报")
-        self.weather_win.attributes("-topmost", True)
+        self._apply_window_layer(self.weather_win)
         self.weather_win.configure(bg="#1a2030")
         _fit_panel_wh(self.weather_win, WEATHER_W, WEATHER_H)
         self.weather_win.protocol("WM_DELETE_WINDOW", self._close_weather_forecast)
@@ -9507,7 +9777,7 @@ class DesktopPet:
         self.gallery_photos = []
         self.gallery_win = tk.Toplevel(self.root)
         self.gallery_win.title("画廊")
-        self.gallery_win.attributes("-topmost", True)
+        self._apply_window_layer(self.gallery_win)
         self.gallery_win.configure(bg=MENU_BG)
         gh = GALLERY_PREVIEW_SIZE + GALLERY_SCROLL_H + 110
         _fit_panel_wh(self.gallery_win, GALLERY_WIN_W, gh)
@@ -9909,7 +10179,7 @@ class DesktopPet:
 
         self.phonograph_win = tk.Toplevel(self.root)
         self.phonograph_win.title("留声")
-        self.phonograph_win.attributes("-topmost", True)
+        self._apply_window_layer(self.phonograph_win)
         self.phonograph_win.configure(bg=MENU_BG)
 
         _, outer = _pack_fixed_scroll_panel(self.phonograph_win)
@@ -10038,7 +10308,7 @@ class DesktopPet:
 
         self.panel_settings_win = tk.Toplevel(self.root)
         self.panel_settings_win.title("系统设置")
-        self.panel_settings_win.attributes("-topmost", True)
+        self._apply_window_layer(self.panel_settings_win)
         self.panel_settings_win.configure(bg=MENU_BG)
 
         _, frame = _pack_fixed_scroll_panel(self.panel_settings_win)
@@ -10114,6 +10384,36 @@ class DesktopPet:
             fg=MENU_FG,
         ).pack(side=tk.LEFT, padx=2)
 
+        layer_row = tk.Frame(frame, bg=MENU_BG)
+        layer_row.pack(fill=tk.X, pady=(4, 8))
+        tk.Label(layer_row, text="显示层级", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        layer_top = self._display_topmost()
+        tk.Button(
+            layer_row,
+            text=f"顶部{' ✓' if layer_top else ''}",
+            command=lambda: self._set_display_layer("top"),
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE if layer_top else MENU_BG,
+            fg=MENU_FG,
+        ).pack(side=tk.LEFT, padx=2)
+        tk.Button(
+            layer_row,
+            text=f"底部{' ✓' if not layer_top else ''}",
+            command=lambda: self._set_display_layer("bottom"),
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE if not layer_top else MENU_BG,
+            fg=MENU_FG,
+        ).pack(side=tk.LEFT, padx=2)
+        tk.Label(
+            frame,
+            text="顶部：所有显示压过其他窗口；底部：其他窗口可盖住桌宠与面板",
+            font=("Courier New", 9),
+            fg="#888888",
+            bg=MENU_BG,
+            wraplength=340,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 4))
+
         diff_row = tk.Frame(frame, bg=MENU_BG)
         diff_row.pack(fill=tk.X, pady=(8, 0))
         tk.Label(diff_row, text="游戏难度", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
@@ -10172,7 +10472,7 @@ class DesktopPet:
         def start() -> None:
             self._start_game_countdown(self._begin_rhyme_fight)
 
-        self._ensure_first_play_guide("rhyme", start)
+        self._ensure_first_play_guide("rhyme", start, on_show=self._try_voice_laimu_open)
 
     def _begin_rhyme_fight(self) -> None:
         self._close_rhyme_fight(resume=False)
@@ -10187,9 +10487,10 @@ class DesktopPet:
 
         self.rhyme_fight_win = tk.Toplevel(self.root)
         self.rhyme_fight_win.title("练习对战")
-        self.rhyme_fight_win.attributes("-topmost", True)
+        self._apply_window_layer(self.rhyme_fight_win)
         self.rhyme_fight_win.configure(bg=MENU_BG)
         self.rhyme_fight_win.protocol("WM_DELETE_WINDOW", self._close_rhyme_fight)
+        _mark_game_play_panel(self.rhyme_fight_win)
 
         frame = tk.Frame(self.rhyme_fight_win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
@@ -10363,22 +10664,13 @@ class DesktopPet:
         else:
             self.rhythm_play_cap_ms = max(0, int(play_cap_ms))
 
-        self._rhythm_laimu_open_played = False
-
         def begin() -> None:
-            self._start_game_countdown(
-                self._begin_rhythm_game,
-                on_show=self._play_rhythm_laimu_open_once,
-            )
+            self._start_game_countdown(self._begin_rhythm_game)
 
         def after_guide() -> None:
             self._request_mode_switch(begin)
 
-        self._ensure_first_play_guide(
-            "rhythm_game",
-            after_guide,
-            on_show=self._play_rhythm_laimu_open_once,
-        )
+        self._ensure_first_play_guide("rhythm_game", after_guide)
 
     def _close_rhythm_game(self, *, resume: bool = True, finished: bool = False) -> None:
         was_active = self.rhythm_active
@@ -10568,13 +10860,16 @@ class DesktopPet:
 
         self.rhythm_win = tk.Toplevel(self.root)
         self.rhythm_win.title(f"音乐 · {track['title']}")
-        self.rhythm_win.attributes("-topmost", True)
+        self._apply_window_layer(self.rhythm_win)
         self.rhythm_win.configure(bg="#101018")
         self.rhythm_win.protocol("WM_DELETE_WINDOW", lambda: self._close_rhythm_game(resume=True))
-        self.rhythm_win.geometry(f"{RHYTHM_W}x{RHYTHM_H}")
+        self.rhythm_win.resizable(False, False)
+        # 节奏窗用设计尺寸完整显示（等同游戏内容全显）
+        setattr(self.rhythm_win, "_panel_fixed_size", (RHYTHM_W, RHYTHM_H))
+        setattr(self.rhythm_win, "_panel_full_size", True)
 
         top = tk.Frame(self.rhythm_win, bg="#101018")
-        top.pack(fill=tk.X, padx=8, pady=(6, 0))
+        top.pack(fill=tk.X, padx=8, pady=(6, 2))
         hdr = tk.Frame(top, bg="#101018")
         hdr.pack(fill=tk.X)
         tk.Button(
@@ -10596,9 +10891,10 @@ class DesktopPet:
         self.rhythm_grade_bar.pack(fill=tk.X)
 
         self.rhythm_canvas = tk.Canvas(
-            self.rhythm_win, width=RHYTHM_W, height=RHYTHM_H - RHYTHM_GRADE_BAR_H - 16, bg="#101018", highlightthickness=0
+            self.rhythm_win, width=RHYTHM_W, height=RHYTHM_PLAY_H, bg="#101018", highlightthickness=0
         )
-        self.rhythm_canvas.pack()
+        self.rhythm_canvas.pack(padx=0, pady=(0, 8))
+        self.rhythm_play_h = RHYTHM_PLAY_H
         self.rhythm_win.bind("<KeyPress>", self._rhythm_on_key)
         self.rhythm_win.bind("<KeyRelease>", self._rhythm_on_key_release)
         try:
@@ -10643,7 +10939,7 @@ class DesktopPet:
         win = tk.Toplevel(self.rhythm_win)
         self.rhythm_settings_win = win
         win.title("音乐设置")
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg="#181828")
         win.resizable(False, False)
         frame = tk.Frame(win, bg="#181828", padx=14, pady=12)
@@ -10930,7 +11226,7 @@ class DesktopPet:
         if not c:
             return
         w = RHYTHM_W
-        h = max(320, RHYTHM_H - RHYTHM_GRADE_BAR_H - 16)
+        h = max(320, int(getattr(self, "rhythm_play_h", RHYTHM_PLAY_H)))
         pad_x = 28
         top = 48
         hit_y = int(h * 0.80)
@@ -11103,9 +11399,10 @@ class DesktopPet:
 
         self.typing_game_win = tk.Toplevel(self.root)
         self.typing_game_win.title(f"打字 · {mode_title}")
-        self.typing_game_win.attributes("-topmost", True)
+        self._apply_window_layer(self.typing_game_win)
         self.typing_game_win.configure(bg=MENU_BG)
         self.typing_game_win.protocol("WM_DELETE_WINDOW", self._close_typing_game)
+        _mark_game_play_panel(self.typing_game_win)
 
         frame = tk.Frame(self.typing_game_win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
@@ -11444,9 +11741,10 @@ class DesktopPet:
         win = tk.Toplevel(self.root)
         self.vocab_game_win = win
         win.title(f"背单词 · {lang}")
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg=MENU_BG)
         win.protocol("WM_DELETE_WINDOW", self._close_vocab_game)
+        _mark_game_play_panel(win)
 
         frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
@@ -11520,6 +11818,8 @@ class DesktopPet:
             )
             btn.pack(fill=tk.X, pady=2)
             self._vocab_option_btns[opt] = btn
+        if self.vocab_game_win and self.vocab_game_win.winfo_exists():
+            self._place_panel_popup(self.vocab_game_win)
 
     def _vocab_choose(self, opt: str) -> None:
         if self._vocab_round_lock or not self._vocab_current:
@@ -11604,7 +11904,7 @@ class DesktopPet:
 
         self.leaderboard_win = tk.Toplevel(self.root)
         self.leaderboard_win.title("持有者排名")
-        self.leaderboard_win.attributes("-topmost", True)
+        self._apply_window_layer(self.leaderboard_win)
         self.leaderboard_win.configure(bg=MENU_BG)
 
         _, outer = _pack_fixed_scroll_panel(self.leaderboard_win)
@@ -11660,7 +11960,7 @@ class DesktopPet:
             return
         self.about_win = tk.Toplevel(self.root)
         self.about_win.title("关于")
-        self.about_win.attributes("-topmost", True)
+        self._apply_window_layer(self.about_win)
         self.about_win.configure(bg=MENU_BG)
         _, frame = _pack_fixed_scroll_panel(self.about_win)
         _pack_panel_caption(frame, "关于 Vpet", fg=PIXEL_COLOR)
@@ -11699,7 +11999,7 @@ class DesktopPet:
             return
         self.feedback_win = tk.Toplevel(self.root)
         self.feedback_win.title("问题反馈")
-        self.feedback_win.attributes("-topmost", True)
+        self._apply_window_layer(self.feedback_win)
         self.feedback_win.configure(bg=MENU_BG)
         _, frame = _pack_fixed_scroll_panel(self.feedback_win)
         _pack_panel_caption(frame, "问题反馈", fg=PIXEL_COLOR)
@@ -11746,7 +12046,7 @@ class DesktopPet:
         self._hide_main_menu()
         win = tk.Toplevel(self.root)
         win.title("重置确认")
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg=MENU_BG)
         frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
@@ -11815,7 +12115,13 @@ class DesktopPet:
             "display_size": DEFAULT_SIZE,
             "display_preset": "中",
             "difficulty": "中",
+            "rhythm_speed": "中",
+            "rhythm_chart_diff": "中",
+            "weather_city": "北京",
             "seen_hints": {},
+            "work_mode": {"show_props": True, "show_stack": True},
+            "voice_mode": False,
+            "display_layer": "top",
         }
         _save_app_config(self.app_config)
         if PET_ID_FEATURE:
@@ -11832,6 +12138,7 @@ class DesktopPet:
         self._mood_decay_counter = 0
         _apply_font_size(12)
         self._apply_difficulty_runtime()
+        self._apply_all_window_layers()
         if VOCAB_FILE.exists():
             try:
                 VOCAB_FILE.unlink()
@@ -12007,7 +12314,7 @@ class DesktopPet:
         panel_bg = SPEECH_TEXT_BG
         self.panel_win = tk.Toplevel(self.root)
         self.panel_win.overrideredirect(True)
-        self.panel_win.attributes("-topmost", True)
+        self._apply_window_layer(self.panel_win)
         self.panel_win.configure(bg="magenta")
         self.panel_win.wm_attributes("-transparentcolor", "magenta")
 
@@ -12318,7 +12625,7 @@ class DesktopPet:
         self._hide_countdown_overlay()
         self.countdown_win = tk.Toplevel(self.root)
         self.countdown_win.overrideredirect(True)
-        self.countdown_win.attributes("-topmost", True)
+        self._apply_window_layer(self.countdown_win)
         try:
             self.countdown_win.attributes("-alpha", 0.92)
         except Exception:
@@ -12367,7 +12674,7 @@ class DesktopPet:
 
         self.toast_win = tk.Toplevel(self.root)
         self.toast_win.overrideredirect(True)
-        self.toast_win.attributes("-topmost", True)
+        self._apply_window_layer(self.toast_win)
         self.toast_win.configure(bg="#111122")
 
         border = tk.Frame(self.toast_win, bg=color, padx=1, pady=1)
@@ -12460,7 +12767,7 @@ class DesktopPet:
         size = self.display_size + pad * 2
         self.interact_fx_win = tk.Toplevel(self.root)
         self.interact_fx_win.overrideredirect(True)
-        self.interact_fx_win.attributes("-topmost", False)
+        self._apply_window_layer(self.interact_fx_win)
         self.interact_fx_win.configure(bg="magenta")
         self.interact_fx_win.wm_attributes("-transparentcolor", "magenta")
         self.interact_fx_canvas = tk.Canvas(
@@ -12552,7 +12859,7 @@ class DesktopPet:
         size = self.display_size + pad * 2
         self.wink_fx_win = tk.Toplevel(self.root)
         self.wink_fx_win.overrideredirect(True)
-        self.wink_fx_win.attributes("-topmost", False)
+        self._apply_window_layer(self.wink_fx_win)
         self.wink_fx_win.configure(bg="magenta")
         self.wink_fx_win.wm_attributes("-transparentcolor", "magenta")
         self.wink_fx_canvas = tk.Canvas(
@@ -12581,7 +12888,7 @@ class DesktopPet:
         size = self.display_size + pad * 2
         self.like_fx_win = tk.Toplevel(self.root)
         self.like_fx_win.overrideredirect(True)
-        self.like_fx_win.attributes("-topmost", False)
+        self._apply_window_layer(self.like_fx_win)
         self.like_fx_win.configure(bg="magenta")
         self.like_fx_win.wm_attributes("-transparentcolor", "magenta")
         self.like_fx_canvas = tk.Canvas(
@@ -12623,7 +12930,7 @@ class DesktopPet:
         size = self.display_size + pad * 2
         self.shy_fx_win = tk.Toplevel(self.root)
         self.shy_fx_win.overrideredirect(True)
-        self.shy_fx_win.attributes("-topmost", False)
+        self._apply_window_layer(self.shy_fx_win)
         self.shy_fx_win.configure(bg="magenta")
         self.shy_fx_win.wm_attributes("-transparentcolor", "magenta")
         self.shy_fx_canvas = tk.Canvas(
@@ -12682,7 +12989,7 @@ class DesktopPet:
             self._show_toast("智能伴侣栏已开启", "#88ccff", duration_ms=1500)
             self._show_once_hint("companion_bar", duration_ms=3500)
         else:
-            self._destroy_all_mini_pets()
+            self._destroy_all_mini_pets(animated=True)
             self._show_toast("智能伴侣栏已关闭", PIXEL_COLOR, duration_ms=1500)
 
     def _spawn_mini_pet(self, *, silent: bool = False) -> None:
@@ -12702,7 +13009,7 @@ class DesktopPet:
         photo = sprites["stand"]
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg="magenta")
         win.wm_attributes("-transparentcolor", "magenta")
         lbl = tk.Label(win, image=photo, bg="magenta", bd=0)
@@ -12716,6 +13023,18 @@ class DesktopPet:
         else:
             start_x = self.x + self.display_size + gap
         start_y = self.y + self.display_size - size
+        start_x, start_y = self._clamp_mini_pet_xy(start_x, start_y, size)
+        # 偏好边若完全出界则改另一侧
+        try:
+            sw = int(self.root.winfo_screenwidth())
+        except Exception:
+            sw = 1280
+        if side == "left" and self.x - size - gap < 0 and self.x + self.display_size + gap + size <= sw:
+            side = "right"
+            start_x, start_y = self._clamp_mini_pet_xy(self.x + self.display_size + gap, start_y, size)
+        elif side == "right" and self.x + self.display_size + gap + size > sw and self.x - size - gap >= 0:
+            side = "left"
+            start_x, start_y = self._clamp_mini_pet_xy(self.x - size - gap, start_y, size)
         win.geometry(f"+{int(start_x)}+{int(start_y)}")
         entry: dict = {
             "win": win,
@@ -12739,30 +13058,80 @@ class DesktopPet:
         }
         lbl.bind("<Button-1>", lambda _e, ent=entry: self._on_mini_pet_click(ent), add="+")
         self.mini_pets.append(entry)
-        self._mini_pet_follow_tick(entry)
-        self._sync_mini_pet_music_waves()
-        self._notify_bg_fx_change()
-        if not silent:
-            self._show_toast("噗~ 金目来陪你啦！", "#88ccff", duration_ms=1500)
+        # 入场：星屑绽放收束后再显示精灵
+        lbl.pack_forget()
+        anim_canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
+        anim_canvas.pack()
+        entry["entering"] = True
+        img = _sprite_rgba_image("petstand.jpg", size)
+
+        def finish_enter() -> None:
+            if entry not in self.mini_pets:
+                return
+            try:
+                if anim_canvas.winfo_exists():
+                    anim_canvas.destroy()
+            except Exception:
+                pass
+            if lbl.winfo_exists():
+                lbl.pack()
+            entry["entering"] = False
+            self._mini_pet_follow_tick(entry)
+            self._sync_mini_pet_music_waves()
+            self._notify_bg_fx_change()
+            if not silent:
+                self._show_toast("噗~ 金目来陪你啦！", "#88ccff", duration_ms=1500)
+
+        _run_pixel_block_dissolve_animation(
+            self.root,
+            anim_canvas,
+            img,
+            size,
+            reverse=False,
+            on_done=finish_enter,
+            palette=COMPANION_ANIM_PALETTE,
+            lively=True,
+        )
 
     def _on_mini_pet_click(self, entry: dict) -> None:
         if entry not in self.mini_pets:
             return
         self._try_voice_companion_startup()
 
+    def _clamp_mini_pet_xy(self, x: float, y: float, size: int) -> tuple[float, float]:
+        """把金目位置钳在屏幕内，避免超出边界。"""
+        try:
+            sw = int(self.root.winfo_screenwidth())
+            sh = int(self.root.winfo_screenheight())
+        except Exception:
+            sw, sh = 1280, 720
+        size = max(1, int(size))
+        mx = max(0.0, min(float(x), float(max(0, sw - size))))
+        my = max(0.0, min(float(y), float(max(0, sh - size))))
+        return mx, my
+
     def _mini_pet_side_target(self, entry: dict) -> tuple[float, float]:
-        size = entry["size"]
+        size = int(entry["size"])
         gap = MINI_PET_SIDE_GAP
         if self.state == "action" and self.action_name == "sad" and self.companion_bar_enabled:
             gap = MINI_PET_SAD_GAP
         elif self.state == "action" and self.action_name == "angry" and self.companion_bar_enabled:
             gap = MINI_PET_ANGRY_GAP
-        if entry.get("side", "left") == "left":
-            target_x = self.x - size - gap
+        left_x = float(self.x - size - gap)
+        right_x = float(self.x + self.display_size + gap)
+        target_y = float(self.y + self.display_size - size)
+        preferred = entry.get("side", "left")
+        try:
+            sw = int(self.root.winfo_screenwidth())
+        except Exception:
+            sw = 1280
+        left_ok = left_x >= 0 and left_x + size <= sw
+        right_ok = right_x >= 0 and right_x + size <= sw
+        if preferred == "left":
+            target_x = left_x if left_ok or not right_ok else right_x
         else:
-            target_x = self.x + self.display_size + gap
-        target_y = self.y + self.display_size - size
-        return target_x, target_y
+            target_x = right_x if right_ok or not left_ok else left_x
+        return self._clamp_mini_pet_xy(target_x, target_y, size)
 
     def _mini_pet_main_moving(self, entry: dict) -> bool:
         last_x = entry.get("last_pet_x", self.x)
@@ -12787,6 +13156,11 @@ class DesktopPet:
 
     def _mini_pet_follow_tick(self, entry: dict) -> None:
         if entry not in self.mini_pets or not self.companion_bar_enabled:
+            return
+        if entry.get("entering"):
+            entry["follow_job"] = self.root.after(
+                MINI_PET_FOLLOW_MS, lambda e=entry: self._mini_pet_follow_tick(e)
+            )
             return
         win = entry.get("win")
         if not win or not win.winfo_exists():
@@ -12829,6 +13203,8 @@ class DesktopPet:
             mx, my = target_x, target_y
         else:
             mx, my = target_x, target_y
+
+        mx, my = self._clamp_mini_pet_xy(mx, my, size)
 
         use_walk = (not game_mode) and (not angry_active) and (mini_moving or main_moving)
         angry_walk = angry_active and self.angry_walk_phase
@@ -12906,7 +13282,7 @@ class DesktopPet:
         canvas_size = size + pad * 2
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
-        win.attributes("-topmost", False)
+        self._apply_window_layer(win)
         win.configure(bg="magenta")
         win.wm_attributes("-transparentcolor", "magenta")
         canvas = tk.Canvas(
@@ -13065,7 +13441,7 @@ class DesktopPet:
         size = entry["size"] + pad * 2
         wave_win = tk.Toplevel(self.root)
         wave_win.overrideredirect(True)
-        wave_win.attributes("-topmost", False)
+        self._apply_window_layer(wave_win)
         wave_win.configure(bg="magenta")
         wave_win.wm_attributes("-transparentcolor", "magenta")
         wave_canvas = tk.Canvas(wave_win, width=size, height=size, bg="magenta", highlightthickness=0)
@@ -13122,27 +13498,65 @@ class DesktopPet:
             else:
                 self._stop_mini_pet_music_wave(entry)
 
-    def _destroy_mini_pet(self, entry: dict) -> None:
+    def _destroy_mini_pet(self, entry: dict, *, animated: bool = False) -> None:
         job = entry.get("follow_job")
         if job:
             try:
                 self.root.after_cancel(job)
             except Exception:
                 pass
+            entry["follow_job"] = None
         self._stop_mini_pet_music_wave(entry)
         self._stop_mini_pet_bg_fx(entry)
-        win = entry.get("win")
-        if win and win.winfo_exists():
-            win.destroy()
-        if entry in self.mini_pets:
-            self.mini_pets.remove(entry)
-        for i, pet in enumerate(self.mini_pets):
-            pet["index"] = i
-            pet["side"] = "left" if i % 2 == 0 else "right"
 
-    def _destroy_all_mini_pets(self) -> None:
-        for entry in list(self.mini_pets):
-            self._destroy_mini_pet(entry)
+        def finalize() -> None:
+            win = entry.get("win")
+            if win and win.winfo_exists():
+                win.destroy()
+            if entry in self.mini_pets:
+                self.mini_pets.remove(entry)
+            for i, pet in enumerate(self.mini_pets):
+                pet["index"] = i
+                pet["side"] = "left" if i % 2 == 0 else "right"
+
+        if not animated:
+            finalize()
+            return
+        win = entry.get("win")
+        if not win or not win.winfo_exists():
+            finalize()
+            return
+        size = int(entry.get("size", MINI_PET_SIZE))
+        x = int(entry.get("x", 0))
+        y = int(entry.get("y", 0))
+        lbl = entry.get("label")
+        if lbl and lbl.winfo_exists():
+            try:
+                lbl.pack_forget()
+            except Exception:
+                pass
+        self._run_exit_dissolve_at(
+            x,
+            y,
+            size,
+            on_done=finalize,
+            image_filename="petstand.jpg",
+            palette=COMPANION_ANIM_PALETTE,
+        )
+        if win.winfo_exists():
+            try:
+                win.withdraw()
+            except Exception:
+                pass
+
+    def _destroy_all_mini_pets(self, *, animated: bool = False) -> None:
+        pets = list(self.mini_pets)
+        if not animated:
+            for entry in pets:
+                self._destroy_mini_pet(entry, animated=False)
+            return
+        for entry in pets:
+            self._destroy_mini_pet(entry, animated=True)
 
     def _show_reserved(self, name: str) -> None:
         self._hide_main_menu()
@@ -13444,7 +13858,7 @@ class DesktopPet:
         gx, gy, qx, qy = self._random_expose_cluster_pos(qte_size)
         self.expose_glitch_win = tk.Toplevel(self.root)
         self.expose_glitch_win.overrideredirect(True)
-        self.expose_glitch_win.attributes("-topmost", True)
+        self._apply_window_layer(self.expose_glitch_win)
         self.expose_glitch_win.configure(bg="#120818")
         self.expose_glitch_canvas = tk.Canvas(
             self.expose_glitch_win,
@@ -13470,7 +13884,7 @@ class DesktopPet:
         self.expose_qte_angle = 0.0
         self.expose_qte_win = tk.Toplevel(self.root)
         self.expose_qte_win.overrideredirect(True)
-        self.expose_qte_win.attributes("-topmost", True)
+        self._apply_window_layer(self.expose_qte_win)
         self.expose_qte_win.configure(bg="magenta")
         self.expose_qte_win.wm_attributes("-transparentcolor", "magenta")
         self.expose_qte_canvas = tk.Canvas(
@@ -13663,11 +14077,11 @@ class DesktopPet:
     def _open_expression_menu(self) -> None:
         self._show_sub_menu(
             [
+                ("有主意", self._play_expression_idea),
                 ("开心", self._play_happy),
                 ("生气", self._play_expression_angry),
                 ("疑问", lambda: self._play_expression("question")),
                 ("伤心", self._play_expression_sad),
-                ("有主意", self._play_expression_idea),
                 ("脸红", self._play_expression_shy),
                 ("wink", self._play_expression_wink),
                 ("点赞", self._play_expression_like),
@@ -13844,7 +14258,7 @@ class DesktopPet:
         size = self.display_size + pad * 2
         self.follow_dizzy_fx_win = tk.Toplevel(self.root)
         self.follow_dizzy_fx_win.overrideredirect(True)
-        self.follow_dizzy_fx_win.attributes("-topmost", False)
+        self._apply_window_layer(self.follow_dizzy_fx_win)
         self.follow_dizzy_fx_win.configure(bg="magenta")
         self.follow_dizzy_fx_win.wm_attributes("-transparentcolor", "magenta")
         self.follow_dizzy_fx_canvas = tk.Canvas(
@@ -14198,10 +14612,20 @@ class DesktopPet:
             return
         load_size = min(MINI_PET_SIZE, self.display_size + 36)
         gap = MINI_PET_SIDE_GAP
-        x = self.x - load_size - gap
-        if x < 8:
-            x = self.x + self.display_size + gap
+        left_x = self.x - load_size - gap
+        right_x = self.x + self.display_size + gap
         y = self.y + self.display_size - load_size
+        try:
+            sw = int(self.root.winfo_screenwidth())
+        except Exception:
+            sw = 1280
+        if left_x >= 0:
+            x = left_x
+        elif right_x + load_size <= sw:
+            x = right_x
+        else:
+            x = left_x
+        x, y = self._clamp_mini_pet_xy(x, y, load_size)
         self.companion_loading_win.geometry(f"{load_size}x{load_size}+{int(x)}+{int(y)}")
 
     def _show_companion_loading(self, callback) -> None:
@@ -14214,7 +14638,7 @@ class DesktopPet:
         load_size = min(MINI_PET_SIZE, self.display_size + 36)
         self.companion_loading_win = tk.Toplevel(self.root)
         self.companion_loading_win.overrideredirect(True)
-        self.companion_loading_win.attributes("-topmost", True)
+        self._apply_window_layer(self.companion_loading_win)
         self.companion_loading_win.configure(bg="magenta")
         self.companion_loading_win.wm_attributes("-transparentcolor", "magenta")
         self.companion_loading_canvas = tk.Canvas(
@@ -14234,7 +14658,13 @@ class DesktopPet:
         if not self.companion_loading_active or not self.companion_loading_canvas:
             return
         load_size = self.companion_loading_canvas.winfo_width() or min(MINI_PET_SIZE, self.display_size + 36)
-        _draw_size_loading_frame(self.companion_loading_canvas, load_size, self.companion_loading_phase, label="金目")
+        _draw_size_loading_frame(
+            self.companion_loading_canvas,
+            load_size,
+            self.companion_loading_phase,
+            label="金目",
+            theme="companion",
+        )
         self.companion_loading_phase += 1
         self._place_companion_loading()
         elapsed = int(time.time() * 1000) - self.companion_loading_start_ms
@@ -14258,7 +14688,9 @@ class DesktopPet:
         if not self.size_loading_active or not self.size_loading_canvas:
             return
         size = self.display_size
-        _draw_size_loading_frame(self.size_loading_canvas, size, self.size_loading_phase, label="尺寸")
+        _draw_size_loading_frame(
+            self.size_loading_canvas, size, self.size_loading_phase, label="尺寸", theme="vpet"
+        )
         self.size_loading_phase += 1
         self._place_size_loading()
         target = self.size_loading_target
@@ -14287,7 +14719,7 @@ class DesktopPet:
             pass
         self.size_loading_win = tk.Toplevel(self.root)
         self.size_loading_win.overrideredirect(True)
-        self.size_loading_win.attributes("-topmost", True)
+        self._apply_window_layer(self.size_loading_win)
         self.size_loading_win.configure(bg="magenta")
         self.size_loading_win.wm_attributes("-transparentcolor", "magenta")
         self.size_loading_canvas = tk.Canvas(
@@ -14712,6 +15144,7 @@ class DesktopPet:
             self.display_size,
             on_hide=lambda: self.label.pack_forget(),
             on_done=one_done,
+            palette=VPET_ANIM_PALETTE,
         )
 
         if self.companion_bar_enabled and self.mini_pets:
@@ -14733,6 +15166,7 @@ class DesktopPet:
                     on_hide=lambda label=lbl: label.pack_forget() if label else None,
                     on_done=one_done,
                     image_filename="petstand.jpg",
+                    palette=COMPANION_ANIM_PALETTE,
                 )
 
     def _run_exit_dissolve_at(
@@ -14744,18 +15178,24 @@ class DesktopPet:
         on_hide=None,
         on_done=None,
         image_filename: str = "stand.jpg",
+        palette: tuple[str, ...] | None = None,
     ) -> None:
         if on_hide:
             on_hide()
         img = _sprite_rgba_image(image_filename, size)
         dissolve_win = tk.Toplevel(self.root)
         dissolve_win.overrideredirect(True)
-        dissolve_win.attributes("-topmost", True)
+        self._apply_window_layer(dissolve_win)
         dissolve_win.configure(bg="magenta")
         dissolve_win.wm_attributes("-transparentcolor", "magenta")
         canvas = tk.Canvas(dissolve_win, width=size, height=size, bg="magenta", highlightthickness=0)
         canvas.pack()
         dissolve_win.geometry(f"+{x}+{y}")
+        use_palette = palette
+        if use_palette is None:
+            use_palette = (
+                COMPANION_ANIM_PALETTE if "petstand" in image_filename else VPET_ANIM_PALETTE
+            )
 
         def finish() -> None:
             if dissolve_win.winfo_exists():
@@ -14770,6 +15210,8 @@ class DesktopPet:
             size,
             reverse=True,
             on_done=finish,
+            palette=use_palette,
+            lively=True,
         )
 
     def _finalize_close(self) -> None:
@@ -14977,7 +15419,7 @@ class DesktopPet:
         self._speech_border5_peak = (0, 0)
         self.speech_dialog = tk.Toplevel(self.root)
         self.speech_dialog.overrideredirect(True)
-        self.speech_dialog.attributes("-topmost", True)
+        self._apply_window_layer(self.speech_dialog)
         self.speech_dialog.configure(bg="magenta")
         self.speech_dialog.wm_attributes("-transparentcolor", "magenta")
 
@@ -15062,7 +15504,7 @@ class DesktopPet:
 
         self.food_fx_win = tk.Toplevel(self.root)
         self.food_fx_win.overrideredirect(True)
-        self.food_fx_win.attributes("-topmost", False)
+        self._apply_window_layer(self.food_fx_win)
         self.food_fx_win.configure(bg="magenta")
         self.food_fx_win.wm_attributes("-transparentcolor", "magenta")
 
@@ -15133,7 +15575,7 @@ class DesktopPet:
 
         self.happy_fx_win = tk.Toplevel(self.root)
         self.happy_fx_win.overrideredirect(True)
-        self.happy_fx_win.attributes("-topmost", False)
+        self._apply_window_layer(self.happy_fx_win)
         self.happy_fx_win.configure(bg="magenta")
         self.happy_fx_win.wm_attributes("-transparentcolor", "magenta")
 
@@ -15188,7 +15630,7 @@ class DesktopPet:
             self.bg_music_playing = False
 
     def _show_call_dialog(self, *, call_sequence: list | None = None) -> str:
-        """打电话：开语音时与 CALL_TEXT+铃声随机二选一；语音路径仍为先 ring 再台词。"""
+        """打电话：有 call 资源时一律先 ring，再播非 ring 台词+标题文本框；否则走旧 CALL_TEXT。"""
 
         def dialog() -> None:
             self._show_speech_dialog(CALL_TEXT)
@@ -15202,11 +15644,12 @@ class DesktopPet:
                 return False
             return self._try_voice_call(sequence=seq, ignore_cooldown=True)
 
-        return self._trigger_voice_or_dialog(
-            voice_fn=voice,
-            dialog_fn=dialog,
-            voice_available=self._call_voice_ready(),
-        )
+        # 打电话不随机：能播语音就固定 ring → 台词音频 + 标题字幕
+        if self._call_voice_ready():
+            if voice():
+                return "voice"
+        dialog()
+        return "dialog"
 
     def _play_call_audio(self) -> None:
         self._pause_bg_music_for_call()
@@ -15247,9 +15690,11 @@ class DesktopPet:
         self._hide_voice_subtitle()
 
     def _finish_call_action(self) -> None:
-        """打电话动作结束：仅收尾 UI，不截断仍在播放的 ring/台词语音。"""
-        self._hide_speech_dialog()
-        self._hide_voice_subtitle()
+        """打电话动作结束：仅收尾动作；语音路径不截断 ring/台词，也不提前关标题文本框。"""
+        if getattr(self, "_call_content_mode", "dialog") != "voice":
+            self._hide_speech_dialog()
+            self._hide_voice_subtitle()
+        # voice 路径：字幕由 voice_player 按当前 clip 时长自行隐藏
         try:
             import pygame
 
@@ -15719,7 +16164,7 @@ class DesktopPet:
         size = self.display_size + pad * 2
         self.sleep_zzz_win = tk.Toplevel(self.root)
         self.sleep_zzz_win.overrideredirect(True)
-        self.sleep_zzz_win.attributes("-topmost", False)
+        self._apply_window_layer(self.sleep_zzz_win)
         self.sleep_zzz_win.configure(bg="magenta")
         self.sleep_zzz_win.wm_attributes("-transparentcolor", "magenta")
         self.sleep_zzz_canvas = tk.Canvas(
@@ -15751,12 +16196,12 @@ class DesktopPet:
         canvas = self.sleep_zzz_canvas
         canvas.delete("all")
         size = self.display_size + 40
-        px = max(2, self.display_size // 40)
-        offset = (self.zzz_phase % 3) * 4
+        px = max(3, self.display_size // 28)
+        offset = (self.zzz_phase % 3) * max(3, px // 2)
         colors = ("#aabbff", "#8899ee", "#6677dd")
-        self._draw_pixel_z(canvas, size - px * 8, px * 2 + offset, px, colors[0])
-        self._draw_pixel_z(canvas, size - px * 12, px * 6 + offset, px - 1, colors[1])
-        self._draw_pixel_z(canvas, size - px * 16, px * 10 + offset, px - 1, colors[2])
+        self._draw_pixel_z(canvas, size - px * 9, px * 2 + offset, px, colors[0])
+        self._draw_pixel_z(canvas, size - px * 13, px * 5 + offset, max(2, px - 1), colors[1])
+        self._draw_pixel_z(canvas, size - px * 17, px * 8 + offset, max(2, px - 1), colors[2])
         self.zzz_phase += 1
         self._place_sleep_zzz()
         self.root.after(SLEEP_ZZZ_MS, self._animate_sleep_zzz)
@@ -15939,7 +16384,7 @@ class DesktopPet:
         size = GAME_BOX_SIZE
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg="magenta")
         win.wm_attributes("-transparentcolor", "magenta")
         canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
@@ -16054,7 +16499,7 @@ class DesktopPet:
         win = tk.Toplevel(self.root)
         self.work_custom_win = win
         win.title("自定义工作")
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg=MENU_BG)
         win.protocol("WM_DELETE_WINDOW", self._close_work_custom_dialog)
 
@@ -16287,7 +16732,7 @@ class DesktopPet:
         if not self.work_end_btn_win or not self.work_end_btn_win.winfo_exists():
             self.work_end_btn_win = tk.Toplevel(self.root)
             self.work_end_btn_win.overrideredirect(True)
-            self.work_end_btn_win.attributes("-topmost", True)
+            self._apply_window_layer(self.work_end_btn_win)
             self.work_end_btn_win.configure(bg=MENU_BG)
             tk.Button(
                 self.work_end_btn_win,
@@ -16391,7 +16836,7 @@ class DesktopPet:
         width, height = self._work_stack_canvas_size(0)
         self.work_overlay = tk.Toplevel(self.root)
         self.work_overlay.overrideredirect(True)
-        self.work_overlay.attributes("-topmost", True)
+        self._apply_window_layer(self.work_overlay)
         self.work_overlay.configure(bg="magenta")
         self.work_overlay.wm_attributes("-transparentcolor", "magenta")
         self.work_overlay.geometry(f"{width}x{height}+0+0")
@@ -16431,7 +16876,7 @@ class DesktopPet:
         size = WORK_PROP_SIZE + pad * 2
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
-        win.attributes("-topmost", True)
+        self._apply_window_layer(win)
         win.configure(bg="magenta")
         win.wm_attributes("-transparentcolor", "magenta")
         c = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
@@ -16482,7 +16927,7 @@ class DesktopPet:
             if not self.work_start_box_win or not self.work_start_box_win.winfo_exists():
                 self.work_start_box_win = tk.Toplevel(self.root)
                 self.work_start_box_win.overrideredirect(True)
-                self.work_start_box_win.attributes("-topmost", False)
+                self._apply_window_layer(self.work_start_box_win)
                 self.work_start_box_win.configure(bg="magenta")
                 self.work_start_box_win.wm_attributes("-transparentcolor", "magenta")
                 c = tk.Canvas(
@@ -16616,7 +17061,7 @@ class DesktopPet:
         size = self.display_size + pad * 2
         self.rain_fx_win = tk.Toplevel(self.root)
         self.rain_fx_win.overrideredirect(True)
-        self.rain_fx_win.attributes("-topmost", False)
+        self._apply_window_layer(self.rain_fx_win)
         self.rain_fx_win.configure(bg="magenta")
         self.rain_fx_win.wm_attributes("-transparentcolor", "magenta")
         self.rain_fx_canvas = tk.Canvas(
@@ -16694,7 +17139,7 @@ class DesktopPet:
         size = BULB_FX_SIZE
         self.bulb_fx_win = tk.Toplevel(self.root)
         self.bulb_fx_win.overrideredirect(True)
-        self.bulb_fx_win.attributes("-topmost", False)
+        self._apply_window_layer(self.bulb_fx_win)
         self.bulb_fx_win.configure(bg="magenta")
         self.bulb_fx_win.wm_attributes("-transparentcolor", "magenta")
         self.bulb_fx_canvas = tk.Canvas(
@@ -16749,7 +17194,7 @@ class DesktopPet:
 
         self.schedule_win = tk.Toplevel(self.root)
         self.schedule_win.title("日程提醒")
-        self.schedule_win.attributes("-topmost", True)
+        self._apply_window_layer(self.schedule_win)
         self.schedule_win.configure(bg=MENU_BG)
 
         _, frame = _pack_fixed_scroll_panel(self.schedule_win)
@@ -16936,7 +17381,7 @@ class DesktopPet:
 
         self.ai_chat_win = tk.Toplevel(self.root)
         self.ai_chat_win.overrideredirect(True)
-        self.ai_chat_win.attributes("-topmost", True)
+        self._apply_window_layer(self.ai_chat_win)
         self.ai_chat_win.configure(bg="#111122")
 
         border = tk.Frame(self.ai_chat_win, bg=PIXEL_COLOR, padx=1, pady=1)

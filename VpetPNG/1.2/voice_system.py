@@ -21,8 +21,10 @@ VOICE_PRIORITY_SCENE = 2
 VOICE_GLOBAL_COOLDOWN_MS = 10_000
 VOICE_HI_CATEGORY = "你好"
 
-_PREFIX_RE = re.compile(r"^(\d+|[a-zA-Z])\s+(.+)$")
+# 去掉文件名开头的序号/字母前缀，如「1 文本」「a 文本」「11.文本」
+_PREFIX_RE = re.compile(r"^((?:\d+)|(?:[a-zA-Z]))(?:[\s._\-]+)(.+)$")
 _RING_NAMES = frozenset({"ring", "call-ring", "call_ring", "callring"})
+_RING_STEM_PRIORITY = ("call-ring", "call_ring", "ring", "callring")
 _STARTUP_HINTS = ("启动", "启动音")
 
 
@@ -36,6 +38,15 @@ def _is_ring_stem(stem: str) -> bool:
     return "call" in low and "ring" in low
 
 
+def _strip_title_prefix(title: str) -> str:
+    """显示用：再次去掉可能残留的数字/字母前缀。"""
+    text = (title or "").strip()
+    if not text:
+        return ""
+    m = _PREFIX_RE.match(text)
+    return m.group(2).strip() if m else text
+
+
 def _parse_stem(stem: str) -> tuple[str | None, str, bool, bool]:
     if _is_ring_stem(stem):
         return None, "铃响", True, False
@@ -43,7 +54,8 @@ def _parse_stem(stem: str) -> tuple[str | None, str, bool, bool]:
         return None, stem, False, True
     m = _PREFIX_RE.match(stem)
     if m:
-        prefix = m.group(1).lower() if m.group(1).isalpha() else m.group(1)
+        raw_prefix = m.group(1)
+        prefix = raw_prefix.lower() if raw_prefix.isalpha() else raw_prefix
         return prefix, m.group(2).strip(), False, False
     return None, stem.strip(), False, False
 
@@ -180,13 +192,22 @@ class VoiceCatalog:
         return random.choice(misc_pool) if misc_pool else None
 
     def pick_call_sequence(self) -> list[VoiceClip]:
-        """打电话语音：必须先 ring，再从 Vpet/call 非 ring 条目随机选一条。"""
+        """打电话语音：必须先 call-ring/ring，再从 Vpet/call 非 ring 条目随机选一条。"""
         call_clips = self.vpet.get("call", [])
         rings = [c for c in call_clips if c.is_ring]
         body_pool = [c for c in call_clips if not c.is_ring]
         if not rings or not body_pool:
             return []
-        ring = sorted(rings, key=lambda c: (0 if _is_ring_stem(c.src_path.stem) else 1, c.src_path.name))[0]
+
+        def _ring_rank(clip: VoiceClip) -> tuple[int, str]:
+            stem = clip.src_path.stem.lower().strip()
+            compact = re.sub(r"[\s_\-]+", "", stem)
+            for i, name in enumerate(_RING_STEM_PRIORITY):
+                if stem == name or compact == name.replace("-", "").replace("_", ""):
+                    return (i, clip.src_path.name)
+            return (len(_RING_STEM_PRIORITY), clip.src_path.name)
+
+        ring = sorted(rings, key=_ring_rank)[0]
         return [ring, random.choice(body_pool)]
 
     def pick_hi_clip(self) -> VoiceClip | None:
@@ -384,10 +405,14 @@ class VoicePlayer:
                 pass
 
     def _show_subtitle(self, clip: VoiceClip, duration_ms: int) -> None:
+        # ring / call-ring 只响铃，不出文本框；台词才显示标题字幕
         if clip.is_ring:
             return
+        title = _strip_title_prefix(clip.title)
+        if not title:
+            return
         if self._subtitle_cb:
-            self._subtitle_cb(clip.title, duration_ms)
+            self._subtitle_cb(title, duration_ms)
 
     def _stop_sfx_if_needed(self) -> None:
         if self.stop_sfx:
