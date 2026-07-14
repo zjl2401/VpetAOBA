@@ -131,8 +131,26 @@ TYPE_AUDIO_SRC = Path(r"C:\Users\36255\Desktop\type.mp4")
 TYPE_AUDIO_WAV = DATA_AUDIO_DIR / "type_cache.wav"
 MUSIC_SRC_DIR = resolve_bundled("Vpetmusic", legacy=LEGACY_MUSIC_ROOT)
 MUSIC_CONFIG_FILE = DATA_DIR / "music_config.json"
+MUSIC_AFFINITY_FILE = DATA_DIR / "music_affinity.json"
+ACHIEVEMENTS_FILE = DATA_DIR / "achievements.json"
 PHONOGRAPH_FILE = DATA_DIR / "phonograph.json"
 PHONOGRAPH_USER_DIR = DATA_DIR / "phonograph"
+
+# 音乐人物＝文件夹（列表勾选 / 面板彩色好感心）
+MUSIC_CHAR_DEFS: tuple[dict[str, str], ...] = (
+    {"id": "aoba", "folder": "aoba-blue", "label": "苍叶", "color_key": "blue"},
+    {"id": "clear", "folder": "clear-yellow", "label": "Clear", "color_key": "yellow"},
+    {"id": "koujaku", "folder": "koujaku-red", "label": "紅雀", "color_key": "red"},
+    {"id": "mink", "folder": "mink-pink", "label": "Mink", "color_key": "pink"},
+    {"id": "mizuki", "folder": "mizuki-deep red", "label": "水城", "color_key": "deep red"},
+    {"id": "noiz", "folder": "noiz-green", "label": "Noiz", "color_key": "green"},
+    {"id": "ren", "folder": "ren-deep blue", "label": "莲", "color_key": "deep blue"},
+    {"id": "virus_trip", "folder": "virus&trip-grey", "label": "Virus&Trip", "color_key": "grey"},
+)
+AFFINITY_TICK_MS = 1000
+AFFINITY_POINTS_PER_TICK = 1
+# 每格进度条所需好感点；可无限累计升级，条内显示当前格进度
+AFFINITY_BAR_SEGMENT = 60
 
 # 固定 id / 标题（其余按文件名自动生成）；默认曲 = RADICAL MAT（替换原 aicatch）
 MUSIC_TRACK_ID_MAP: dict[str, str] = {
@@ -260,6 +278,171 @@ def _music_wave_colors_for_folder(folder_name: str) -> tuple[str, ...]:
     return (base, _lighten_hex_color(base, 0.48))
 
 
+def _music_char_def_by_folder(folder_name: str) -> dict[str, str] | None:
+    name = (folder_name or "").strip().lower()
+    if not name:
+        return None
+    for d in MUSIC_CHAR_DEFS:
+        if d["folder"].lower() == name:
+            return dict(d)
+    return None
+
+
+def _music_char_id_for_folder(folder_name: str) -> str:
+    known = _music_char_def_by_folder(folder_name)
+    if known:
+        return known["id"]
+    stem = (folder_name or "").split("-")[0].strip().lower()
+    slug = re.sub(r"[^0-9a-z]+", "_", stem).strip("_")
+    return slug or "unknown"
+
+
+def _music_char_defs_runtime() -> list[dict[str, str]]:
+    """曲库实际出现的人物文件夹（优先用预设文案）。"""
+    folders: list[str] = []
+    seen: set[str] = set()
+    for tid in MUSIC_TRACK_ORDER:
+        folder = str(MUSIC_TRACKS.get(tid, {}).get("folder") or "").strip()
+        if not folder:
+            continue
+        key = folder.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        folders.append(folder)
+    out: list[dict[str, str]] = []
+    for folder in folders:
+        known = _music_char_def_by_folder(folder)
+        if known:
+            out.append(known)
+            continue
+        color_key = _music_folder_color_key(folder)
+        out.append(
+            {
+                "id": _music_char_id_for_folder(folder),
+                "folder": folder,
+                "label": folder.split("-")[0].strip() or folder,
+                "color_key": color_key,
+            }
+        )
+    # 预设顺序靠前，其余跟后
+    order = {d["id"]: i for i, d in enumerate(MUSIC_CHAR_DEFS)}
+    out.sort(key=lambda d: (order.get(d["id"], 100), d["label"].lower()))
+    return out
+
+
+def _music_char_color(char: dict[str, str]) -> str:
+    return MUSIC_FOLDER_BASE_COLORS.get(char.get("color_key", "blue"), DEFAULT_MUSIC_WAVE_BASE)
+
+
+def _playlist_ids_for_folders(folders: list[str] | set[str]) -> list[str]:
+    wanted = {(f or "").strip().lower() for f in folders if (f or "").strip()}
+    if not wanted:
+        return _default_full_music_playlist()
+    out: list[str] = []
+    for tid in MUSIC_TRACK_ORDER:
+        folder = str(MUSIC_TRACKS.get(tid, {}).get("folder") or "").strip().lower()
+        if folder in wanted and tid not in out:
+            out.append(tid)
+    return out or _default_full_music_playlist()
+
+
+def _folders_from_playlist(track_ids: list[str]) -> list[str]:
+    folders: list[str] = []
+    seen: set[str] = set()
+    for tid in track_ids:
+        folder = str(MUSIC_TRACKS.get(tid, {}).get("folder") or "").strip()
+        if not folder:
+            continue
+        key = folder.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        folders.append(folder)
+    return folders
+
+
+def _default_music_playlist_folders() -> list[str]:
+    return [d["folder"] for d in _music_char_defs_runtime()] or [d["folder"] for d in MUSIC_CHAR_DEFS]
+
+
+def _load_music_affinity() -> dict[str, float]:
+    default = {d["id"]: 0.0 for d in MUSIC_CHAR_DEFS}
+    if not MUSIC_AFFINITY_FILE.exists():
+        return default
+    try:
+        data = json.loads(MUSIC_AFFINITY_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return default
+        for key, val in data.items():
+            try:
+                default[str(key)] = max(0.0, float(val))
+            except (TypeError, ValueError):
+                continue
+    except Exception:
+        pass
+    return default
+
+
+def _save_music_affinity(affinity: dict[str, float]) -> None:
+    MUSIC_AFFINITY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    clean = {str(k): float(max(0.0, v)) for k, v in affinity.items()}
+    MUSIC_AFFINITY_FILE.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _affinity_level(points: float) -> int:
+    return int(max(0.0, points) // AFFINITY_BAR_SEGMENT)
+
+
+def _affinity_bar_pct(points: float) -> int:
+    """当前格内进度 0–100；无上限升级，满格进下一 Lv。"""
+    pts = max(0.0, float(points))
+    rem = pts % AFFINITY_BAR_SEGMENT
+    if pts > 0 and rem == 0:
+        return 100
+    return int(round(rem / AFFINITY_BAR_SEGMENT * 100))
+
+
+# 成就：解锁存在 ACHIEVEMENTS_FILE；条件在 DesktopPet._eval_achievement 内判断
+ACHIEVEMENT_DEFS: tuple[dict[str, str], ...] = (
+    {"id": "music_first", "title": "初次漫步", "desc": "第一次打开音乐模式听歌"},
+    {"id": "affinity_first_bar", "title": "一寸心音", "desc": "任意人物好感攒满一格"},
+    {"id": "affinity_lv10", "title": "记你很久", "desc": "任意人物好感达到 Lv.10"},
+    {"id": "all_chars_heard", "title": "全员点名", "desc": "每个音乐人物都听过至少 30 秒"},
+    {"id": "total_affinity_30", "title": "堆成小山", "desc": "全部好感合计达到 30 格"},
+    {"id": "char_filter_used", "title": "专属频道", "desc": "用人物勾选筛选过播放列表"},
+    {"id": "ren_bond", "title": "莲的频率", "desc": "莲的好感达到 Lv.5"},
+    {"id": "aoba_bond", "title": "苍叶配乐", "desc": "苍叶的好感达到 Lv.5"},
+    {"id": "listen_hour", "title": "听完整场", "desc": "累计听歌满 60 分钟"},
+)
+
+
+def _load_achievements() -> dict:
+    default = {"unlocked": {}, "stats": {"listen_seconds": 0.0, "used_char_filter": False}}
+    if not ACHIEVEMENTS_FILE.exists():
+        return default
+    try:
+        data = json.loads(ACHIEVEMENTS_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return default
+        unlocked = data.get("unlocked") if isinstance(data.get("unlocked"), dict) else {}
+        stats = data.get("stats") if isinstance(data.get("stats"), dict) else {}
+        return {
+            "unlocked": {str(k): v for k, v in unlocked.items()},
+            "stats": {
+                "listen_seconds": float(stats.get("listen_seconds", 0) or 0),
+                "used_char_filter": bool(stats.get("used_char_filter", False)),
+            },
+        }
+    except Exception:
+        return default
+
+
+def _save_achievements(data: dict) -> None:
+    ACHIEVEMENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ACHIEVEMENTS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _music_slug_id(stem: str) -> str:
     mapped = MUSIC_TRACK_ID_MAP.get(stem)
     if mapped:
@@ -298,6 +481,7 @@ def _build_music_tracks() -> tuple[dict[str, dict], tuple[str, ...]]:
             "folder": folder,
             "color_key": _music_folder_color_key(folder),
             "wave_colors": _music_wave_colors_for_folder(folder),
+            "char_id": _music_char_id_for_folder(folder),
         }
     order: list[str] = []
     for tid in MUSIC_TRACK_PREFERRED_ORDER:
@@ -1151,10 +1335,14 @@ GAME_COUNTDOWN_STEP_MS = 650
 GAME_COUNTDOWN_W = 120
 GAME_COUNTDOWN_H = 120
 COUNTDOWN_FONT = ("Courier New", 42, "bold")
-MUSIC_WAVE_MS = 60
+MUSIC_WAVE_MS = 95
 # 光圈窗口相对立绘的外边距：需大于最外环「半径余量」，避免圆被方框裁成四角
 MUSIC_WAVE_PAD = 56
 MUSIC_WAVE_MINI_PAD = 36
+MUSIC_WAVE_MINI_MS = 160
+MUSIC_WAVE_ENV_STEP_MS = 50
+_MUSIC_WAVE_ANALYSIS: dict[str, dict] = {}
+_MUSIC_WAVE_ANALYSIS_LOADING: set[str] = set()
 FOOD_INVENTORY_FILE = DATA_DIR / "food_inventory.json"
 ADULT_CONTENT_TEXT = "我只是像素哦，更多精彩内容请在正版游戏《戏剧性谋杀》中解锁"
 RESERVED_TOAST = "敬请期待~"
@@ -1506,7 +1694,7 @@ ONCE_HINTS: dict[str, str] = {
     "game_mode": "采集：移动接食物，注意 ±3s 与晕眩物，Esc 可退出~",
     "rhythm_game": "音乐：D F J K · 长音需长按 · 右上可调流速 · Esc 退出~",
     "companion_bar": "智能伴侣已开启~ 莲会跟在左右两侧；游戏模式会跟紧你哦！",
-    "music_mode": "音乐漫步：边走边听，不会触发动作与语音；再点一次可关闭音乐~",
+    "music_mode": "音乐漫步：边走边听；声音设置可按人物勾选循环。面板心心＝听歌好感，无上限可刷~",
     "rhyme_invite": "邀请对战需要联机服务器，目前可先「练习对战」体验！",
 }
 DEFAULT_VOCAB_WORDS: list[dict[str, str]] = [
@@ -3363,16 +3551,168 @@ def _spawn_game_clear_particles(width: int, height: int, accent: str) -> list[di
     return parts
 
 
-def _draw_pixel_ring(canvas: tk.Canvas, cx: int, cy: int, radius: int, px: int, color: str) -> None:
+def _draw_pixel_ring(
+    canvas: tk.Canvas,
+    cx: int,
+    cy: int,
+    radius: int,
+    px: int,
+    color: str,
+    *,
+    density: float = 1.4,
+) -> None:
     """Rough pixel ring made of thick squares along a circle."""
     if radius <= 0:
         return
-    steps = max(12, int(radius * 1.4))
+    steps = max(10, int(radius * max(0.35, density)))
     for i in range(steps):
         ang = (i / steps) * math.pi * 2
         x = cx + int(math.cos(ang) * radius) - px // 2
         y = cy + int(math.sin(ang) * radius) - px // 2
         canvas.create_rectangle(x, y, x + px, y + px, fill=color, outline="")
+
+
+def _estimate_bpm_from_env(env: list[float], step_ms: int) -> float:
+    """从包络粗估 BPM（用于光圈踩点缩放）。"""
+    if len(env) < 24 or step_ms <= 0:
+        return 120.0
+    mean = sum(env) / len(env)
+    thr = mean * 1.18 + 0.04
+    peaks: list[int] = []
+    for i in range(1, len(env) - 1):
+        v = env[i]
+        if v < thr:
+            continue
+        if v >= env[i - 1] and v >= env[i + 1]:
+            if not peaks or i - peaks[-1] >= max(2, int(180 / step_ms)):
+                peaks.append(i)
+    if len(peaks) < 4:
+        return 120.0
+    gaps = [peaks[i + 1] - peaks[i] for i in range(len(peaks) - 1)]
+    gaps.sort()
+    med = gaps[len(gaps) // 2]
+    period_ms = med * step_ms
+    if period_ms < 280:
+        period_ms *= 2
+    if period_ms > 900:
+        period_ms *= 0.5
+    bpm = 60000.0 / max(280.0, min(900.0, period_ms))
+    return max(70.0, min(180.0, bpm))
+
+
+def _build_music_wave_analysis(wav_path: Path) -> dict | None:
+    """轻量 RMS 包络 + BPM，供光圈随节奏缩放（避免每帧读音频）。"""
+    try:
+        import array
+        import wave
+
+        with wave.open(str(wav_path), "rb") as wf:
+            nch = max(1, int(wf.getnchannels() or 1))
+            sw = int(wf.getsampwidth() or 2)
+            fr = int(wf.getframerate() or 44100)
+            step_ms = MUSIC_WAVE_ENV_STEP_MS
+            frames_per = max(1, int(fr * step_ms / 1000))
+            env: list[float] = []
+            max_chunks = int(240_000 / step_ms)
+            if sw == 1:
+                typecode = "B"
+                mid = 128.0
+                peak_ref = 128.0
+            elif sw == 2:
+                typecode = "h"
+                mid = 0.0
+                peak_ref = 32768.0
+            elif sw == 4:
+                typecode = "i"
+                mid = 0.0
+                peak_ref = float(1 << 31)
+            else:
+                return None
+            while len(env) < max_chunks:
+                data = wf.readframes(frames_per)
+                if not data:
+                    break
+                samples = array.array(typecode)
+                samples.frombytes(data[: len(data) - (len(data) % sw)])
+                if not samples:
+                    env.append(0.0)
+                    continue
+                # 混成近似单声道能量
+                total = 0.0
+                n = 0
+                step = max(1, nch)
+                for i in range(0, len(samples), step):
+                    v = float(samples[i]) - mid
+                    total += v * v
+                    n += 1
+                rms = math.sqrt(total / max(1, n)) / peak_ref
+                env.append(float(rms))
+        if len(env) < 8:
+            return None
+        peak = max(env) or 1.0
+        norm = [min(1.0, v / peak) for v in env]
+        smooth = [norm[0]]
+        for i in range(1, len(norm)):
+            smooth.append(smooth[-1] * 0.55 + norm[i] * 0.45)
+        bpm = _estimate_bpm_from_env(smooth, step_ms)
+        return {"bpm": float(bpm), "env": tuple(smooth), "step_ms": int(step_ms)}
+    except Exception:
+        return None
+
+
+def _ensure_music_wave_analysis(track_id: str) -> dict | None:
+    tid = str(track_id or "").strip()
+    if not tid:
+        return None
+    cached = _MUSIC_WAVE_ANALYSIS.get(tid)
+    if cached:
+        return cached
+    if tid in _MUSIC_WAVE_ANALYSIS_LOADING:
+        return None
+    wav = _resolve_music_wav(tid)
+    if wav is None or not wav.exists():
+        return None
+    _MUSIC_WAVE_ANALYSIS_LOADING.add(tid)
+
+    def worker() -> None:
+        try:
+            data = _build_music_wave_analysis(wav)
+            if data:
+                _MUSIC_WAVE_ANALYSIS[tid] = data
+        finally:
+            _MUSIC_WAVE_ANALYSIS_LOADING.discard(tid)
+
+    threading.Thread(target=worker, daemon=True).start()
+    return None
+
+
+def _music_visual_beat(track_id: str, pos_ms: int) -> float:
+    """光圈缩放驱动：踩点冲击 + 响度包络，范围约 0.28～1.0。"""
+    pos = max(0, int(pos_ms))
+    data = _MUSIC_WAVE_ANALYSIS.get(str(track_id))
+    kick = 0.55
+    rms = 0.45
+    if data:
+        bpm = float(data.get("bpm") or 120.0)
+        beat_ms = 60000.0 / max(60.0, bpm)
+        phase = (pos % beat_ms) / beat_ms
+        # 每拍开头冲高后衰减，贴鼓点/节奏感
+        kick = max(0.0, 1.0 - phase * 2.35) ** 1.45
+        env = data.get("env") or ()
+        step = int(data.get("step_ms") or MUSIC_WAVE_ENV_STEP_MS)
+        if env and step > 0:
+            idx = min(len(env) - 1, pos // step)
+            # 轻微邻域平均，减少抖动
+            a = float(env[max(0, idx - 1)])
+            b = float(env[idx])
+            c = float(env[min(len(env) - 1, idx + 1)])
+            rms = (a + b * 2.0 + c) / 4.0
+    else:
+        # 分析未就绪：用位置正弦兜底，避免僵死
+        kick = 0.5 + 0.5 * math.sin(pos * 0.012)
+        rms = 0.5 + 0.35 * math.sin(pos * 0.007 + 1.2)
+    beat = 0.28 + 0.46 * kick + 0.26 * rms
+    return max(0.28, min(1.0, beat))
 
 
 def _draw_game_clear_frame(
@@ -3544,6 +3884,7 @@ def _load_music_config() -> dict:
     default = {
         "play_mode": "list",
         "playlist": _default_full_music_playlist(),
+        "playlist_folders": _default_music_playlist_folders(),
         "playlist_user_set": False,
         "music_volume": 70,
         "volume": 70,
@@ -3590,7 +3931,16 @@ def _load_music_config() -> dict:
                 )
             except Exception:
                 pass
+        raw_folders = data.get("playlist_folders")
+        if isinstance(raw_folders, list) and raw_folders:
+            folders = [str(f) for f in raw_folders if str(f).strip()]
+        else:
+            folders = _folders_from_playlist(playlist) or _default_music_playlist_folders()
+        # 若有人物文件夹筛选且未细选手动曲目冲突：以 folder 过滤为准
+        if isinstance(raw_folders, list) and raw_folders and not user_set:
+            playlist = _normalize_music_playlist(_playlist_ids_for_folders(folders))
         merged["playlist"] = playlist
+        merged["playlist_folders"] = folders
         merged["playlist_user_set"] = user_set
         play_mode = str(merged.get("play_mode", "list"))
         if play_mode not in ("list", "random"):
@@ -3713,36 +4063,40 @@ def _draw_music_wave(
     *,
     beat: float = 1.0,
     colors: tuple[str, ...] | None = None,
+    lite: bool = False,
 ) -> None:
-    """像素音波：外环光圈 + 底部节拍条；淡雅配色，最外圈始终完整落在方框内。"""
+    """像素/线环音波：随 beat 缩放；lite 模式减少图元，供小宠省性能。"""
     canvas.delete("all")
     cx, cy = width // 2, height // 2
-    amp = max(0.25, min(1.0, beat))
+    amp = max(0.28, min(1.0, beat))
     half = min(width, height) // 2
-    # 像素块略细，视觉更柔；半径须留给像素方块半边，避免贴边被裁
-    px = max(3, min(width, height) // 28)
+    px = max(2, min(width, height) // 32)
     max_r = max(8, half - px - 1)
     palette = colors if colors and len(colors) >= 2 else DEFAULT_MUSIC_WAVE_COLORS
     base, light = palette[0], palette[1]
-    # 内圈贴近立绘外沿，外圈贴近 max_r；最大仍到满圈，最小压得更小，呼吸幅度更大
-    for ring in range(4):
-        wave = 0.5 + 0.5 * math.sin(phase * 0.22 + ring * 0.85)
-        frac = 0.48 + ring * 0.16  # 0.48 → 0.96
-        # 最大 1.0（外圈不破框），最小约 0.50（原先几乎只在 0.94～1.0 间抖）
-        pulse = 0.50 + 0.50 * wave
+    ring_n = 2 if lite else 3
+    for ring in range(ring_n):
+        # 轻微层间错相，主体由 amp（节奏）驱动外扩/回收
+        swirl = 0.5 + 0.5 * math.sin(phase * 0.16 + ring * 1.05)
+        frac = (0.58 if lite else 0.52) + ring * (0.18 if lite else 0.20)
+        pulse = 0.40 + 0.60 * amp * (0.35 + 0.65 * swirl)
         r = int(max_r * frac * pulse)
         r = max(4, min(r, max_r))
         col = base if ring % 2 == 0 else light
-        _draw_pixel_ring(canvas, cx, cy, r, px, col)
-    bars = 7
-    bar_w = max(px, width // (bars * 3))
+        # 描边圆环远便宜于逐点像素环，卡顿时观感仍是「光圈」
+        wline = max(2, px if ring == ring_n - 1 else max(2, px - 1))
+        canvas.create_oval(cx - r, cy - r, cx + r, cy + r, outline=col, width=wline)
+    if lite:
+        return
+    bars = 5
+    bar_w = max(px, width // (bars * 4))
     gap = bar_w
     total = bars * bar_w + (bars - 1) * gap
     x0 = (width - total) // 2
     for i in range(bars):
         x = x0 + i * (bar_w + gap)
-        wave = math.sin(phase * 0.35 + i * 0.8) * 0.5 + 0.5
-        h = int(wave * amp * (height // 10) + px)
+        wave = math.sin(phase * 0.32 + i * 0.85) * 0.5 + 0.5
+        h = int((0.35 + 0.65 * wave) * amp * (height // 11) + px)
         col = base if i % 2 == 0 else light
         canvas.create_rectangle(x, height - h - 2, x + bar_w, height - 2, fill=col, outline="")
 
@@ -3774,6 +4128,7 @@ def _music_track(track_id: str | None) -> dict:
         "folder": "",
         "color_key": "blue",
         "wave_colors": DEFAULT_MUSIC_WAVE_COLORS,
+        "char_id": "aoba",
     }
 
 
@@ -5232,6 +5587,13 @@ def _draw_panel_bar(canvas: tk.Canvas, value: int, color: str, *, width: int = P
         canvas.create_rectangle(x0, 2, x1, height - 2, fill=chunk, outline="")
 
 
+def _draw_affinity_panel_bar(
+    canvas: tk.Canvas, points: float, color: str, *, width: int = PANEL_BAR_W, height: int = PANEL_BAR_H
+) -> None:
+    """无上限好感：条显示当前格进度。"""
+    _draw_panel_bar(canvas, _affinity_bar_pct(points), color, width=width, height=height)
+
+
 def _draw_pixel_food(canvas: tk.Canvas, food_id: str, x: int, y: int, px: int = 4) -> None:
     if food_id == "bread":
         canvas.create_rectangle(x, y + px, x + px * 4, y + px * 3, fill="#d4a056", outline="")
@@ -5855,12 +6217,24 @@ class DesktopPet:
         self.music_wave_win: tk.Toplevel | None = None
         self.music_wave_canvas: tk.Canvas | None = None
         self.music_wave_phase = 0
+        self._music_wave_place_sig: tuple[int, int] | None = None
+        self._music_wave_lift_counter = 0
+        self._music_beat_cache: float = 0.7
         self.bg_music_playing = False
         self.bg_music_paused_for_call = False
         self.bg_music_play_index = 0
         self._bg_music_shuffle_bag: list[int] = []
         self.bg_music_watch_job: str | None = None
         self.music_config = _load_music_config()
+        self.music_affinity: dict[str, float] = _load_music_affinity()
+        self.achievements: dict = _load_achievements()
+        self.affinity_tick_job: str | None = None
+        self.achievements_win: tk.Toplevel | None = None
+        self.panel_affinity_frame: tk.Frame | None = None
+        self.panel_affinity_rows: dict[str, dict] = {}
+        self._affinity_dirty = False
+        self._affinity_save_counter = 0
+        self._affinity_panel_counter = 0
         self.last_voice_error_ms = 0
         self._voice_preload_notify = False
         self.voice_player = VoicePlayer(
@@ -7295,6 +7669,122 @@ class DesktopPet:
     def _music_play_mode_label(self) -> str:
         return "列表循环" if self.music_config.get("play_mode", "list") == "list" else "随机"
 
+    def _cancel_affinity_tick(self) -> None:
+        job = getattr(self, "affinity_tick_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+        self.affinity_tick_job = None
+
+    def _schedule_affinity_tick(self) -> None:
+        self._cancel_affinity_tick()
+
+        def tick() -> None:
+            self.affinity_tick_job = None
+            if not self.bg_music_playing:
+                return
+            tid = self._current_bg_music_track_id()
+            track = _music_track(tid)
+            char_id = str(track.get("char_id") or "")
+            if char_id:
+                cur = float(self.music_affinity.get(char_id, 0) or 0)
+                self.music_affinity[char_id] = cur + AFFINITY_POINTS_PER_TICK
+                self._affinity_dirty = True
+            stats = self.achievements.setdefault("stats", {})
+            stats["listen_seconds"] = float(stats.get("listen_seconds", 0) or 0) + AFFINITY_POINTS_PER_TICK
+            self._affinity_save_counter = int(getattr(self, "_affinity_save_counter", 0) or 0) + 1
+            self._affinity_panel_counter = int(getattr(self, "_affinity_panel_counter", 0) or 0) + 1
+            # 降 IO：约每 12 秒写盘/检成就；面板约每 3 秒刷
+            if self._affinity_save_counter >= 12:
+                self._affinity_save_counter = 0
+                if self._affinity_dirty:
+                    _save_music_affinity(self.music_affinity)
+                    self._affinity_dirty = False
+                _save_achievements(self.achievements)
+                self._check_achievements(source="listen")
+            if self._affinity_panel_counter >= 3:
+                self._affinity_panel_counter = 0
+                self._refresh_panel_affinity()
+            self.affinity_tick_job = self._safe_after(AFFINITY_TICK_MS, tick)
+
+        self.affinity_tick_job = self._safe_after(AFFINITY_TICK_MS, tick)
+
+    def _add_music_affinity(self, char_id: str, points: float) -> None:
+        if not char_id or points <= 0:
+            return
+        cur = float(self.music_affinity.get(char_id, 0) or 0)
+        self.music_affinity[char_id] = cur + float(points)
+        self._affinity_dirty = True
+        self._refresh_panel_affinity()
+        self._check_achievements(source="affinity")
+
+    def _flush_affinity_save(self) -> None:
+        if getattr(self, "_affinity_dirty", False):
+            _save_music_affinity(self.music_affinity)
+            self._affinity_dirty = False
+        try:
+            _save_achievements(self.achievements)
+        except Exception:
+            pass
+
+    def _apply_playlist_folders(self, folders: list[str], *, mark_filter_used: bool = True) -> None:
+        folders = [f for f in folders if (f or "").strip()]
+        if not folders:
+            self._show_toast("至少勾选一个人名/文件夹", "#ff8844")
+            return
+        playlist = _normalize_music_playlist(_playlist_ids_for_folders(folders))
+        self.music_config["playlist_folders"] = folders
+        self.music_config["playlist"] = playlist
+        self.music_config["playlist_user_set"] = True
+        _save_music_config(self.music_config)
+        if mark_filter_used:
+            self.achievements.setdefault("stats", {})["used_char_filter"] = True
+            _save_achievements(self.achievements)
+            self._check_achievements(source="filter")
+        if self.bg_music_playing or self.music_sprite_mode:
+            self._stop_bg_music()
+            self._start_bg_music()
+
+    def _achievement_unlocked(self, aid: str) -> bool:
+        return aid in (self.achievements.get("unlocked") or {})
+
+    def _unlock_achievement(self, aid: str) -> None:
+        if self._achievement_unlocked(aid):
+            return
+        info = next((a for a in ACHIEVEMENT_DEFS if a["id"] == aid), None)
+        unlocked = self.achievements.setdefault("unlocked", {})
+        unlocked[aid] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _save_achievements(self.achievements)
+        title = info["title"] if info else aid
+        self._show_toast(f"成就解锁：{title}", "#ffcc66", duration_ms=3200)
+
+    def _check_achievements(self, *, source: str = "") -> None:
+        del source  # 预留
+        points = self.music_affinity
+        total_pts = sum(float(v or 0) for v in points.values())
+        stats = self.achievements.get("stats") or {}
+        if self.music_sprite_mode or float(stats.get("listen_seconds", 0) or 0) > 0:
+            self._unlock_achievement("music_first")
+        if any(float(v or 0) >= AFFINITY_BAR_SEGMENT for v in points.values()):
+            self._unlock_achievement("affinity_first_bar")
+        if any(_affinity_level(float(v or 0)) >= 10 for v in points.values()):
+            self._unlock_achievement("affinity_lv10")
+        char_ids = {d["id"] for d in _music_char_defs_runtime()}
+        if char_ids and all(float(points.get(cid, 0) or 0) >= 30 for cid in char_ids):
+            self._unlock_achievement("all_chars_heard")
+        if total_pts >= AFFINITY_BAR_SEGMENT * 30:
+            self._unlock_achievement("total_affinity_30")
+        if stats.get("used_char_filter"):
+            self._unlock_achievement("char_filter_used")
+        if _affinity_level(float(points.get("ren", 0) or 0)) >= 5:
+            self._unlock_achievement("ren_bond")
+        if _affinity_level(float(points.get("aoba", 0) or 0)) >= 5:
+            self._unlock_achievement("aoba_bond")
+        if float(stats.get("listen_seconds", 0) or 0) >= 3600:
+            self._unlock_achievement("listen_hour")
+
     def _cancel_bg_music_watch(self) -> None:
         if self.bg_music_watch_job:
             try:
@@ -7330,6 +7820,8 @@ class DesktopPet:
         # 单曲始终循环；多曲「播完一首 → 下一首」，由 watch 衔接，音乐模式不停就不会停
         pygame.mixer.music.play(-1 if single_loop else 0)
         self.bg_music_playing = True
+        # 后台预分析节奏包络，供光圈缩放
+        _ensure_music_wave_analysis(track_id)
         return True
 
     def _advance_bg_music_track(self) -> None:
@@ -7409,6 +7901,8 @@ class DesktopPet:
             if not self._bg_music_play_track(tid, single_loop=single):
                 self._show_toast("找不到默认音乐文件", "#ff8844")
                 return
+            self._schedule_affinity_tick()
+            self._check_achievements(source="music_start")
             if not single:
                 self._schedule_bg_music_watch()
         except Exception:
@@ -7416,6 +7910,8 @@ class DesktopPet:
 
     def _stop_bg_music(self) -> None:
         self._cancel_bg_music_watch()
+        self._cancel_affinity_tick()
+        self._flush_affinity_save()
         try:
             import pygame
 
@@ -7573,6 +8069,66 @@ class DesktopPet:
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 4))
 
+        char_box = tk.LabelFrame(
+            frame,
+            text="人物筛选（文件夹）",
+            font=PIXEL_FONT,
+            fg=THEME_PINK,
+            bg=MENU_BG,
+            padx=6,
+            pady=4,
+        )
+        char_box.pack(fill=tk.X, pady=(2, 6))
+        tk.Label(
+            char_box,
+            text="勾选人物后，列表循环/随机只在对应文件夹里轮播",
+            font=("Courier New", 9),
+            fg="#8899aa",
+            bg=MENU_BG,
+            wraplength=300,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 4))
+        char_vars: dict[str, tk.BooleanVar] = {}
+        selected_folders = {
+            str(f).strip().lower()
+            for f in (self.music_config.get("playlist_folders") or _folders_from_playlist(self._music_playlist()))
+            if str(f).strip()
+        }
+        chars_grid = tk.Frame(char_box, bg=MENU_BG)
+        chars_grid.pack(fill=tk.X)
+
+        def apply_char_filter() -> None:
+            folders = [
+                d["folder"]
+                for d in _music_char_defs_runtime()
+                if char_vars.get(d["id"]) and char_vars[d["id"]].get()
+            ]
+            self._apply_playlist_folders(folders, mark_filter_used=True)
+            refresh_playlist_label()
+            path_label.config(text=self._music_path_label())
+
+        for i, ch in enumerate(_music_char_defs_runtime()):
+            var = tk.BooleanVar(value=ch["folder"].lower() in selected_folders or not selected_folders)
+            char_vars[ch["id"]] = var
+            color = _music_char_color(ch)
+            cell = tk.Frame(chars_grid, bg=MENU_BG)
+            cell.grid(row=i // 2, column=i % 2, sticky=tk.W, padx=(0, 8), pady=1)
+            heart = tk.Canvas(cell, width=14, height=14, bg=MENU_BG, highlightthickness=0)
+            heart.pack(side=tk.LEFT, padx=(0, 2))
+            _draw_pixel_heart(heart, 1, 1, px=2, color=color)
+            tk.Checkbutton(
+                cell,
+                text=ch["label"],
+                variable=var,
+                command=apply_char_filter,
+                font=PIXEL_FONT,
+                fg=color,
+                bg=MENU_BG,
+                selectcolor=MENU_BG,
+                activebackground=MENU_BG,
+                activeforeground=color,
+            ).pack(side=tk.LEFT)
+
         track_row = tk.Frame(frame, bg=MENU_BG)
         track_row.pack(fill=tk.X, pady=(2, 4))
         playlist_lbl = tk.Label(track_row, text="", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG)
@@ -7580,16 +8136,24 @@ class DesktopPet:
 
         def refresh_playlist_label() -> None:
             pl = self._music_playlist()
+            folders = self.music_config.get("playlist_folders") or _folders_from_playlist(pl)
+            folder_hint = f" · {len(folders)} 人" if folders else ""
             if len(pl) == 1:
                 title = str(_music_track(pl[0])["title"])
-                playlist_lbl.config(text=f"播放列表：{title}（单曲循环）")
+                playlist_lbl.config(text=f"播放列表：{title}（单曲循环）{folder_hint}")
             else:
-                playlist_lbl.config(text=f"播放列表：{len(pl)} 首")
+                playlist_lbl.config(text=f"播放列表：{len(pl)} 首{folder_hint}")
 
         def set_playlist(track_ids: list[str]) -> None:
             self.music_config["playlist"] = _normalize_music_playlist(track_ids, fallback=DEFAULT_MUSIC_TRACK)
             self.music_config["playlist_user_set"] = True
+            self.music_config["playlist_folders"] = _folders_from_playlist(self.music_config["playlist"])
             _save_music_config(self.music_config)
+            # 同步勾选状态
+            active = {f.lower() for f in self.music_config["playlist_folders"]}
+            for ch in _music_char_defs_runtime():
+                if ch["id"] in char_vars:
+                    char_vars[ch["id"]].set(ch["folder"].lower() in active)
             path_label.config(text=self._music_path_label())
             refresh_playlist_label()
             if self.bg_music_playing or self.music_sprite_mode:
@@ -10193,7 +10757,13 @@ class DesktopPet:
         )
         self.music_wave_canvas.pack()
         self.music_wave_phase = 0
-        self._place_music_wave()
+        self._music_wave_place_sig = None
+        self._music_wave_lift_counter = 0
+        try:
+            _ensure_music_wave_analysis(self._current_bg_music_track_id())
+        except Exception:
+            pass
+        self._place_music_wave(force=True)
         self._animate_music_wave()
 
     def _stop_music_wave_fx(self) -> None:
@@ -10201,15 +10771,38 @@ class DesktopPet:
             self.music_wave_win.destroy()
         self.music_wave_win = None
         self.music_wave_canvas = None
+        self._music_wave_place_sig = None
         self._sync_mini_pet_music_waves()
 
-    def _place_music_wave(self) -> None:
+    def _place_music_wave(self, *, force: bool = False) -> None:
         if not self.music_wave_win or not self.music_wave_win.winfo_exists():
             return
         pad = MUSIC_WAVE_PAD
         display_y = self.y + self.click_bounce_offset
-        self.music_wave_win.geometry(f"+{self.x - pad}+{display_y - pad}")
-        self._lift_pet_above_bg_fx()
+        sig = (int(self.x - pad), int(display_y - pad))
+        if not force and sig == getattr(self, "_music_wave_place_sig", None):
+            return
+        self._music_wave_place_sig = sig
+        self.music_wave_win.geometry(f"+{sig[0]}+{sig[1]}")
+        # 偶尔抬层即可，每帧 lift 很吃性能
+        self._music_wave_lift_counter = int(getattr(self, "_music_wave_lift_counter", 0) or 0) + 1
+        if force or self._music_wave_lift_counter >= 8:
+            self._music_wave_lift_counter = 0
+            self._lift_pet_above_bg_fx()
+
+    def _sample_music_visual_beat(self) -> float:
+        beat = float(getattr(self, "_music_beat_cache", 0.7) or 0.7)
+        try:
+            import pygame
+
+            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                pos = pygame.mixer.music.get_pos()
+                if pos >= 0:
+                    beat = _music_visual_beat(self._current_bg_music_track_id(), pos)
+        except Exception:
+            pass
+        self._music_beat_cache = beat
+        return beat
 
     def _animate_music_wave(self) -> None:
         if not self.music_wave_canvas or not self.music_sprite_mode:
@@ -10217,16 +10810,7 @@ class DesktopPet:
             return
         pad = MUSIC_WAVE_PAD
         size = self.display_size + pad * 2
-        beat = 1.0
-        try:
-            import pygame
-
-            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
-                pos = pygame.mixer.music.get_pos()
-                if pos >= 0:
-                    beat = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(pos * 0.014))
-        except Exception:
-            pass
+        beat = self._sample_music_visual_beat()
         _draw_music_wave(
             self.music_wave_canvas,
             size,
@@ -10234,6 +10818,7 @@ class DesktopPet:
             self.music_wave_phase,
             beat=beat,
             colors=self._current_music_wave_colors(),
+            lite=False,
         )
         self.music_wave_phase += 1
         self._place_music_wave()
@@ -10258,11 +10843,60 @@ class DesktopPet:
         items.extend(
             [
                 ("日记", self._open_diary_manager),
+                ("成就", self._open_achievements),
                 ("日程提醒", self._open_schedule_manager),
                 ("天气预报", self._open_weather_forecast),
             ]
         )
         self._show_sub_menu(items, offset_x=120)
+
+    def _open_achievements(self) -> None:
+        self._hide_main_menu()
+        old = self.achievements_win
+        if old and old.winfo_exists():
+            old.lift()
+            return
+        win = tk.Toplevel(self.root)
+        self.achievements_win = win
+        win.title("成就")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        _, frame = _pack_fixed_scroll_panel(win, width=360, height=420)
+        tk.Label(frame, text="成就", font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(anchor=tk.W, pady=(0, 6))
+        unlocked = self.achievements.get("unlocked") or {}
+        got = sum(1 for a in ACHIEVEMENT_DEFS if a["id"] in unlocked)
+        tk.Label(
+            frame,
+            text=f"已解锁 {got}/{len(ACHIEVEMENT_DEFS)}",
+            font=("Courier New", 9),
+            fg="#8899aa",
+            bg=MENU_BG,
+        ).pack(anchor=tk.W, pady=(0, 8))
+        for ach in ACHIEVEMENT_DEFS:
+            done = ach["id"] in unlocked
+            row_bg = "#1e2838" if done else "#161822"
+            row = tk.Frame(frame, bg=row_bg, padx=6, pady=5)
+            row.pack(fill=tk.X, pady=2)
+            mark = "★" if done else "·"
+            fg = "#ffcc66" if done else "#667788"
+            tk.Label(row, text=mark, font=PIXEL_FONT, fg=fg, bg=row_bg, width=2).pack(side=tk.LEFT)
+            col = tk.Frame(row, bg=row_bg)
+            col.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            tk.Label(col, text=ach["title"], font=PIXEL_FONT, fg=THEME_PINK if done else "#99aabb", bg=row_bg).pack(
+                anchor=tk.W
+            )
+            tk.Label(col, text=ach["desc"], font=("Courier New", 9), fg="#8899aa", bg=row_bg, wraplength=280).pack(
+                anchor=tk.W
+            )
+            if done:
+                tk.Label(
+                    col,
+                    text=f"解锁于 {unlocked.get(ach['id'], '')}",
+                    font=("Courier New", 8),
+                    fg="#667788",
+                    bg=row_bg,
+                ).pack(anchor=tk.W)
+        self._place_panel_popup(win)
 
     def _show_pet_id(self) -> None:
         self._hide_main_menu()
@@ -13331,6 +13965,7 @@ class DesktopPet:
         self.music_config = {
             "play_mode": "list",
             "playlist": _default_full_music_playlist(),
+            "playlist_folders": _default_music_playlist_folders(),
             "playlist_user_set": False,
             "music_volume": 70,
             "volume": 70,
@@ -13339,6 +13974,10 @@ class DesktopPet:
             "muted": False,
         }
         _save_music_config(self.music_config)
+        self.music_affinity = {d["id"]: 0.0 for d in MUSIC_CHAR_DEFS}
+        _save_music_affinity(self.music_affinity)
+        self.achievements = {"unlocked": {}, "stats": {"listen_seconds": 0.0, "used_char_filter": False}}
+        _save_achievements(self.achievements)
         self.app_config = {
             "font_size": 12,
             "display_size": DEFAULT_SIZE,
@@ -13441,8 +14080,14 @@ class DesktopPet:
         self.backpack_count_label = None
         self.backpack_hint_label = None
         self.backpack_section_frame = None
+        self.panel_affinity_section = None
+        self.panel_affinity_content = None
+        self.panel_affinity_header = None
+        self.panel_affinity_hint = None
+        self.panel_affinity_rows = {}
         self._panel_backpack_sig = None
         self.panel_backpack_open = False
+        self.panel_affinity_open = True
         self._panel_border_size_sig = None
         self._panel_sticky_pos = None
         self._panel_reposition_ms = 0
@@ -13617,6 +14262,42 @@ class DesktopPet:
         self.mood_label = tk.Label(mood_col, text="", font=PIXEL_FONT, fg=MENU_FG, bg=panel_bg)
         self.mood_label.pack(anchor=tk.W, pady=(2, 0))
 
+        # 音乐人物好感：彩色像素小心心 + 无上限进度条
+        self.panel_affinity_open = True
+        self.panel_affinity_section = tk.Frame(frame, bg=panel_bg)
+        self.panel_affinity_section.pack(anchor=tk.W, pady=(6, 0), fill=tk.X)
+        aff_head = tk.Frame(self.panel_affinity_section, bg=PANEL_ITEM_BG, padx=6, pady=3, cursor="hand2")
+        aff_head.pack(anchor=tk.W, fill=tk.X)
+        self.panel_affinity_header = aff_head
+        tk.Label(aff_head, text="好感", font=PIXEL_FONT, fg=THEME_PINK, bg=PANEL_ITEM_BG, cursor="hand2").pack(
+            side=tk.LEFT
+        )
+        self.panel_affinity_hint = tk.Label(
+            aff_head, text="▼", font=PIXEL_FONT, fg="#888888", bg=PANEL_ITEM_BG, cursor="hand2"
+        )
+        self.panel_affinity_hint.pack(side=tk.RIGHT)
+        self.panel_affinity_content = tk.Frame(self.panel_affinity_section, bg=panel_bg)
+        self.panel_affinity_content.pack(anchor=tk.W, fill=tk.X, pady=(3, 0))
+        self.panel_affinity_rows = {}
+        for ch in _music_char_defs_runtime():
+            color = _music_char_color(ch)
+            row = tk.Frame(self.panel_affinity_content, bg=panel_bg)
+            row.pack(fill=tk.X, pady=1)
+            heart = tk.Canvas(row, width=16, height=16, bg=panel_bg, highlightthickness=0)
+            heart.pack(side=tk.LEFT, padx=(0, 4))
+            _draw_pixel_heart(heart, 2, 2, px=2, color=color)
+            col = tk.Frame(row, bg=panel_bg)
+            col.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            bar = tk.Canvas(col, width=PANEL_BAR_W, height=PANEL_BAR_H - 2, bg=panel_bg, highlightthickness=0)
+            bar.pack(anchor=tk.W)
+            lbl = tk.Label(col, text="", font=("Courier New", 9), fg=color, bg=panel_bg)
+            lbl.pack(anchor=tk.W)
+            self.panel_affinity_rows[ch["id"]] = {"heart": heart, "bar": bar, "label": lbl, "color": color, "name": ch["label"]}
+        for widget in (aff_head, *aff_head.winfo_children()):
+            widget.bind("<Button-1>", self._toggle_panel_affinity, add="+")
+            widget.configure(cursor="hand2")
+        self._wire_panel_auto_hide(aff_head)
+
         bag_bg = PANEL_ITEM_BG
         self.panel_backpack_open = False
         self.backpack_section_frame = tk.Frame(frame, bg=panel_bg)
@@ -13784,6 +14465,42 @@ class DesktopPet:
         self._set_panel_backpack_open(not self.panel_backpack_open)
         self._bump_panel_auto_hide()
 
+    def _toggle_panel_affinity(self, _event=None) -> None:
+        if not (self.panel_win and self.panel_win.winfo_exists()):
+            return
+        self.panel_affinity_open = not bool(getattr(self, "panel_affinity_open", True))
+        content = getattr(self, "panel_affinity_content", None)
+        hint = getattr(self, "panel_affinity_hint", None)
+        if content and content.winfo_exists():
+            if self.panel_affinity_open:
+                content.pack(anchor=tk.W, fill=tk.X, pady=(3, 0))
+            else:
+                content.pack_forget()
+        if hint and hint.winfo_exists():
+            hint.config(text="▼" if self.panel_affinity_open else "▶")
+        self._schedule_panel_border_layout()
+        self._bump_panel_auto_hide()
+
+    def _refresh_panel_affinity(self) -> None:
+        rows = getattr(self, "panel_affinity_rows", None) or {}
+        if not rows:
+            return
+        for ch in _music_char_defs_runtime():
+            row = rows.get(ch["id"])
+            if not row:
+                continue
+            bar = row.get("bar")
+            lbl = row.get("label")
+            if not bar or not bar.winfo_exists():
+                continue
+            pts = float(self.music_affinity.get(ch["id"], 0) or 0)
+            color = row.get("color") or _music_char_color(ch)
+            _draw_affinity_panel_bar(bar, pts, color, width=PANEL_BAR_W, height=PANEL_BAR_H - 2)
+            if lbl and lbl.winfo_exists():
+                lv = _affinity_level(pts)
+                pct = _affinity_bar_pct(pts)
+                lbl.config(text=f"{ch['label']}  Lv.{lv}  {pct}%  ({int(pts)})", fg=color)
+
     def _refresh_panel_stats(self) -> None:
         if self.stamina_icon_canvas and self.stamina_icon_canvas.winfo_exists():
             _draw_stamina_pixel_icon(self.stamina_icon_canvas, PANEL_STAT_ICON)
@@ -13837,6 +14554,7 @@ class DesktopPet:
         if not self.panel_win or not self.panel_win.winfo_exists():
             return
         self._refresh_panel_stats()
+        self._refresh_panel_affinity()
         self._update_panel_backpack_header()
         if self.panel_backpack_open and self.backpack_grid and self.backpack_grid.winfo_exists():
             sig = self._food_backpack_signature()
@@ -14526,6 +15244,10 @@ class DesktopPet:
         elif game_mode:
             step = MINI_PET_GAME_FOLLOW_STEP
             follow_ms = MINI_PET_GAME_FOLLOW_MS
+        elif self.music_sprite_mode:
+            # 音乐模式降频跟随，减轻与光圈抢主线程
+            step = MINI_PET_FOLLOW_STEP
+            follow_ms = max(70, MINI_PET_FOLLOW_MS * 2)
         else:
             step = MINI_PET_FOLLOW_STEP
             follow_ms = MINI_PET_FOLLOW_MS
@@ -14819,16 +15541,7 @@ class DesktopPet:
             return
         pad = entry.get("wave_pad", MUSIC_WAVE_MINI_PAD)
         size = entry["size"] + pad * 2
-        beat = 1.0
-        try:
-            import pygame
-
-            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
-                pos = pygame.mixer.music.get_pos()
-                if pos >= 0:
-                    beat = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(pos * 0.014))
-        except Exception:
-            pass
+        beat = float(getattr(self, "_music_beat_cache", 0.7) or 0.7)
         _draw_music_wave(
             canvas,
             size,
@@ -14836,11 +15549,12 @@ class DesktopPet:
             entry.get("wave_phase", 0),
             beat=beat,
             colors=self._current_music_wave_colors(),
+            lite=True,
         )
         entry["wave_phase"] = entry.get("wave_phase", 0) + 1
         self._place_mini_pet_music_wave(entry)
         entry["wave_job"] = self.root.after(
-            MUSIC_WAVE_MS, lambda e=entry: self._animate_mini_pet_music_wave(e)
+            MUSIC_WAVE_MINI_MS, lambda e=entry: self._animate_mini_pet_music_wave(e)
         )
 
     def _sync_mini_pet_music_waves(self) -> None:
@@ -17152,6 +17866,7 @@ class DesktopPet:
     def _pause_bg_music_for_call(self) -> None:
         if self.bg_music_playing:
             self.bg_music_paused_for_call = True
+            self._cancel_affinity_tick()
             try:
                 import pygame
 
