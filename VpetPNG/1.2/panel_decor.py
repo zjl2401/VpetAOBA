@@ -1,6 +1,7 @@
 """像素风 UI 装饰：Vpetsign 素材 + 蓝粉黑白配色。"""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageTk
@@ -17,6 +18,8 @@ THEME_ITEM_BG = "#181f34"
 _VPETSIGN_DESKTOP = Path(r"C:\Users\36255\Desktop\Vpetsign")
 _SIGN_IMG_CACHE: dict[tuple[str, int, int], Image.Image] = {}
 _SIGN_PHOTO_CACHE: dict[tuple[str, int, int], ImageTk.PhotoImage] = {}
+_SIGN_FILE_LIST_CACHE: dict[str, list[Path]] = {}
+_TRIMMED_SIGN_CACHE: dict[str, Image.Image] = {}
 
 
 def resolve_signs_dir(bundle_dir: Path) -> Path:
@@ -24,13 +27,19 @@ def resolve_signs_dir(bundle_dir: Path) -> Path:
 
 
 def _list_sign_files(signs_dir: Path) -> list[Path]:
+    key = str(signs_dir.resolve()) if signs_dir.exists() else str(signs_dir)
+    cached = _SIGN_FILE_LIST_CACHE.get(key)
+    if cached is not None:
+        return cached
+    files: list[Path] = []
     if signs_dir.is_dir():
         pngs = sorted(signs_dir.glob("*.png"))
         if pngs:
-            return pngs
-    if _VPETSIGN_DESKTOP.is_dir():
-        return sorted(_VPETSIGN_DESKTOP.glob("*.jpg"))
-    return []
+            files = pngs
+    if not files and _VPETSIGN_DESKTOP.is_dir():
+        files = sorted(_VPETSIGN_DESKTOP.glob("*.jpg"))
+    _SIGN_FILE_LIST_CACHE[key] = files
+    return files
 
 
 def load_sign_image(signs_dir: Path, index: int) -> Image.Image | None:
@@ -39,9 +48,15 @@ def load_sign_image(signs_dir: Path, index: int) -> Image.Image | None:
         return None
     idx = max(0, min(len(files) - 1, int(index)))
     path = files[idx]
+    path_key = str(path.resolve()) if path.exists() else str(path)
+    cached = _TRIMMED_SIGN_CACHE.get(path_key)
+    if cached is not None:
+        return cached
     try:
         img = Image.open(path).convert("RGBA")
-        return _trim_sign_alpha(img)
+        img = _trim_sign_alpha(img)
+        _TRIMMED_SIGN_CACHE[path_key] = img
+        return img
     except Exception:
         return None
 
@@ -219,7 +234,7 @@ def menu_glyph_photo(label: str, size: int = 14) -> ImageTk.PhotoImage:
     return photo
 
 
-def play_pixel_click_burst(root, anchor_widget, *, bg: str = THEME_BLACK) -> None:
+def play_pixel_click_burst(root, anchor_widget) -> None:
     """在按钮旁弹出短促像素粒子散开动画（蓝粉黑白）。"""
     import tkinter as tk
 
@@ -252,20 +267,17 @@ def play_pixel_click_burst(root, anchor_widget, *, bg: str = THEME_BLACK) -> Non
 
     particles = []
     for i, col in enumerate(_GLYPH_COLORS * 2):
-        ang = (i / 10.0) * 6.28318
+        ang = (i / 10.0) * math.tau
         particles.append(
             {
                 "x": float(cx),
                 "y": float(cy),
-                "vx": 1.6 * (1 if i % 2 == 0 else -1) * (0.6 + (i % 3) * 0.35) * (1 if i < 5 else -0.4),
-                "vy": -2.2 - (i % 4) * 0.35,
+                "vx": 2.4 * math.cos(ang),
+                "vy": 2.4 * math.sin(ang),
                 "col": col,
                 "life": 10 + (i % 4),
-                "ang": ang,
             }
         )
-        particles[-1]["vx"] = 2.4 * __import__("math").cos(ang)
-        particles[-1]["vy"] = 2.4 * __import__("math").sin(ang)
 
     frame = {"n": 0}
 

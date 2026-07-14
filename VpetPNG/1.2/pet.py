@@ -36,8 +36,10 @@ from panel_decor import (
     THEME_PINK,
     decorate_panel_border,
     draw_pixel_divider,
+    menu_glyph_photo,
     pack_menu_chrome,
     pack_panel_accent_bar,
+    play_pixel_click_burst,
     resolve_signs_dir,
     sign_photo,
 )
@@ -256,6 +258,9 @@ SPEECH_BORDER2_TEXT_WRAP = 420
 SPEECH_TEXT_INNER_ALPHA = 1.0
 SPEECH_TEXT_BG = THEME_PANEL_INNER
 _SPEECH_BORDER2_BASE: Image.Image | None = None
+_SPEECH_BORDER2_COMPOSE_CACHE: dict[tuple[int, int], Image.Image] = {}
+_PANEL_BORDER_COMPOSE_CACHE: dict[tuple[int, int], Image.Image] = {}
+_WAV_DURATION_CACHE: dict[tuple[str, int], int] = {}
 MUSIC_PLATE_ICON_PX = 56
 MUSIC_PLATE_INNER_RATIO = 0.70
 MUSIC_PLATE_INNER_ALPHA = 0.72  # 中间图标略降不透明度，突出边框
@@ -390,8 +395,13 @@ def _compose_speech_border2(target_w: int, target_h: int) -> Image.Image | None:
     src_w, src_h = base.size
     target_w = max(SPEECH_BORDER2_MIN_W, int(target_w))
     target_h = max(SPEECH_BORDER2_MIN_H, int(target_h))
+    key = (target_w, target_h)
+    cached = _SPEECH_BORDER2_COMPOSE_CACHE.get(key)
+    if cached is not None:
+        return cached
     scale = target_h / max(1, src_h)
-    scaled = _strip_border2_outer_white(base.resize((max(1, int(src_w * scale)), target_h), Image.NEAREST))
+    # base 已去白边；NEAREST 缩放不重新引入贴边白，避免重复 flood-fill
+    scaled = base.resize((max(1, int(src_w * scale)), target_h), Image.NEAREST)
     scaled_w = scaled.size[0]
     left = min(int(SPEECH_BORDER2_SRC_LEFT * scale), max(1, scaled_w // 3))
     right = min(int(SPEECH_BORDER2_SRC_RIGHT * scale), max(1, scaled_w // 4))
@@ -407,7 +417,6 @@ def _compose_speech_border2(target_w: int, target_h: int) -> Image.Image | None:
     out.paste(left_cap, (0, 0), left_cap)
     out.paste(mid, (left_cap.width, 0), mid)
     out.paste(right_cap, (target_w - right_cap.width, 0), right_cap)
-    scale = target_h / max(1, src_h)
     pad_l, pad_t, pad_r, pad_b = _speech_border2_caps(scale)
     inner_w = max(1, target_w - pad_l - pad_r)
     inner_h = max(1, target_h - pad_t - pad_b)
@@ -417,7 +426,10 @@ def _compose_speech_border2(target_w: int, target_h: int) -> Image.Image | None:
         (0, 0, 0, int(255 * SPEECH_TEXT_INNER_ALPHA)),
     )
     out.alpha_composite(overlay, (pad_l, pad_t))
-    return _strip_border2_outer_white(out)
+    if len(_SPEECH_BORDER2_COMPOSE_CACHE) > 48:
+        _SPEECH_BORDER2_COMPOSE_CACHE.clear()
+    _SPEECH_BORDER2_COMPOSE_CACHE[key] = out
+    return out
 
 
 def _strip_border_outer_black(img: Image.Image) -> Image.Image:
@@ -503,6 +515,10 @@ def _panel_border_corner_px(out_w: int = 0, out_h: int = 0) -> int:
 
 
 def _compose_panel_border(target_w: int, target_h: int) -> Image.Image | None:
+    key = (int(target_w), int(target_h))
+    cached = _PANEL_BORDER_COMPOSE_CACHE.get(key)
+    if cached is not None:
+        return cached
     base = _panel_border_base_image()
     if base is None:
         return None
@@ -517,7 +533,11 @@ def _compose_panel_border(target_w: int, target_h: int) -> Image.Image | None:
     )
     out.alpha_composite(overlay, (corner, corner))
     out = decorate_panel_border(out, corner, resolve_signs_dir(BUNDLE_DIR))
-    return _remove_green(out)
+    out = _remove_green(out)
+    if len(_PANEL_BORDER_COMPOSE_CACHE) > 24:
+        _PANEL_BORDER_COMPOSE_CACHE.clear()
+    _PANEL_BORDER_COMPOSE_CACHE[key] = out
+    return out
 
 
 def _plate_border_image(size: int) -> Image.Image | None:
@@ -980,18 +1000,18 @@ TYPING_MOOD_FILES: dict[str, str] = {
     "S": "like.jpg",
 }
 MULTI_CLICK_WINDOW_MS = 850
-SIZE_LOAD_ANIM_MS = 30
+SIZE_LOAD_ANIM_MS = 40
 SIZE_LOAD_MIN_MS = 72
 SIZE_LOAD_MIN_CACHED_MS = 44
 COMPANION_LOAD_MIN_MS = 72
 COMPANION_LOAD_MIN_CACHED_MS = 44
-STARTUP_ANIM_MS = 45
+STARTUP_ANIM_MS = 50
 STARTUP_MIN_MS = 320
 WAIT_HINT_DEFAULT = "请耐心等待…"
 WAIT_HINT_TICK_MS = 500
-SPRITE_BATCH_SIZE = 12
-SPRITE_BATCH_MS = 8
-UI_BUSY_LAG_THRESHOLD_MS = 500
+SPRITE_BATCH_SIZE = 16
+SPRITE_BATCH_MS = 6
+UI_BUSY_LAG_THRESHOLD_MS = 800
 IDLE_WATCHDOG_MS = 5000
 FOOD_DRAG_ICON = 40
 FOOD_DROP_MS = 480
@@ -1361,7 +1381,7 @@ FIRST_PLAY_GUIDES: dict[str, dict] = {
             "· 按键：D  F  J  K（左→右四轨；点一下游戏窗口再按）\n"
             "· 短音：到线时点按；长音：到线时长按，尾部松键\n"
             "· 判定：Perfect / Great / Good / Miss\n"
-            "· 进入前可在「游戏设置」调流速/谱面；局内设置会暂停游戏\n"
+            "· 进入前可在「游戏设置」调流速/谱面/自动帮打；局内设置会暂停游戏\n"
             "· 按准确率评级 D~S，界面有进度条\n"
             "· 曲子来自 bundled/Vpetmusic 内置曲库（默认 RADICAL MAT，可换曲）\n"
             "· 开局可选「全曲」或「90 秒」\n"
@@ -1460,8 +1480,9 @@ SELECT_ACTIONS: dict[str, tuple[str, ...]] = {
     "call": ("call1.jpg", "call2.jpg"),
 }
 
-# 互动「是/否」「判断」精灵保留绿色底，不做绿幕抠图
-SKIP_GREEN_KEY_FILENAMES = frozenset({"yes.jpg", "no.jpg"})
+# 互动「否」保留绿色底不做抠图；「是」只抠外圈绿幕，不动图内绿色细节
+SKIP_GREEN_KEY_FILENAMES = frozenset({"no.jpg"})
+OUTER_LIME_KEY_FILENAMES = frozenset({"yes.jpg"})
 
 CALL_TEXT = "你好，这里是旧货店 平凡，\n谢谢你的来电"
 HI_TEXT = "你好呀！今天也要加油哦~"
@@ -2026,7 +2047,11 @@ def _get_processed_canvas(
     img = _cap_source_image(_open_asset_image(filename), display_size)
     if flip:
         img = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-    skip_green = filename.lower() in SKIP_GREEN_KEY_FILENAMES
+    name = filename.lower()
+    skip_green = name in SKIP_GREEN_KEY_FILENAMES
+    if name in OUTER_LIME_KEY_FILENAMES:
+        img = _remove_outer_lime_green(img)
+        skip_green = True
     canvas = _to_fixed_canvas(
         img, display_size, reference_scale=reference_scale, skip_green_removal=skip_green
     )
@@ -2038,6 +2063,66 @@ def _is_chroma_green(r: int, g: int, b: int) -> bool:
     if g > 200 and r < 90 and b < 90:
         return True
     return g > 100 and g >= r + 15 and g >= b + 25
+
+
+def _is_outer_lime_screen(r: int, g: int, b: int) -> bool:
+    """yes.jpg 外圈绿幕约 (157,216,0)；比通用绿幕抠图更紧，避免伤衣服/牌子上的绿。"""
+    return g > 170 and b < 45 and 90 < r < 210 and (g - r) > 20 and (g - b) > 120
+
+
+def _remove_outer_lime_green(img: Image.Image) -> Image.Image:
+    """只抠与画面边缘连通的绿幕底，保留主体内部绿色像素。"""
+    rgba = img.convert("RGBA")
+    try:
+        import numpy as np
+        from collections import deque
+
+        arr = np.asarray(rgba, dtype=np.uint8).copy()
+        if arr.ndim != 3 or arr.shape[2] < 4:
+            raise ValueError("unexpected RGBA shape")
+        r = arr[..., 0].astype(np.int16)
+        g = arr[..., 1].astype(np.int16)
+        b = arr[..., 2].astype(np.int16)
+        lime = (
+            (g > 170)
+            & (b < 45)
+            & (r > 90)
+            & (r < 210)
+            & ((g - r) > 20)
+            & ((g - b) > 120)
+        )
+        h, w = lime.shape
+        vis = np.zeros((h, w), dtype=bool)
+        q: deque[tuple[int, int]] = deque()
+        for x in range(w):
+            if lime[0, x] and not vis[0, x]:
+                vis[0, x] = True
+                q.append((0, x))
+            if lime[h - 1, x] and not vis[h - 1, x]:
+                vis[h - 1, x] = True
+                q.append((h - 1, x))
+        for y in range(h):
+            if lime[y, 0] and not vis[y, 0]:
+                vis[y, 0] = True
+                q.append((y, 0))
+            if lime[y, w - 1] and not vis[y, w - 1]:
+                vis[y, w - 1] = True
+                q.append((y, w - 1))
+        while q:
+            y, x = q.popleft()
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                ny, nx = y + dy, x + dx
+                if 0 <= ny < h and 0 <= nx < w and lime[ny, nx] and not vis[ny, nx]:
+                    vis[ny, nx] = True
+                    q.append((ny, nx))
+        arr[..., 3] = np.where(vis, 0, arr[..., 3])
+        return Image.fromarray(arr, "RGBA")
+    except Exception:
+        data = list(rgba.getdata())
+        rgba.putdata(
+            [(r, g, b, 0) if _is_outer_lime_screen(r, g, b) else (r, g, b, a) for r, g, b, a in data]
+        )
+        return rgba
 
 
 def _remove_green(img: Image.Image) -> Image.Image:
@@ -2383,6 +2468,7 @@ def _run_pixel_block_dissolve_animation(
     frames: int = PIXEL_BLOCK_DISSOLVE_FRAMES,
     palette: tuple[str, ...] | None = None,
     lively: bool = True,
+    total_ms: int | None = None,
 ) -> None:
     try:
         block_size, specs, style = _build_pixel_block_specs(img, size, palette=palette, lively=lively)
@@ -2390,9 +2476,16 @@ def _run_pixel_block_dissolve_animation(
         if on_done:
             on_done()
         return
-    # 每场随机时长与帧数，避免观感雷同
-    frames = max(20, min(42, frames + random.randint(-4, 6)))
-    ms = max(18, min(38, ms + random.randint(-5, 4)))
+    if total_ms is not None and int(total_ms) > 0:
+        # 与语音同步：固定落在 total_ms 内播完，不做随机抖动
+        frames = max(20, min(56, int(frames)))
+        ms = max(10, int(total_ms) // frames)
+        frames = max(16, min(64, int(total_ms) // ms))
+        ms = max(10, int(total_ms) // frames)
+    else:
+        # 每场随机时长与帧数，避免观感雷同
+        frames = max(20, min(42, frames + random.randint(-4, 6)))
+        ms = max(18, min(38, ms + random.randint(-5, 4)))
     frame = {"n": 0}
 
     def tick() -> None:
@@ -2640,10 +2733,19 @@ def _ensure_audio_wav(
 
 def _get_wav_duration_ms(wav_path: Path) -> int:
     try:
+        st = wav_path.stat()
+        key = (str(wav_path), int(st.st_mtime_ns))
+        cached = _WAV_DURATION_CACHE.get(key)
+        if cached is not None:
+            return cached
         import wave
 
         with wave.open(str(wav_path), "rb") as wf:
-            return int(wf.getnframes() / wf.getframerate() * 1000)
+            ms = int(wf.getnframes() / max(1, wf.getframerate()) * 1000)
+        if len(_WAV_DURATION_CACHE) > 256:
+            _WAV_DURATION_CACHE.clear()
+        _WAV_DURATION_CACHE[key] = ms
+        return ms
     except Exception:
         return 0
 
@@ -3590,6 +3692,7 @@ def _load_app_config() -> dict:
         "difficulty": "中",
         "rhythm_speed": "中",
         "rhythm_chart_diff": "中",
+        "rhythm_auto": False,
         "weather_city": "北京",
         "seen_hints": {},
         "work_mode": {"show_props": True, "show_stack": True},
@@ -5393,7 +5496,7 @@ class DesktopPet:
             highlightthickness=0,
         )
         self._startup_canvas.place(x=0, y=0, width=self.display_size, height=self.display_size)
-        _draw_size_loading_frame(self._startup_canvas, self.display_size, 0, simple=True)
+        # 首帧留空，随后用与入场相同的像素聚拢加载
         self.sprites: SpriteSet | None = None
         self.root.update_idletasks()
         self.root.update()
@@ -5565,8 +5668,13 @@ class DesktopPet:
         self.voice_subtitle_hide_job: str | None = None
         self._voice_subtitle_active = False
         self._speech_from_voice = False
+        self._voice_subtitle_gen = 0
         self._voice_subtitle_last_shown_ms = 0
         self._voice_subtitle_hide_deadline_ms = 0
+        self._last_call_seq = None
+        self._exit_dissolve_started = False
+        self._finalize_close_done = False
+        self._force_quitting = False
         self.toast_win: tk.Toplevel | None = None
         self.countdown_win: tk.Toplevel | None = None
         self.countdown_label: tk.Label | None = None
@@ -5629,11 +5737,9 @@ class DesktopPet:
             stop_sfx=self._stop_active_sfx,
         )
         self._sync_voice_player()
-        if self._voice_enabled():
-            total, root_ok = self._voice_catalog_stats()
-            if root_ok and total <= 0:
-                self._reload_voice_catalog()
+        # 目录已在 VoicePlayer 后台扫描；这里不再主线程同步 rglob
         self.root.after(200, lambda: threading.Thread(target=_ensure_all_music_track_wavs, daemon=True).start())
+        self.root.after(800, self._warmup_type_sound_idle)
         self.music_settings_win: tk.Toplevel | None = None
         self.sound_settings_win: tk.Toplevel | None = None
         self.sleep_zzz_win: tk.Toplevel | None = None
@@ -5795,9 +5901,10 @@ class DesktopPet:
         tick_ms = self._difficulty_params()["stamina_tick_ms"]
         self.root.after(tick_ms, self._stamina_tick)
         self.root.after(REMINDER_CHECK_MS, self._reminder_tick)
+        self._startup_sprites_ready = False
         self._show_wait_hint("请耐心等待…正在启动")
         self._start_ui_heartbeat()
-        self._animate_startup_loading()
+        self._start_startup_entrance_loading()
         threading.Thread(target=self._startup_load_worker, daemon=True).start()
         self.root.after(80, self._preload_assets_idle)
         self.root.after(STARTUP_WATCHDOG_MS, self._startup_watchdog)
@@ -6019,11 +6126,46 @@ class DesktopPet:
                 self._sprite_cache[self.display_size] = self.sprites
                 self.label.configure(image=self.sprites.stand)
                 self.label.image = self.sprites.stand
-            self._play_startup_converge(on_done=self._complete_startup_after_sprites)
+            # 加载循环与入场同款；资源就绪后由入口循环收束，不再二次 converge
+            self._startup_sprites_ready = True
 
         self._build_sprite_set_batched(self.display_size, pack, on_sprite_ready)
 
+    def _start_startup_entrance_loading(self) -> None:
+        self._startup_loading_active = True
+        canvas = getattr(self, "_startup_canvas", None)
+        if not canvas or not canvas.winfo_exists():
+            return
+
+        def finish() -> None:
+            if self._closing or self._startup_ready:
+                return
+            self._startup_loading_active = False
+            if self._startup_anim_job:
+                try:
+                    self.root.after_cancel(self._startup_anim_job)
+                except Exception:
+                    pass
+                self._startup_anim_job = None
+            self._hide_startup_canvas()
+            if self.sprites is None:
+                return
+            self._complete_startup_after_sprites()
+
+        self._play_loading_entrance_loop(
+            canvas,
+            self.display_size,
+            image_filename="stand.jpg",
+            palette=VPET_ANIM_PALETTE,
+            active_check=lambda: bool(self._startup_loading_active) and not self._startup_ready,
+            ready_check=lambda: bool(getattr(self, "_startup_sprites_ready", False)),
+            on_done=finish,
+            min_ms=STARTUP_MIN_MS,
+            started_ms=self._startup_loading_start_ms,
+        )
+
     def _play_startup_converge(self, *, on_done=None) -> None:
+        # 兼容兜底：已并入启动入场循环，此处直接收尾
         self._startup_loading_active = False
         if self._startup_anim_job:
             try:
@@ -6031,28 +6173,12 @@ class DesktopPet:
             except Exception:
                 pass
             self._startup_anim_job = None
-        canvas = getattr(self, "_startup_canvas", None)
-        if not canvas or not canvas.winfo_exists():
-            if on_done:
-                on_done()
-            return
-        img = _sprite_rgba_image("stand.jpg", self.display_size)
+        self._hide_startup_canvas()
+        if on_done:
+            on_done()
 
-        def finish() -> None:
-            self._hide_startup_canvas()
-            if on_done:
-                on_done()
-
-        _run_pixel_block_dissolve_animation(
-            self.root,
-            canvas,
-            img,
-            self.display_size,
-            reverse=False,
-            on_done=finish,
-            palette=VPET_ANIM_PALETTE,
-            lively=True,
-        )
+    def _animate_startup_loading(self) -> None:
+        return
 
     def _startup_watchdog(self) -> None:
         """启动超时：跳过入场动画直接就绪，避免永久卡在「请耐心等待」。"""
@@ -6107,17 +6233,6 @@ class DesktopPet:
             self._startup_canvas.destroy()
         self._startup_canvas = None
 
-    def _animate_startup_loading(self) -> None:
-        if not self._startup_loading_active or self._closing:
-            return
-        if self._startup_canvas and self._startup_canvas.winfo_exists():
-            _draw_size_loading_frame(
-                self._startup_canvas, self.display_size, self._startup_loading_phase, simple=True, theme="vpet"
-            )
-        self._startup_loading_phase += 1
-        self._place_wait_hint()
-        self._startup_anim_job = self.root.after(STARTUP_ANIM_MS, self._animate_startup_loading)
-
     def _refresh_drag_handle(self) -> None:
         handle = _compute_drag_handle(self.display_size)
         self._drag_handle_cache[self.display_size] = handle
@@ -6152,7 +6267,7 @@ class DesktopPet:
             if idx >= len(pending) or self._closing:
                 return
             try:
-                self._ensure_sprite_cached(pending[idx])
+                self._ensure_sprite_cached(pending[idx], quiet=True)
             except Exception:
                 pass
             if idx + 1 < len(pending):
@@ -6181,18 +6296,17 @@ class DesktopPet:
 
         step(0)
 
-    def _on_sprite_pack_ready(self, size: int, pack: dict | None, on_done=None) -> None:
+    def _on_sprite_pack_ready(self, size: int, pack: dict | None, on_done=None, *, quiet: bool = False) -> None:
         if self._closing:
             self._sprite_building.discard(size)
-            self._exit_ui_busy()
+            if not quiet:
+                self._exit_ui_busy()
             return
         if pack is None:
-            try:
-                self._sprite_cache[size] = SpriteSet(size)
-            except Exception:
-                pass
+            # 失败时不阻塞主线程整包同步构建，稍后再试静默分批
             self._sprite_building.discard(size)
-            self._exit_ui_busy()
+            if not quiet:
+                self._exit_ui_busy()
             if on_done:
                 on_done()
             return
@@ -6200,13 +6314,14 @@ class DesktopPet:
         def finish(ss: SpriteSet) -> None:
             self._sprite_cache[size] = ss
             self._sprite_building.discard(size)
-            self._exit_ui_busy()
+            if not quiet:
+                self._exit_ui_busy()
             if on_done:
                 on_done()
 
         self._build_sprite_set_batched(size, pack, finish)
 
-    def _ensure_sprite_cached(self, size: int, *, on_done=None) -> None:
+    def _ensure_sprite_cached(self, size: int, *, on_done=None, quiet: bool = False) -> None:
         if size in self._sprite_cache:
             if on_done:
                 on_done()
@@ -6214,7 +6329,8 @@ class DesktopPet:
         if size in self._sprite_building:
             return
         self._sprite_building.add(size)
-        self._enter_ui_busy("请耐心等待…加载资源")
+        if not quiet:
+            self._enter_ui_busy("请耐心等待…加载资源")
 
         def worker() -> None:
             pack: dict | None = None
@@ -6222,7 +6338,7 @@ class DesktopPet:
                 pack = _build_sprite_pack(size)
             except Exception:
                 pack = None
-            self.root.after(0, lambda: self._on_sprite_pack_ready(size, pack, on_done))
+            self.root.after(0, lambda: self._on_sprite_pack_ready(size, pack, on_done, quiet=quiet))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -6354,7 +6470,13 @@ class DesktopPet:
             self._show_toast(f"语音已全部缓存（{ok}/{total}）", PIXEL_COLOR)
 
     def _play_scene_voice_vpet(
-        self, category: str, *, chain: bool = True, on_done=None, ignore_cooldown: bool = False
+        self,
+        category: str,
+        *,
+        chain: bool = True,
+        on_done=None,
+        ignore_cooldown: bool = False,
+        interrupt_busy: bool = False,
     ) -> bool:
         """专项场景语音（eat/sleep/call 等），优先级高于自由随机。"""
         if not self._voice_enabled():
@@ -6365,13 +6487,24 @@ class DesktopPet:
             on_done=on_done,
             priority=VOICE_PRIORITY_SCENE,
             ignore_cooldown=ignore_cooldown,
+            interrupt_busy=interrupt_busy,
         )
 
     def _addon_voice_vpet(
-        self, category: str, *, chain: bool = True, on_done=None, ignore_cooldown: bool = True
+        self,
+        category: str,
+        *,
+        chain: bool = True,
+        on_done=None,
+        ignore_cooldown: bool = True,
+        interrupt_busy: bool = False,
     ) -> bool:
         return self._play_scene_voice_vpet(
-            category, chain=chain, on_done=on_done, ignore_cooldown=ignore_cooldown
+            category,
+            chain=chain,
+            on_done=on_done,
+            ignore_cooldown=ignore_cooldown,
+            interrupt_busy=interrupt_busy,
         )
 
     def _play_ambient_voice_vpet(self, category: str, *, chain: bool = True) -> bool:
@@ -6440,9 +6573,28 @@ class DesktopPet:
             return False
         return bool(self.voice_player.catalog.vpet.get(category))
 
+    def _ensure_call_catalog(self) -> None:
+        """打电话前若异步目录尚未扫到 call，同步补扫一次，避免漏 ring。"""
+        if not self._voice_enabled():
+            return
+        call_clips = self.voice_player.catalog.vpet.get("call", [])
+        rings = [c for c in call_clips if c.is_ring]
+        body = [c for c in call_clips if not c.is_ring]
+        if rings and body:
+            return
+        try:
+            from voice_system import VoiceCatalog, VOICE_ROOT
+
+            fresh = VoiceCatalog.build(VOICE_ROOT)
+            if fresh.vpet.get("call"):
+                self.voice_player.catalog = fresh
+        except Exception:
+            pass
+
     def _call_voice_ready(self) -> bool:
         if not self._voice_enabled():
             return False
+        self._ensure_call_catalog()
         call_clips = self.voice_player.catalog.vpet.get("call", [])
         rings = [c for c in call_clips if c.is_ring]
         body = [c for c in call_clips if not c.is_ring]
@@ -6467,13 +6619,30 @@ class DesktopPet:
         dialog_fn,
         voice_available: bool | None = None,
     ) -> str:
-        """语音模式开启时优先播语音（自带标题文本框）；失败或关语音则对话框。"""
-        if voice_available is None:
-            voice_available = self._voice_enabled()
-        if voice_available and voice_fn():
-            return "voice"
+        """文本框规则：
+        - 关语音：只出动作/表情打字框（扁平 + 打字音）
+        - 开语音且有对应语音：在「语音+语音标题框」与「打字框+打字音」中随机抽一条
+        - 抽中语音失败时回落到打字框（动作/表情框必须保留可用）
+        """
+        can_voice = self._voice_enabled() and (
+            bool(voice_available) if voice_available is not None else True
+        )
+        if can_voice and random.random() < 0.5:
+            try:
+                if voice_fn():
+                    return "voice"
+            except Exception:
+                pass
         dialog_fn()
         return "dialog"
+
+    # 动作/表情名 → Vpet 语音目录（有则开语音时可与 banter 二选一）
+    _ACTION_VOICE_CATEGORY: dict[str, str] = {
+        "kick": "kick",
+        "eat": "eat",
+        "sleep": "sleep",
+        "work": "work",
+    }
 
     def _show_interact_banter_dialog(self, action: str, *, auto_hide_ms: int = 2400) -> None:
         lines = INTERACT_BANTER.get(action)
@@ -6481,7 +6650,13 @@ class DesktopPet:
             return
         if self.speech_dialog and self.speech_dialog.winfo_exists():
             return
-        self._show_speech_dialog(random.choice(lines), auto_hide_ms=auto_hide_ms)
+        # 动作/表情：扁平打字框（非 border5）+ 默认打字音效
+        self._show_speech_dialog(
+            random.choice(lines),
+            auto_hide_ms=auto_hide_ms,
+            typewriter_ms=TYPEWRITER_MS,
+            use_border5=False,
+        )
 
     def _trigger_sleep_banter(self) -> str:
         return self._trigger_voice_or_dialog(
@@ -6507,7 +6682,9 @@ class DesktopPet:
     def _trigger_work_banter(self) -> str:
         def dialog() -> None:
             text = random.choice(WORK_MODE_BANTER)
-            self._show_speech_dialog(text, auto_hide_ms=4200, typewriter_ms=TYPEWRITER_MS)
+            self._show_speech_dialog(
+                text, auto_hide_ms=4200, typewriter_ms=TYPEWRITER_MS, use_border5=False
+            )
 
         return self._trigger_voice_or_dialog(
             voice_fn=lambda: self._play_scene_voice_vpet("work", chain=False),
@@ -6545,7 +6722,7 @@ class DesktopPet:
         self._hide_voice_subtitle()
 
     def _cleanup_voice_subtitle_win(self, *, destroy: bool = False) -> None:
-        """仅销毁旧版独立语音字幕窗口（已改为复用扁平对话框）。"""
+        """隐藏或销毁独立语音字幕窗口。"""
         if self.voice_subtitle_hide_job:
             try:
                 self.root.after_cancel(self.voice_subtitle_hide_job)
@@ -6556,68 +6733,90 @@ class DesktopPet:
         if self.voice_subtitle_win and self.voice_subtitle_win.winfo_exists():
             if destroy:
                 self.voice_subtitle_win.destroy()
+                self.voice_subtitle_win = None
+                self.voice_subtitle_canvas = None
+                self.voice_subtitle_border_photo = None
+                self.voice_subtitle_label = None
             else:
                 try:
                     self.voice_subtitle_win.withdraw()
                 except Exception:
                     pass
-        self.voice_subtitle_win = None
-        self.voice_subtitle_canvas = None
-        self.voice_subtitle_border_photo = None
-        self.voice_subtitle_label = None
+        elif destroy:
+            self.voice_subtitle_win = None
+            self.voice_subtitle_canvas = None
+            self.voice_subtitle_border_photo = None
+            self.voice_subtitle_label = None
 
     def _hide_voice_subtitle(self, *, destroy: bool = False) -> None:
+        self._voice_subtitle_gen = int(getattr(self, "_voice_subtitle_gen", 0)) + 1
         self._voice_subtitle_active = False
-        if getattr(self, "_speech_from_voice", False) and self.speech_dialog and self.speech_dialog.winfo_exists():
+        # 旧路径曾把语音字幕挂在 speech_dialog，清理残留
+        if getattr(self, "_speech_from_voice", False):
             self._hide_speech_dialog()
         self._cleanup_voice_subtitle_win(destroy=destroy)
 
     def _ensure_voice_subtitle_win(self) -> None:
+        # 旧版 magenta+Canvas 窗在 Win32 上不可见，强制重建为 Frame/Label
         if self.voice_subtitle_win and self.voice_subtitle_win.winfo_exists():
-            return
+            if self.voice_subtitle_canvas is None and self.voice_subtitle_label and self.voice_subtitle_label.winfo_exists():
+                return
+            try:
+                self.voice_subtitle_win.destroy()
+            except Exception:
+                pass
+            self.voice_subtitle_win = None
+            self.voice_subtitle_canvas = None
+            self.voice_subtitle_label = None
+            self.voice_subtitle_border_photo = None
         win = tk.Toplevel(self.root)
         win.withdraw()
         win.overrideredirect(True)
         self._apply_window_layer(win)
-        win.configure(bg="magenta")
-        win.wm_attributes("-transparentcolor", "magenta")
-        canvas = tk.Canvas(
-            win,
-            bg="magenta",
-            highlightthickness=0,
-            borderwidth=0,
-        )
-        canvas.pack()
+        # 不用 magenta 透明色键：Win32 下 Canvas 绘制会被整窗抠透明，导致「听得见语音却看不见标题框」
+        win.configure(bg=SPEECH_TEXT_BG)
+        frame = tk.Frame(win, bg=SPEECH_TEXT_BG, highlightthickness=0, bd=0)
+        frame.pack(fill=tk.BOTH, expand=True)
+        accent = tk.Frame(frame, bg=THEME_PINK, height=3)
+        accent.pack(fill=tk.X, side=tk.TOP)
+        body = tk.Frame(frame, bg=SPEECH_TEXT_BG, highlightbackground=THEME_BLUE_DEEP, highlightthickness=1, bd=0)
+        body.pack(fill=tk.BOTH, expand=True)
         label = tk.Label(
-            win,
+            body,
             text="",
             font=PIXEL_FONT,
             fg=PIXEL_COLOR,
             bg=SPEECH_TEXT_BG,
             justify=tk.LEFT,
             anchor=tk.W,
+            padx=12,
+            pady=10,
         )
+        label.pack(fill=tk.BOTH, expand=True)
         self.voice_subtitle_win = win
-        self.voice_subtitle_canvas = canvas
+        self.voice_subtitle_canvas = None  # 语音框改用 Frame/Label，不用 Canvas
         self.voice_subtitle_label = label
         self.voice_subtitle_border_photo = None
+        self._voice_subtitle_frame = frame
 
-    def _voice_subtitle_label_content_size(self, text: str) -> tuple[int, int]:
+    def _layout_voice_subtitle(self, text: str) -> None:
+        """语音台词框：扁平像素底（Frame+Label），不使用 border5 / 透明 Canvas。"""
+        display = (text or "……").strip() or "……"
         label = self.voice_subtitle_label
-        if not label or not label.winfo_exists():
-            lines = text.split("\n") if text else [""]
-            max_line = max((len(line) for line in lines), default=1)
-            return max(80, max_line * 8), max(16, len(lines) * 14)
+        win = self.voice_subtitle_win
+        if not label or not label.winfo_exists() or not win or not win.winfo_exists():
+            return
         try:
-            label.config(text=text)
+            label.config(text=display, fg=PIXEL_COLOR, bg=SPEECH_TEXT_BG)
             label.update_idletasks()
         except Exception:
             pass
-        req_w = max(1, label.winfo_reqwidth())
-        req_h = max(1, label.winfo_reqheight())
-        act_w = label.winfo_width() if label.winfo_width() > 1 else 0
-        act_h = label.winfo_height() if label.winfo_height() > 1 else 0
-        return max(req_w, act_w), max(req_h, act_h)
+        try:
+            win.update_idletasks()
+        except Exception:
+            pass
+        if self._voice_subtitle_active:
+            self._place_speech_popup(win)
 
     def _paint_flat_text_box(
         self,
@@ -6626,9 +6825,9 @@ class DesktopPet:
         text: str,
         color: str,
         content_size_fn,
+        *,
+        paint_text_on_canvas: bool = False,
     ) -> None:
-        if label and label.winfo_exists():
-            label.config(text=text, fg=color, bg=SPEECH_TEXT_BG)
         content_w, content_h = content_size_fn(text)
         pad_x, pad_y = 12, 10
         accent_h = 3
@@ -6639,67 +6838,92 @@ class DesktopPet:
         canvas.create_rectangle(0, accent_h, target_w, target_h, fill=SPEECH_TEXT_BG, outline=THEME_BLUE_DEEP)
         canvas.create_rectangle(0, 0, target_w, accent_h, fill=THEME_PINK, outline="")
         canvas.create_rectangle(0, accent_h, target_w, accent_h + 1, fill=THEME_BLUE, outline="")
-        if label and label.winfo_exists():
-            canvas.create_window(
+        if paint_text_on_canvas or label is None or not label.winfo_exists():
+            canvas.create_text(
                 pad_x,
                 accent_h + pad_y,
-                window=label,
+                text=text,
+                fill=color,
+                font=PIXEL_FONT,
                 anchor=tk.NW,
-                width=content_w,
-                height=content_h,
+                width=max(80, content_w),
             )
-
-    def _layout_voice_subtitle(self, text: str) -> None:
-        """语音台词框：扁平像素底，不使用 border5。"""
-        if not self.voice_subtitle_canvas or not self.voice_subtitle_canvas.winfo_exists():
             return
-        self._paint_flat_text_box(
-            self.voice_subtitle_canvas,
-            self.voice_subtitle_label,
-            text,
-            PIXEL_COLOR,
-            self._voice_subtitle_label_content_size,
+        label.config(text=text, fg=color, bg=SPEECH_TEXT_BG)
+        canvas.create_window(
+            pad_x,
+            accent_h + pad_y,
+            window=label,
+            anchor=tk.NW,
+            width=content_w,
+            height=content_h,
         )
-        if self.voice_subtitle_win and self.voice_subtitle_win.winfo_exists():
-            self.voice_subtitle_win.update_idletasks()
-            if self._voice_subtitle_active:
-                self._place_speech_popup(
-                    self.voice_subtitle_win,
-                    stack_below=self._speech_stack_below_win(),
-                )
 
-    def _schedule_voice_subtitle_hide(self, duration_ms: int) -> None:
+    def _schedule_voice_subtitle_hide(self, duration_ms: int, *, gen: int | None = None) -> None:
         if self.voice_subtitle_hide_job:
             try:
                 self.root.after_cancel(self.voice_subtitle_hide_job)
             except Exception:
                 pass
             self.voice_subtitle_hide_job = None
-        hide_ms = max(600, int(duration_ms) + 350)
+        hide_ms = max(800, int(duration_ms))
+        expected = int(gen if gen is not None else getattr(self, "_voice_subtitle_gen", 0))
 
-        def _deadline_hide() -> None:
+        def _deadline_hide(tok: int = expected) -> None:
             self.voice_subtitle_hide_job = None
+            if tok != getattr(self, "_voice_subtitle_gen", 0):
+                return
             if self._voice_subtitle_active:
                 self._hide_voice_subtitle()
 
         self.voice_subtitle_hide_job = self.root.after(hide_ms, _deadline_hide)
 
     def _show_voice_subtitle(self, title: str, duration_ms: int) -> None:
-        """语音台词文本框：border2 边框；内容为标题（去数字/字母前缀）；时长 = 语音 + 1s。"""
+        """语音台词文本框：独立扁平窗（不用 border5）；时长 = 语音 + 1s。"""
         display = (title or "").strip()
         display = re.sub(r"^((?:\d+)|(?:[a-zA-Z]))(?:[\s._\-]+)?", "", display).strip()
         if not display:
-            # 无可用标题时仍给兜底，避免「有声无框」
             display = "……"
         hide_ms = max(800, int(duration_ms) + 1000)
-        # use_border5=True 走 border 合成路径；SPEECH_BORDER_STEM 已切到 border2
-        self._show_speech_dialog(
-            display,
-            auto_hide_ms=hide_ms,
-            instant=True,
-            use_border5=True,
-            from_voice=True,
-        )
+        gen = int(getattr(self, "_voice_subtitle_gen", 0)) + 1
+        self._voice_subtitle_gen = gen
+        # 与普通对话框互斥
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            self._speech_from_voice = False
+            self._hide_speech_dialog()
+        self._ensure_voice_subtitle_win()
+        self._voice_subtitle_active = True
+        self._layout_voice_subtitle(display)
+        win = self.voice_subtitle_win
+        if win and win.winfo_exists():
+            try:
+                # 语音标题必须压过桌宠立绘，短暂强制置顶
+                win.attributes("-topmost", True)
+            except Exception:
+                pass
+            self._place_speech_popup(win)
+            try:
+                win.deiconify()
+                win.lift()
+                win.update_idletasks()
+            except Exception:
+                pass
+
+            def _reassert(tok: int = gen) -> None:
+                if tok != getattr(self, "_voice_subtitle_gen", 0):
+                    return
+                if not self._voice_subtitle_active or not win.winfo_exists():
+                    return
+                try:
+                    self._place_speech_popup(win)
+                    win.deiconify()
+                    win.lift()
+                except Exception:
+                    pass
+
+            self.root.after(30, _reassert)
+            self.root.after(120, _reassert)
+        self._schedule_voice_subtitle_hide(hide_ms, gen=gen)
         self._schedule_pet_menu_follow()
 
     def _try_voice_free_random(self) -> bool:
@@ -6759,8 +6983,21 @@ class DesktopPet:
         total += sum(len(v) for v in cat.laimu.values())
         return total, VOICE_ROOT.exists()
 
+    def _warmup_type_sound_idle(self) -> None:
+        def worker() -> None:
+            try:
+                _resolve_type_cache_wav()
+            except Exception:
+                pass
+            try:
+                self.root.after(0, _get_type_sound)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _reload_voice_catalog(self) -> int:
-        self.voice_player.catalog = VoiceCatalog.build()
+        self.voice_player.reload_catalog_async()
         total, _ = self._voice_catalog_stats()
         return total
 
@@ -6815,6 +7052,39 @@ class DesktopPet:
         for win in self._iter_open_layer_windows():
             self._apply_window_layer(win)
 
+    def _set_voice_mode(self, enabled: bool) -> None:
+        self.app_config["voice_mode"] = bool(enabled)
+        _save_app_config(self.app_config)
+        if enabled:
+            root_ok = VOICE_ROOT.exists()
+            self._voice_preload_notify = True
+
+            def on_catalog() -> None:
+                total, _ = self._voice_catalog_stats()
+                if not root_ok:
+                    self._show_toast(f"语音模式已开启，但未找到目录：{VOICE_ROOT}", "#ff8866")
+                elif total <= 0:
+                    self._show_toast("语音模式已开启，但目录内未扫描到语音文件", "#ff8866")
+                else:
+                    self._show_toast(f"语音模式已开启（共 {total} 条），正在后台缓存全部语音…", PIXEL_COLOR)
+                self._sync_voice_player()
+
+            self.voice_player.reload_catalog_async(on_done=on_catalog)
+            self._show_toast("语音模式已开启，正在扫描语音…", PIXEL_COLOR)
+            self._sync_voice_player()
+        else:
+            self._sync_voice_player()
+            self._stop_voice_audio()
+            self._show_toast("语音模式已关闭", PIXEL_COLOR)
+        # 延迟刷新勾选，避免点选当下销毁窗口导致「按不了」
+        def _refresh() -> None:
+            if self.panel_settings_win and self.panel_settings_win.winfo_exists():
+                self.panel_settings_win.destroy()
+                self.panel_settings_win = None
+            self._open_panel_settings()
+
+        self.root.after(80, _refresh)
+
     def _set_display_layer(self, layer: str) -> None:
         layer = "bottom" if str(layer).lower() == "bottom" else "top"
         if self.app_config.get("display_layer") == layer:
@@ -6824,32 +7094,14 @@ class DesktopPet:
         self._apply_all_window_layers()
         label = "顶部（最上层）" if layer == "top" else "底部（靠后）"
         self._show_toast(f"显示层级：{label}", PIXEL_COLOR)
-        if self.panel_settings_win and self.panel_settings_win.winfo_exists():
-            self.panel_settings_win.destroy()
-            self.panel_settings_win = None
+
+        def _refresh() -> None:
+            if self.panel_settings_win and self.panel_settings_win.winfo_exists():
+                self.panel_settings_win.destroy()
+                self.panel_settings_win = None
             self._open_panel_settings()
 
-    def _set_voice_mode(self, enabled: bool) -> None:
-        self.app_config["voice_mode"] = bool(enabled)
-        _save_app_config(self.app_config)
-        if enabled:
-            total = self._reload_voice_catalog()
-            self._voice_preload_notify = True
-            root_ok = VOICE_ROOT.exists()
-            if not root_ok:
-                self._show_toast(f"语音模式已开启，但未找到目录：{VOICE_ROOT}", "#ff8866")
-            elif total <= 0:
-                self._show_toast(f"语音模式已开启，但目录内未扫描到语音文件", "#ff8866")
-            else:
-                self._show_toast(f"语音模式已开启（共 {total} 条），正在后台缓存全部语音…", PIXEL_COLOR)
-        self._sync_voice_player()
-        if not enabled:
-            self._stop_voice_audio()
-            self._show_toast("语音模式已关闭", PIXEL_COLOR)
-        if self.panel_settings_win and self.panel_settings_win.winfo_exists():
-            self.panel_settings_win.destroy()
-            self.panel_settings_win = None
-            self._open_panel_settings()
+        self.root.after(80, _refresh)
 
     def _preview_sfx_volume(self) -> None:
         sound = _get_type_sound()
@@ -7262,7 +7514,102 @@ class DesktopPet:
             rect = self._window_avoid_rect(win)
             if rect:
                 rects.append(rect)
+        # 桌宠/金目透明窗会吞点击，面板必须避开
+        pad = 8
+        rects.append(
+            (
+                self.x - pad,
+                self.y + self.click_bounce_offset - pad,
+                self.display_size + pad * 2,
+                self.display_size + pad * 2,
+            )
+        )
+        for entry in list(getattr(self, "mini_pets", []) or []):
+            try:
+                size = max(1, int(entry.get("size", 1)))
+                mx = int(entry.get("x", 0))
+                my = int(entry.get("y", 0)) + int(entry.get("bounce_offset", 0))
+                rects.append((mx - pad, my - pad, size + pad * 2, size + pad * 2))
+            except Exception:
+                continue
         return rects
+
+    def _interactive_panel_windows(self) -> list[tk.Toplevel]:
+        """需要保持在桌宠之上、可点击的设置/信息类面板。"""
+        attrs = (
+            "panel_settings_win",
+            "sound_settings_win",
+            "music_settings_win",
+            "panel_win",
+            "about_win",
+            "feedback_win",
+            "operation_guide_win",
+            "phonograph_win",
+            "diary_win",
+            "weather_win",
+            "gallery_win",
+            "ai_chat_win",
+            "schedule_win",
+            "leaderboard_win",
+            "rhythm_settings_win",
+        )
+        out: list[tk.Toplevel] = []
+        for name in attrs:
+            win = getattr(self, name, None)
+            if win is None:
+                continue
+            try:
+                if win.winfo_exists() and not self._win_is_withdrawn(win):
+                    out.append(win)
+            except Exception:
+                pass
+        return out
+
+    def _raise_interactive_panels(self) -> None:
+        for win in self._interactive_panel_windows():
+            try:
+                # 设置类面板强制置顶，不被桌宠/金目盖住
+                win.attributes("-topmost", True)
+                win.lift()
+            except Exception:
+                pass
+
+    def _place_panel_popup(self, win: tk.Toplevel | None) -> None:
+        if not win or not win.winfo_exists():
+            return
+        try:
+            win.update_idletasks()
+        except Exception:
+            pass
+        fixed = getattr(win, "_panel_fixed_size", None)
+        if isinstance(fixed, tuple) and len(fixed) == 2:
+            pw, ph = int(fixed[0]), int(fixed[1])
+        elif getattr(win, "_panel_full_size", False):
+            pw = max(int(win.winfo_reqwidth()), 220)
+            ph = max(int(win.winfo_reqheight()), 80)
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            pw = min(pw, max(280, sw - 40))
+            ph = min(ph, max(240, sh - 60))
+        else:
+            pw = max(win.winfo_reqwidth(), 220)
+            ph = max(win.winfo_reqheight(), 80)
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            max_w = min(PANEL_FIXED_W, max(280, sw - 80))
+            max_h = min(PANEL_FIXED_H, max(240, sh - 100))
+            if pw > max_w or ph > max_h:
+                pw, ph = _fit_panel_wh(win, min(pw, max_w), min(ph, max_h))
+        px, py = self._panel_popup_pos(pw, ph)
+        try:
+            win.geometry(f"{pw}x{ph}+{px}+{py}")
+        except Exception:
+            win.geometry(f"+{px}+{py}")
+        try:
+            win.attributes("-topmost", True)
+            win.lift()
+        except Exception:
+            pass
 
     def _main_menu_bottom_y(self) -> int | None:
         if not self.menu_bar or not self.menu_bar.winfo_exists():
@@ -7372,40 +7719,6 @@ class DesktopPet:
         ]
         x, y = self._best_popup_pos(candidates, w, h)
         win.geometry(f"+{x}+{y}")
-
-    def _place_panel_popup(self, win: tk.Toplevel | None) -> None:
-        if not win or not win.winfo_exists():
-            return
-        try:
-            win.update_idletasks()
-        except Exception:
-            pass
-        fixed = getattr(win, "_panel_fixed_size", None)
-        if isinstance(fixed, tuple) and len(fixed) == 2:
-            pw, ph = int(fixed[0]), int(fixed[1])
-        elif getattr(win, "_panel_full_size", False):
-            # 游戏游玩窗：按内容完整显示，仅受屏幕限制
-            pw = max(int(win.winfo_reqwidth()), 220)
-            ph = max(int(win.winfo_reqheight()), 80)
-            sw = self.root.winfo_screenwidth()
-            sh = self.root.winfo_screenheight()
-            pw = min(pw, max(280, sw - 40))
-            ph = min(ph, max(240, sh - 60))
-        else:
-            # 其它面板：固定壳，超出内容靠内部滚动
-            pw = max(win.winfo_reqwidth(), 220)
-            ph = max(win.winfo_reqheight(), 80)
-            sw = self.root.winfo_screenwidth()
-            sh = self.root.winfo_screenheight()
-            max_w = min(PANEL_FIXED_W, max(280, sw - 80))
-            max_h = min(PANEL_FIXED_H, max(240, sh - 100))
-            if pw > max_w or ph > max_h:
-                pw, ph = _fit_panel_wh(win, min(pw, max_w), min(ph, max_h))
-        px, py = self._panel_popup_pos(pw, ph)
-        try:
-            win.geometry(f"{pw}x{ph}+{px}+{py}")
-        except Exception:
-            win.geometry(f"+{px}+{py}")
 
     def _place_pet_attached_popup(self, win: tk.Toplevel | None, pref_x: int, pref_y: int) -> None:
         if not win or not win.winfo_exists():
@@ -7524,19 +7837,24 @@ class DesktopPet:
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         margin = POPUP_EDGE_MARGIN
+        # 动作/表情打字框、语音标题框都必须能看见；禁止因贴边/避让而 withdraw
         if not self._speech_popup_can_show(x, y, w, h, avoid_rects=avoid_rects):
-            if getattr(self, "_speech_from_voice", False):
-                x = max(margin, min(x, sw - w - margin))
-                y = max(margin, min(y, sh - h - margin))
-            else:
-                try:
-                    win.withdraw()
-                except Exception:
-                    pass
-                return False
+            gap = PET_SPEECH_GAP
+            candidates = [
+                (x, y),
+                (self.x + self.display_size // 2 - w // 2, self.y - h - gap),
+                (self.x + self.display_size + gap, self.y + self.display_size // 4),
+                (self.x - w - gap, self.y + self.display_size // 4),
+                (self.x + self.display_size // 2 - w // 2, self.y + self.display_size + gap),
+                (max(margin, (sw - w) // 2), max(margin, (sh - h) // 2)),
+            ]
+            x, y = self._best_popup_pos(candidates, w, h, avoid_rects=avoid_rects)
+            x = max(margin, min(x, sw - w - margin))
+            y = max(margin, min(y, sh - h - margin))
         win.geometry(f"+{x}+{y}")
         try:
             win.deiconify()
+            win.lift()
         except Exception:
             pass
         return True
@@ -7579,9 +7897,24 @@ class DesktopPet:
                 offset_x = getattr(self, "_sub_menu_offset_x", 0)
                 self._place_pet_attached_popup(self.sub_menu, self.x + offset_x, self._sub_menu_pref_y())
 
-        if speech_due and self.speech_dialog and self.speech_dialog.winfo_exists():
-            self._pet_speech_follow_ms = now_ms
-            self._place_speech_popup(self.speech_dialog)
+        if speech_due:
+            placed = False
+            if self.speech_dialog and self.speech_dialog.winfo_exists():
+                self._place_speech_popup(self.speech_dialog)
+                placed = True
+            if (
+                getattr(self, "_voice_subtitle_active", False)
+                and self.voice_subtitle_win
+                and self.voice_subtitle_win.winfo_exists()
+            ):
+                self._place_speech_popup(self.voice_subtitle_win)
+                try:
+                    self.voice_subtitle_win.lift()
+                except Exception:
+                    pass
+                placed = True
+            if placed:
+                self._pet_speech_follow_ms = now_ms
 
         if (self.menu_bar and self.menu_bar.winfo_exists()) or (
             self.sub_menu and self.sub_menu.winfo_exists()
@@ -7595,6 +7928,11 @@ class DesktopPet:
             (self.menu_bar and self.menu_bar.winfo_exists())
             or (self.sub_menu and self.sub_menu.winfo_exists())
             or (self.speech_dialog and self.speech_dialog.winfo_exists())
+            or (
+                getattr(self, "_voice_subtitle_active", False)
+                and self.voice_subtitle_win
+                and self.voice_subtitle_win.winfo_exists()
+            )
         ):
             return
 
@@ -7606,6 +7944,11 @@ class DesktopPet:
                 (self.menu_bar and self.menu_bar.winfo_exists())
                 or (self.sub_menu and self.sub_menu.winfo_exists())
                 or (self.speech_dialog and self.speech_dialog.winfo_exists())
+                or (
+                    getattr(self, "_voice_subtitle_active", False)
+                    and self.voice_subtitle_win
+                    and self.voice_subtitle_win.winfo_exists()
+                )
             ):
                 self._reposition_pet_attached_popups(force=False)
 
@@ -8070,7 +8413,7 @@ class DesktopPet:
     def _place_window(self, *, light: bool = False) -> None:
         display_y = self.y + self.click_bounce_offset
         self.root.geometry(f"{self.display_size}x{self.display_size}+{self.x}+{display_y}")
-        # 拖动时用节流跟随，避免菜单跟着狂跳不好点
+        # 拖动/走动：只做轻量位置更新，避免每帧重排一层特效导致卡顿
         self._reposition_pet_attached_popups(force=False)
         if light:
             return
@@ -8090,8 +8433,42 @@ class DesktopPet:
         self._place_wait_hint()
         self._lift_pet_above_bg_fx()
 
+    def _screen_wh(self) -> tuple[int, int]:
+        now = time.time()
+        if now - getattr(self, "_screen_cache_ts", 0) > 1.5:
+            try:
+                self._screen_w = int(self.root.winfo_screenwidth())
+                self._screen_h = int(self.root.winfo_screenheight())
+            except Exception:
+                self._screen_w = getattr(self, "_screen_w", 1280)
+                self._screen_h = getattr(self, "_screen_h", 720)
+            self._screen_cache_ts = now
+        return int(getattr(self, "_screen_w", 1280)), int(getattr(self, "_screen_h", 720))
+
+    def _raise_speech_popups(self) -> None:
+        """对话/语音字幕必须在桌宠立绘之上，否则会被挡住看起来像「没出现」。"""
+        wins: list[tk.Toplevel | None] = []
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            wins.append(self.speech_dialog)
+        if (
+            getattr(self, "_voice_subtitle_active", False)
+            and self.voice_subtitle_win
+            and self.voice_subtitle_win.winfo_exists()
+            and not self._win_is_withdrawn(self.voice_subtitle_win)
+        ):
+            wins.append(self.voice_subtitle_win)
+        for win in wins:
+            try:
+                win.lift()
+            except Exception:
+                pass
+
     def _lift_pet_above_bg_fx(self) -> None:
         """氛围/背景特效窗口必须在桌宠（和金目）之下，避免挡住立绘。"""
+        # 设置等可点击面板打开时：绝不再抬起桌宠，否则透明区会吞掉按钮点击
+        if self._interactive_panel_windows():
+            self._raise_interactive_panels()
+            return
         try:
             self.root.lift()
         except Exception:
@@ -8103,6 +8480,7 @@ class DesktopPet:
                     win.lift()
             except Exception:
                 pass
+        self._raise_speech_popups()
 
     def _set_image(self, photo: ImageTk.PhotoImage) -> None:
         self.label.config(image=photo)
@@ -8147,7 +8525,6 @@ class DesktopPet:
     def _menu_btn(self, parent: tk.Misc, text: str, command, *, icon: str | None = None) -> tk.Button:
         kwargs = dict(
             text=text,
-            command=command,
             font=PIXEL_FONT,
             fg=MENU_FG,
             bg=MENU_BG,
@@ -8159,14 +8536,24 @@ class DesktopPet:
             bd=0,
             cursor="hand2",
         )
+        photos: list[ImageTk.PhotoImage] = []
         if icon:
             photo = _menu_kind_icon_photo(icon, 16)
+            photos.append(photo)
             kwargs.update(image=photo, compound=tk.LEFT, padx=6)
-            btn = tk.Button(parent, **kwargs)
-            # 防止 PhotoImage 被回收
-            btn._menu_icon_photo = photo  # type: ignore[attr-defined]
-            return btn
-        return tk.Button(parent, **kwargs)
+        else:
+            glyph = menu_glyph_photo(text, 14)
+            photos.append(glyph)
+            kwargs.update(image=glyph, compound=tk.LEFT, padx=6)
+        btn = tk.Button(parent, **kwargs)
+
+        def _wrapped(_btn=btn) -> None:
+            play_pixel_click_burst(self.root, _btn)
+            command()
+
+        btn.config(command=_wrapped)
+        btn._menu_icon_photos = photos  # type: ignore[attr-defined]
+        return btn
 
     def _show_sub_menu(self, items: list, offset_x: int = 0) -> None:
         self._hide_sub_menu()
@@ -9444,7 +9831,11 @@ class DesktopPet:
         self.food_drag_ignore_release_until = int(time.time() * 1000) + 180
         self.root.bind("<B1-Motion>", self._food_drag_motion, add="+")
         self.root.bind("<ButtonRelease-1>", self._food_drag_release, add="+")
-        self._show_toast("拖动食物到小人上方松开", "#44aa44", duration_ms=2000)
+        if self.companion_bar_enabled and self.mini_pets:
+            tip = "只拖给苍叶松开即可（智能伴侣不用吃，只消耗一份）"
+        else:
+            tip = "拖动食物到小人上方松开"
+        self._show_toast(tip, "#44aa44", duration_ms=2200)
 
     def _food_drag_motion(self, event: tk.Event) -> None:
         if not self.food_drag_active or not self.food_drag_win:
@@ -9453,6 +9844,14 @@ class DesktopPet:
             return
         size = FOOD_DRAG_ICON
         self.food_drag_win.geometry(f"+{event.x_root - size // 2}+{event.y_root - size // 2}")
+
+    def _food_drop_hit_target(self, x: int, y: int) -> tuple[str, int, int] | None:
+        """喂食落点：只喂苍叶。有智能伴侣时伴侣不用吃，也不作为喂食目标。"""
+        pet_cx = self.x + self.display_size // 2
+        pet_cy = self.y + self.display_size // 2
+        if math.hypot(x - pet_cx, y - pet_cy) < self.display_size * 0.65:
+            return ("pet", pet_cx, self.y + self.display_size // 4)
+        return None
 
     def _food_drag_release(self, event: tk.Event) -> None:
         if not self.food_drag_active or not self.food_drag_id:
@@ -9465,20 +9864,34 @@ class DesktopPet:
         food_id = self.food_drag_id
         start_x = event.x_root
         start_y = event.y_root
-        pet_cx = self.x + self.display_size // 2
-        pet_cy = self.y + self.display_size // 2
-        catch = math.hypot(start_x - pet_cx, start_y - pet_cy) < self.display_size * 0.65
+        hit = self._food_drop_hit_target(start_x, start_y)
         self._cancel_food_drag()
-        if catch:
-            self._animate_food_drop_feed(food_id, start_x, start_y)
+        if hit:
+            _, tx, ty = hit
+            self._animate_food_drop_feed(food_id, start_x, start_y, target_x=tx, target_y=ty)
         else:
-            self._show_toast("没喂到…再试一次吧", "#ff8844")
+            hint = (
+                "拖到苍叶上方松开（智能伴侣不用吃）"
+                if self.companion_bar_enabled and self.mini_pets
+                else "没喂到…再试一次吧"
+            )
+            self._show_toast(hint, "#ff8844")
 
-    def _animate_food_drop_feed(self, food_id: str, start_x: int, start_y: int) -> None:
+    def _animate_food_drop_feed(
+        self,
+        food_id: str,
+        start_x: int,
+        start_y: int,
+        *,
+        target_x: int | None = None,
+        target_y: int | None = None,
+    ) -> None:
         if food_id not in FOODS or self.food_inventory.get(food_id, 0) <= 0:
             return
-        target_x = self.x + self.display_size // 2
-        target_y = self.y + self.display_size // 4
+        if target_x is None:
+            target_x = self.x + self.display_size // 2
+        if target_y is None:
+            target_y = self.y + self.display_size // 4
         size = FOOD_DRAG_ICON
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
@@ -9490,7 +9903,6 @@ class DesktopPet:
         px = max(3, size // 10)
         _draw_pixel_food(canvas, food_id, 4, 4, px=px)
 
-        steps = max(8, FOOD_DROP_MS // 40)
         start_ms = int(time.time() * 1000)
 
         def tick() -> None:
@@ -9503,7 +9915,7 @@ class DesktopPet:
             if t >= 1.0:
                 if win.winfo_exists():
                     win.destroy()
-                self._interact_flair("eat", banter=True)
+                # 无论落在主角还是金目，只扣 1 份；台词由 _play_eat_food 统一触发
                 self._feed_food(food_id, from_drag=True)
                 return
             win.geometry(f"+{x}+{y}")
@@ -9536,8 +9948,6 @@ class DesktopPet:
         stamina_gain = self.stamina - old_stamina
         mood_gain = self.mood - old_mood
         self._refresh_panel()
-        if not from_drag:
-            self._interact_flair("eat", banter=True)
         self._show_toast(f"{info['label']}  体力 +{stamina_gain}  心情 +{mood_gain}", "#44aa44")
         self._play_eat_food(food_id)
 
@@ -10516,13 +10926,25 @@ class DesktopPet:
 
     def _open_panel_settings(self) -> None:
         self._hide_main_menu()
+        # 语音/对话透明窗叠在设置上会吞点击
+        self._hide_voice_subtitle()
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            self._hide_speech_dialog()
         if self.panel_settings_win and self.panel_settings_win.winfo_exists():
-            self.panel_settings_win.lift()
+            try:
+                self.panel_settings_win.attributes("-topmost", True)
+                self.panel_settings_win.lift()
+            except Exception:
+                pass
             return
 
         self.panel_settings_win = tk.Toplevel(self.root)
         self.panel_settings_win.title("系统设置")
         self._apply_window_layer(self.panel_settings_win)
+        try:
+            self.panel_settings_win.attributes("-topmost", True)
+        except Exception:
+            pass
         self.panel_settings_win.configure(bg=MENU_BG)
 
         _, frame = _pack_fixed_scroll_panel(self.panel_settings_win)
@@ -11403,6 +11825,7 @@ class DesktopPet:
 
         speed_var = tk.StringVar(value=str(self.app_config.get("rhythm_speed", "中")))
         diff_var = tk.StringVar(value=str(self.app_config.get("rhythm_chart_diff", "中")))
+        auto_var = tk.StringVar(value="开" if self.app_config.get("rhythm_auto") else "关")
 
         def row(label: str, var: tk.StringVar, options: tuple[str, ...], on_pick) -> None:
             box = tk.Frame(frame, bg="#181828")
@@ -11438,11 +11861,18 @@ class DesktopPet:
             msg = f"谱面难度：{v}" + ("（下局生效）" if in_game else "（本局生效）")
             self._show_toast(msg, "#88ffaa", duration_ms=1200)
 
+        def set_auto(v: str) -> None:
+            on = v == "开"
+            self.app_config["rhythm_auto"] = on
+            _save_app_config(self.app_config)
+            self._show_toast("自动帮打：开" if on else "自动帮打：关", "#ffcc66", duration_ms=1000)
+
         row("流速", speed_var, ("慢", "中", "快"), set_speed)
         row("谱面", diff_var, ("低", "中", "高"), set_diff)
+        row("自动", auto_var, ("开", "关"), set_auto)
         tk.Label(
             frame,
-            text="按键 D F J K · 长音到线时长按、尾部松键",
+            text="按键 D F J K · 长音到线时长按、尾部松键 · 自动=系统帮打",
             font=PIXEL_FONT,
             fg="#888899",
             bg="#181828",
@@ -11672,6 +12102,8 @@ class DesktopPet:
     def _rhythm_on_key(self, event: tk.Event) -> None:
         if not self.rhythm_active or getattr(self, "rhythm_paused", False):
             return
+        if self._rhythm_auto_enabled():
+            return
         # 设置窗 / 输入框打开时不要抢键
         try:
             w = event.widget
@@ -11688,10 +12120,44 @@ class DesktopPet:
     def _rhythm_on_key_release(self, event: tk.Event) -> None:
         if not self.rhythm_active or getattr(self, "rhythm_paused", False):
             return
+        if self._rhythm_auto_enabled():
+            return
         lane = self._rhythm_event_lane(event)
         if lane is None:
             return
         self._rhythm_release_lane(lane)
+
+    def _rhythm_auto_enabled(self) -> bool:
+        return bool(self.app_config.get("rhythm_auto"))
+
+    def _rhythm_auto_step(self, now: int) -> None:
+        """自动帮打：短音到线点击；长音到线按住、尾部松键。"""
+        if not self._rhythm_auto_enabled():
+            return
+        start = max(0, getattr(self, "rhythm_scan_i", 0) - 8)
+        for note in self.rhythm_notes[start:]:
+            if note.get("hit") or note.get("missed"):
+                continue
+            t = int(note["t"])
+            end = int(note.get("end", t) or t)
+            lane = int(note["lane"])
+            hold = self._rhythm_note_is_hold(note)
+
+            if hold and note.get("head_hit") and note.get("holding") and not note.get("tail_done"):
+                if now >= end:
+                    self._rhythm_release_lane(lane)
+                continue
+
+            if note.get("head_hit") or note.get("holding"):
+                continue
+
+            if t > now + RHYTHM_HIT_PERFECT_MS + 40:
+                break
+            # 接近判定中心再按下，尽量 Perfect
+            if now + 8 >= t:
+                self._rhythm_press_lane(lane)
+                if not hold:
+                    self._rhythm_release_lane(lane)
 
     def _rhythm_tick(self) -> None:
         if not self.rhythm_active or not self.rhythm_canvas or not self.rhythm_win:
@@ -11701,8 +12167,10 @@ class DesktopPet:
         if not self.rhythm_win.winfo_exists():
             self._close_rhythm_game(resume=True)
             return
-        self._rhythm_poll_phys_keys()
+        if not self._rhythm_auto_enabled():
+            self._rhythm_poll_phys_keys()
         now = self._rhythm_now_ms()
+        self._rhythm_auto_step(now)
         i = getattr(self, "rhythm_scan_i", 0)
         notes = self.rhythm_notes
         nlen = len(notes)
@@ -11804,11 +12272,12 @@ class DesktopPet:
         bpm = getattr(self, "rhythm_chart_bpm", None)
         bpm_tag = f"  {bpm:.0f}BPM" if bpm else ""
         speed_tag = str(self.app_config.get("rhythm_speed", "中"))
+        auto_tag = " AUTO" if self._rhythm_auto_enabled() else ""
         c.create_text(
             w // 2,
             32,
-            text=f"得分 {self.rhythm_score}  连击 {self.rhythm_combo}  评级 {grade}  {acc:.0f}%  {mode_tag}{bpm_tag} {speed_tag} {left_s}s",
-            fill="#dddddd",
+            text=f"得分 {self.rhythm_score}  连击 {self.rhythm_combo}  评级 {grade}  {acc:.0f}%  {mode_tag}{bpm_tag} {speed_tag}{auto_tag} {left_s}s",
+            fill="#ffcc66" if auto_tag else "#dddddd",
             font=PIXEL_FONT,
             tags=("dyn",),
         )
@@ -12499,7 +12968,8 @@ class DesktopPet:
 
     def _open_about(self) -> None:
         self._hide_main_menu()
-        self._addon_voice_vpet("game", chain=False)
+        if self._vpet_voice_category_ready("game") and random.random() < 0.5:
+            self._addon_voice_vpet("game", chain=False)
         if self.about_win and self.about_win.winfo_exists():
             self.about_win.lift()
             return
@@ -12662,6 +13132,7 @@ class DesktopPet:
             "difficulty": "中",
             "rhythm_speed": "中",
             "rhythm_chart_diff": "中",
+            "rhythm_auto": False,
             "weather_city": "北京",
             "seen_hints": {},
             "work_mode": {"show_props": True, "show_stack": True},
@@ -12939,6 +13410,10 @@ class DesktopPet:
 
         self.backpack_header_frame = tk.Frame(self.backpack_section_frame, bg=bag_bg, padx=6, pady=4, cursor="hand2")
         self.backpack_header_frame.pack(anchor=tk.W, fill=tk.X)
+        bag_glyph = menu_glyph_photo("背包", 14)
+        bag_glyph_lbl = tk.Label(self.backpack_header_frame, image=bag_glyph, bg=bag_bg)
+        bag_glyph_lbl.image = bag_glyph  # type: ignore[attr-defined]
+        bag_glyph_lbl.pack(side=tk.LEFT, padx=(0, 4))
         self.backpack_icon_canvas = tk.Canvas(
             self.backpack_header_frame,
             width=28,
@@ -13090,6 +13565,8 @@ class DesktopPet:
     def _toggle_panel_backpack(self, _event=None) -> None:
         if not (self.panel_win and self.panel_win.winfo_exists()):
             return
+        if self.backpack_header_frame and self.backpack_header_frame.winfo_exists():
+            play_pixel_click_burst(self.root, self.backpack_header_frame)
         self._set_panel_backpack_open(not self.panel_backpack_open)
         self._bump_panel_auto_hide()
 
@@ -13268,8 +13745,10 @@ class DesktopPet:
         if now_ms - self.last_hunger_reminder_ms < HUNGER_REMINDER_COOLDOWN_MS:
             return
         self.last_hunger_reminder_ms = now_ms
-        self._addon_voice_vpet("hungry")
         self._show_toast("肚子饿了，去模式→游戏接食物，再来喂我吧！", "#ff8844", duration_ms=3000)
+        # 开语音时：hungry 语音框与「仅 toast/无台词框」随机；关语音则只有提示
+        if self._vpet_voice_category_ready("hungry") and random.random() < 0.5:
+            self._addon_voice_vpet("hungry")
 
     def _add_interact_mood(self) -> None:
         self.mood = min(100, self.mood + INTERACT_MOOD_GAIN)
@@ -13502,27 +13981,112 @@ class DesktopPet:
             self._show_interact_fx(action)
         if not banter or action not in INTERACT_BANTER:
             return
-        if self.speech_dialog and self.speech_dialog.winfo_exists():
+        voice_cat = self._ACTION_VOICE_CATEGORY.get(action)
+        if voice_cat and self._vpet_voice_category_ready(voice_cat):
+            self._trigger_voice_or_dialog(
+                voice_fn=lambda c=voice_cat: self._addon_voice_vpet(c, chain=False),
+                dialog_fn=lambda a=action: self._show_interact_banter_dialog(a),
+                voice_available=True,
+            )
             return
-        line = random.choice(INTERACT_BANTER[action])
-        self._show_speech_dialog(line, auto_hide_ms=2400)
+        self._show_interact_banter_dialog(action)
 
     def _get_mini_pet_sprites(self, size: int) -> dict:
         if size not in self._mini_pet_sprite_cache:
-            ref = _reference_scale(size)
-
-            def load(filename: str, *, flip: bool = False) -> ImageTk.PhotoImage:
-                canvas = _get_processed_canvas(filename, size, ref, flip=flip)
-                return ImageTk.PhotoImage(canvas)
-
-            self._mini_pet_sprite_cache[size] = {
-                "stand": load("petstand.jpg"),
-                "front": (load("petfront1.jpg"), load("petfront2.jpg")),
-                "back": (load("petback1.jpg"), load("petback2.jpg")),
-                "left": (load("petleft1.jpg"), load("petleft2.jpg")),
-                "right": (load("petleft1.jpg", flip=True), load("petleft2.jpg", flip=True)),
-            }
+            # 同步兜底（极少路径）；常规走 _ensure_mini_pet_sprites 异步构建
+            self._build_mini_pet_sprites_sync(size)
         return self._mini_pet_sprite_cache[size]
+
+    def _build_mini_pet_sprites_sync(self, size: int) -> dict:
+        ref = _reference_scale(size)
+
+        def load(filename: str, *, flip: bool = False) -> ImageTk.PhotoImage:
+            canvas = _get_processed_canvas(filename, size, ref, flip=flip)
+            return ImageTk.PhotoImage(canvas)
+
+        sprites = {
+            "stand": load("petstand.jpg"),
+            "front": (load("petfront1.jpg"), load("petfront2.jpg")),
+            "back": (load("petback1.jpg"), load("petback2.jpg")),
+            "left": (load("petleft1.jpg"), load("petleft2.jpg")),
+            "right": (load("petleft1.jpg", flip=True), load("petleft2.jpg", flip=True)),
+        }
+        self._mini_pet_sprite_cache[size] = sprites
+        return sprites
+
+    def _ensure_mini_pet_sprites(self, size: int, *, on_done=None) -> None:
+        if size in self._mini_pet_sprite_cache:
+            if on_done:
+                on_done()
+            return
+        building = getattr(self, "_mini_pet_building", None)
+        if building is None:
+            self._mini_pet_building = set()
+            building = self._mini_pet_building
+        if size in building:
+            return
+        building.add(size)
+
+        def worker() -> None:
+            pack: dict | None = None
+            try:
+                ref = _reference_scale(size)
+                raw = {
+                    "stand": _get_processed_canvas("petstand.jpg", size, ref),
+                    "front1": _get_processed_canvas("petfront1.jpg", size, ref),
+                    "front2": _get_processed_canvas("petfront2.jpg", size, ref),
+                    "back1": _get_processed_canvas("petback1.jpg", size, ref),
+                    "back2": _get_processed_canvas("petback2.jpg", size, ref),
+                    "left1": _get_processed_canvas("petleft1.jpg", size, ref),
+                    "left2": _get_processed_canvas("petleft2.jpg", size, ref),
+                    "right1": _get_processed_canvas("petleft1.jpg", size, ref, flip=True),
+                    "right2": _get_processed_canvas("petleft2.jpg", size, ref, flip=True),
+                }
+                pack = raw
+            except Exception:
+                pack = None
+
+            def apply() -> None:
+                self._mini_pet_building.discard(size)
+                if pack is None:
+                    try:
+                        self._build_mini_pet_sprites_sync(size)
+                    except Exception:
+                        pass
+                    if on_done:
+                        on_done()
+                    return
+                keys = list(pack.keys())
+                photos: dict[str, ImageTk.PhotoImage] = {}
+
+                def step(idx: int = 0) -> None:
+                    if self._closing:
+                        return
+                    end = min(idx + 3, len(keys))
+                    for i in range(idx, end):
+                        k = keys[i]
+                        photos[k] = ImageTk.PhotoImage(pack[k])
+                    if end < len(keys):
+                        self.root.after(SPRITE_BATCH_MS, lambda: step(end))
+                        return
+                    self._mini_pet_sprite_cache[size] = {
+                        "stand": photos["stand"],
+                        "front": (photos["front1"], photos["front2"]),
+                        "back": (photos["back1"], photos["back2"]),
+                        "left": (photos["left1"], photos["left2"]),
+                        "right": (photos["right1"], photos["right2"]),
+                    }
+                    if on_done:
+                        on_done()
+
+                step(0)
+
+            try:
+                self.root.after(0, apply)
+            except Exception:
+                building.discard(size)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _toggle_companion_bar(self) -> None:
         self._hide_main_menu()
@@ -13530,7 +14094,7 @@ class DesktopPet:
         if self.companion_bar_enabled:
             self._try_voice_companion_startup()
             if not self.mini_pets:
-                self._show_companion_loading(lambda: self._spawn_mini_pet_impl(silent=True))
+                self._show_companion_loading(lambda: self._spawn_mini_pet_impl(silent=True, skip_enter_anim=True))
             else:
                 for entry in self.mini_pets:
                     self._mini_pet_follow_tick(entry)
@@ -13550,9 +14114,9 @@ class DesktopPet:
             if not silent:
                 self._show_toast(f"最多同时存在 {MINI_PET_MAX} 个金目哦~", "#ff8844")
             return
-        self._show_companion_loading(lambda: self._spawn_mini_pet_impl(silent=silent))
+        self._show_companion_loading(lambda: self._spawn_mini_pet_impl(silent=silent, skip_enter_anim=True))
 
-    def _spawn_mini_pet_impl(self, *, silent: bool = False) -> None:
+    def _spawn_mini_pet_impl(self, *, silent: bool = False, skip_enter_anim: bool = False) -> None:
         size = MINI_PET_SIZE
         sprites = self._get_mini_pet_sprites(size)
         photo = sprites["stand"]
@@ -13607,7 +14171,15 @@ class DesktopPet:
         }
         lbl.bind("<Button-1>", lambda _e, ent=entry: self._on_mini_pet_click(ent), add="+")
         self.mini_pets.append(entry)
-        # 入场：像素聚散收束后再显示精灵
+        if skip_enter_anim:
+            entry["entering"] = False
+            self._mini_pet_follow_tick(entry)
+            self._sync_mini_pet_music_waves()
+            self._notify_bg_fx_change()
+            if not silent:
+                self._show_toast("噗~ 金目来陪你啦！", "#88ccff", duration_ms=1500)
+            return
+        # 无前置加载时：像素聚拢入场后再显示精灵
         lbl.pack_forget()
         anim_canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
         anim_canvas.pack()
@@ -14162,9 +14734,10 @@ class DesktopPet:
         self._hide_main_menu()
         self.state = "action"
         self.action_name = "kick"
-        self._try_voice_collision()
         self._show_interact_fx("kick")
-        self._trigger_kick_banter()
+        # 先播 kick 台词（可打断短碰撞），避免碰撞抢声道后对话框把语音字幕杀掉
+        if self._trigger_kick_banter() != "voice":
+            self._try_voice_collision()
         self._play_expression_pop()
         self._set_image(self.sprites.kick)
         self.kick_base_y = self.y
@@ -15055,13 +15628,13 @@ class DesktopPet:
                 ("操作说明", self._open_operation_guide),
                 ("问题反馈", self._open_feedback),
                 ("退出", self._on_close),
-                ("强制退出 (Ctrl+Shift+Q)", self._force_quit),
             ],
             offset_x=240,
         )
 
     def _open_dialog_menu(self) -> None:
-        self._addon_voice_vpet("email")
+        if self._vpet_voice_category_ready("email") and random.random() < 0.5:
+            self._addon_voice_vpet("email")
         self._show_sub_menu(
             [
                 ("AI 对话", self._toggle_ai_chat),
@@ -15152,6 +15725,65 @@ class DesktopPet:
         except Exception:
             pass
 
+    def _play_loading_entrance_loop(
+        self,
+        canvas: tk.Canvas,
+        size: int,
+        *,
+        image_filename: str,
+        palette: tuple[str, ...],
+        active_check,
+        ready_check,
+        on_done,
+        min_ms: int,
+        started_ms: int,
+    ) -> None:
+        """加载期使用与入场相同的像素聚拢；就绪后本轮播完即结束。"""
+        if not active_check():
+            return
+        try:
+            if not canvas or not canvas.winfo_exists():
+                on_done()
+                return
+        except Exception:
+            on_done()
+            return
+        try:
+            img = _sprite_rgba_image(image_filename, size)
+        except Exception:
+            on_done()
+            return
+
+        def after_cycle() -> None:
+            if not active_check():
+                return
+            elapsed = int(time.time() * 1000) - int(started_ms)
+            if ready_check() and elapsed >= int(min_ms):
+                on_done()
+                return
+            self._play_loading_entrance_loop(
+                canvas,
+                size,
+                image_filename=image_filename,
+                palette=palette,
+                active_check=active_check,
+                ready_check=ready_check,
+                on_done=on_done,
+                min_ms=min_ms,
+                started_ms=started_ms,
+            )
+
+        _run_pixel_block_dissolve_animation(
+            self.root,
+            canvas,
+            img,
+            size,
+            reverse=False,
+            on_done=after_cycle,
+            palette=palette,
+            lively=True,
+        )
+
     def _hide_companion_loading(self) -> None:
         self.companion_loading_active = False
         self.companion_loading_callback = None
@@ -15195,7 +15827,7 @@ class DesktopPet:
         self.companion_loading_phase = 0
         self.companion_loading_start_ms = int(time.time() * 1000)
         self.companion_loading_was_cached = MINI_PET_SIZE in self._mini_pet_sprite_cache
-        load_size = min(MINI_PET_SIZE, self.display_size + 36)
+        load_size = MINI_PET_SIZE
         self.companion_loading_win = tk.Toplevel(self.root)
         self.companion_loading_win.overrideredirect(True)
         self._apply_window_layer(self.companion_loading_win)
@@ -15210,59 +15842,43 @@ class DesktopPet:
         )
         self.companion_loading_canvas.pack()
         self._place_companion_loading()
-        self.root.after_idle(lambda: self._get_mini_pet_sprites(MINI_PET_SIZE))
+        self.root.after_idle(lambda: self._ensure_mini_pet_sprites(MINI_PET_SIZE))
         self._show_wait_hint("请耐心等待…加载金目")
-        self._animate_companion_loading()
-
-    def _animate_companion_loading(self) -> None:
-        if not self.companion_loading_active or not self.companion_loading_canvas:
-            return
-        load_size = self.companion_loading_canvas.winfo_width() or min(MINI_PET_SIZE, self.display_size + 36)
-        _draw_size_loading_frame(
-            self.companion_loading_canvas,
-            load_size,
-            self.companion_loading_phase,
-            label="金目",
-            theme="companion",
-        )
-        self.companion_loading_phase += 1
-        self._place_companion_loading()
-        elapsed = int(time.time() * 1000) - self.companion_loading_start_ms
-        ready = MINI_PET_SIZE in self._mini_pet_sprite_cache
         min_ms = COMPANION_LOAD_MIN_CACHED_MS if self.companion_loading_was_cached else COMPANION_LOAD_MIN_MS
-        if ready and elapsed >= min_ms:
+
+        def finish_load() -> None:
+            if not self.companion_loading_active:
+                return
             cb = self.companion_loading_callback
             self._hide_companion_loading()
             if cb:
                 cb()
-            return
-        self.companion_loading_job = self.root.after(SIZE_LOAD_ANIM_MS, self._animate_companion_loading)
+
+        self._play_loading_entrance_loop(
+            self.companion_loading_canvas,
+            load_size,
+            image_filename="petstand.jpg",
+            palette=COMPANION_ANIM_PALETTE,
+            active_check=lambda: bool(self.companion_loading_active),
+            ready_check=lambda: MINI_PET_SIZE in self._mini_pet_sprite_cache,
+            on_done=finish_load,
+            min_ms=min_ms,
+            started_ms=self.companion_loading_start_ms,
+        )
+
+    def _animate_companion_loading(self) -> None:
+        # 兼容旧调用：已改为入场同款像素聚拢循环
+        return
 
     def _place_size_loading(self) -> None:
         if not self.size_loading_win or not self.size_loading_win.winfo_exists():
             return
+        size = getattr(self, "size_loading_target", None) or self.display_size
         display_y = self.y + self.click_bounce_offset
-        self.size_loading_win.geometry(f"{self.display_size}x{self.display_size}+{self.x}+{display_y}")
+        self.size_loading_win.geometry(f"{size}x{size}+{self.x}+{display_y}")
 
     def _animate_size_loading(self) -> None:
-        if not self.size_loading_active or not self.size_loading_canvas:
-            return
-        size = self.display_size
-        _draw_size_loading_frame(
-            self.size_loading_canvas, size, self.size_loading_phase, label="尺寸", theme="vpet"
-        )
-        self.size_loading_phase += 1
-        self._place_size_loading()
-        target = self.size_loading_target
-        if not self.size_loading_preload_started:
-            self.size_loading_preload_started = True
-            self.root.after_idle(lambda s=target: self._ensure_sprite_cached(s))
-        elapsed = int(time.time() * 1000) - self.size_loading_start_ms
-        min_ms = SIZE_LOAD_MIN_CACHED_MS if self.size_loading_was_cached else SIZE_LOAD_MIN_MS
-        if target in self._sprite_cache and elapsed >= min_ms:
-            self._finish_size_loading()
-            return
-        self.size_loading_job = self.root.after(SIZE_LOAD_ANIM_MS, self._animate_size_loading)
+        return
 
     def _show_size_loading(self, preset: str, new_size: int) -> None:
         self._hide_size_loading()
@@ -15284,8 +15900,8 @@ class DesktopPet:
         self.size_loading_win.wm_attributes("-transparentcolor", "magenta")
         self.size_loading_canvas = tk.Canvas(
             self.size_loading_win,
-            width=self.display_size,
-            height=self.display_size,
+            width=new_size,
+            height=new_size,
             bg="magenta",
             highlightthickness=0,
         )
@@ -15295,19 +15911,52 @@ class DesktopPet:
         if not self.size_loading_preload_started:
             self.root.after_idle(lambda s=new_size: self._ensure_sprite_cached(s))
             self.size_loading_preload_started = True
-        self._animate_size_loading()
+        min_ms = SIZE_LOAD_MIN_CACHED_MS if self.size_loading_was_cached else SIZE_LOAD_MIN_MS
+
+        def finish_load() -> None:
+            if not self.size_loading_active:
+                return
+            if new_size not in self._sprite_cache:
+                if new_size not in self._sprite_building:
+                    self._ensure_sprite_cached(new_size)
+                # 再播一轮等缓存
+                self._play_loading_entrance_loop(
+                    self.size_loading_canvas,
+                    new_size,
+                    image_filename="stand.jpg",
+                    palette=VPET_ANIM_PALETTE,
+                    active_check=lambda: bool(self.size_loading_active),
+                    ready_check=lambda: new_size in self._sprite_cache,
+                    on_done=finish_load,
+                    min_ms=0,
+                    started_ms=int(time.time() * 1000),
+                )
+                return
+            preset_now = self.size_loading_preset
+            self._hide_size_loading()
+            self._apply_size_preset(preset_now, new_size)
+
+        self._play_loading_entrance_loop(
+            self.size_loading_canvas,
+            new_size,
+            image_filename="stand.jpg",
+            palette=VPET_ANIM_PALETTE,
+            active_check=lambda: bool(self.size_loading_active),
+            ready_check=lambda: new_size in self._sprite_cache,
+            on_done=finish_load,
+            min_ms=min_ms,
+            started_ms=self.size_loading_start_ms,
+        )
 
     def _finish_size_loading(self) -> None:
+        # 尺寸加载已并入入场同款循环；保留方法以免旧调用崩溃
         if not self.size_loading_active:
             return
         preset = self.size_loading_preset
         new_size = self.size_loading_target
         if new_size not in self._sprite_cache:
-            self._enter_ui_busy("请耐心等待…加载资源")
-            try:
-                self._sprite_cache[new_size] = SpriteSet(new_size)
-            finally:
-                self._exit_ui_busy()
+            self._ensure_sprite_cached(new_size)
+            return
         self._hide_size_loading()
         self._apply_size_preset(preset, new_size)
 
@@ -15322,7 +15971,12 @@ class DesktopPet:
 
     def _apply_size_preset(self, preset: str, new_size: int) -> None:
         if new_size not in self._sprite_cache:
-            self._sprite_cache[new_size] = SpriteSet(new_size)
+            # 正常应已异步就绪；兜底继续催发，延后应用
+            self._ensure_sprite_cached(
+                new_size,
+                on_done=lambda: self._apply_size_preset(preset, new_size),
+            )
+            return
         self.display_size = new_size
         self.sprites = self._sprite_cache[new_size]
         self.drag_handle = self._get_drag_handle()
@@ -15681,20 +16335,82 @@ class DesktopPet:
         self._hide_toast()
         self._cancel_expose_qte()
         self._unregister_hotkey()
-        if self._voice_enabled():
-            if not self._addon_voice_vpet(
-                "end", chain=False, on_done=self._play_exit_dissolve, ignore_cooldown=True
-            ):
-                self._play_exit_dissolve()
-        else:
-            self._play_exit_dissolve()
+        self._exit_voice_done = True
+        self._exit_anim_done = False
+        self._exit_sync_with_voice = False
 
-    def _play_exit_dissolve(self) -> None:
+        # 开语音：end 语音与出场动画同步，时长由语音决定；语音结束→动画结束→彻底退出
+        if self._voice_enabled():
+            clip = self.voice_player.catalog.pick_random("vpet", "end")
+            if clip and self.voice_player.resolve_wav(clip):
+                dur = max(800, int(self.voice_player.estimate_sequence_ms([clip])))
+                self._exit_voice_done = False
+                self._exit_anim_done = False
+                self._exit_sync_with_voice = True
+                played = self.voice_player.play_clips(
+                    [clip],
+                    chain=False,
+                    on_done=self._on_exit_voice_done,
+                    priority=VOICE_PRIORITY_SCENE,
+                    ignore_cooldown=True,
+                    interrupt_busy=True,
+                )
+                if played:
+                    # 兜底：语音/动画卡死时仍能退出
+                    self.root.after(max(12_000, dur + 6_000), self._exit_force_finalize_watchdog)
+                    self._play_exit_dissolve(total_ms=dur, sync_with_voice=True)
+                    return
+
+        # 关语音或 end 不可播：按默认出场时长，动画结束即退出
+        self.root.after(10_000, self._finalize_close_watchdog)
+        self._play_exit_dissolve(sync_with_voice=False)
+
+    def _on_exit_voice_done(self) -> None:
+        self._exit_voice_done = True
+        self._try_finish_exit_sync()
+
+    def _try_finish_exit_sync(self) -> None:
+        """语音结束且出场动画结束 → 彻底销毁退出。"""
+        if not self._closing or getattr(self, "_finalize_close_done", False):
+            return
+        if getattr(self, "_exit_voice_done", True) and getattr(self, "_exit_anim_done", False):
+            self._finalize_close()
+
+    def _exit_force_finalize_watchdog(self) -> None:
+        if not self._closing or getattr(self, "_finalize_close_done", False):
+            return
+        try:
+            self.voice_player.stop()
+        except Exception:
+            pass
+        self._exit_voice_done = True
+        self._exit_anim_done = True
+        self._finalize_close()
+
+    def _exit_dissolve_watchdog(self) -> None:
+        """兼容旧调用：强制开始出场并退出。"""
+        self._exit_force_finalize_watchdog()
+
+    def _play_exit_dissolve(
+        self,
+        *,
+        total_ms: int | None = None,
+        sync_with_voice: bool = False,
+    ) -> None:
+        if getattr(self, "_exit_dissolve_started", False):
+            return
+        self._exit_dissolve_started = True
+        self._exit_sync_with_voice = bool(sync_with_voice)
         pending = {"count": 0}
 
         def one_done() -> None:
             pending["count"] -= 1
-            if pending["count"] <= 0:
+            if pending["count"] > 0:
+                return
+            self._exit_anim_done = True
+            if sync_with_voice:
+                self._try_finish_exit_sync()
+            else:
                 self._finalize_close()
 
         pending["count"] += 1
@@ -15705,6 +16421,7 @@ class DesktopPet:
             on_hide=lambda: self.label.pack_forget(),
             on_done=one_done,
             palette=VPET_ANIM_PALETTE,
+            total_ms=total_ms,
         )
 
         if self.companion_bar_enabled and self.mini_pets:
@@ -15727,6 +16444,7 @@ class DesktopPet:
                     on_done=one_done,
                     image_filename="petstand.jpg",
                     palette=COMPANION_ANIM_PALETTE,
+                    total_ms=total_ms,
                 )
 
     def _run_exit_dissolve_at(
@@ -15739,6 +16457,7 @@ class DesktopPet:
         on_done=None,
         image_filename: str = "stand.jpg",
         palette: tuple[str, ...] | None = None,
+        total_ms: int | None = None,
     ) -> None:
         if on_hide:
             on_hide()
@@ -15772,9 +16491,13 @@ class DesktopPet:
             on_done=finish,
             palette=use_palette,
             lively=True,
+            total_ms=total_ms,
         )
 
     def _finalize_close(self) -> None:
+        if getattr(self, "_finalize_close_done", False):
+            return
+        self._finalize_close_done = True
         self._hide_size_loading()
         self._hide_companion_loading()
         self._hide_happy_fx()
@@ -15800,10 +16523,18 @@ class DesktopPet:
         self._close_panel()
         self._hide_speech_dialog()
         self._hide_voice_subtitle(destroy=True)
-        self.root.destroy()
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def _finalize_close_watchdog(self) -> None:
+        if not self._closing or getattr(self, "_finalize_close_done", False):
+            return
+        self._finalize_close()
 
     def _hide_speech_dialog(self) -> None:
-        self._voice_subtitle_active = False
+        # 勿清 _voice_subtitle_active：语音标题框是独立窗，关打字框不应连坐
         self._speech_from_voice = False
         if self.speech_type_job:
             self.root.after_cancel(self.speech_type_job)
@@ -15921,6 +16652,15 @@ class DesktopPet:
             )
         content_w, content_h = self._speech_border5_content_size(text)
         target_w, target_h, pad_l, pad_t, content_w, content_h = _speech_border2_target_size(content_w, content_h)
+        layout_sig = (target_w, target_h, pad_l, pad_t, content_w, content_h)
+        # 尺寸未变时只改文字，避免打字机每字重合成边框
+        if (
+            layout_sig == getattr(self, "_speech_border_layout_sig", None)
+            and self.speech_border_photo is not None
+            and self.speech_text_window is not None
+        ):
+            return
+        self._speech_border_layout_sig = layout_sig
         border_img = _compose_speech_border2(target_w, target_h)
         canvas = self.speech_canvas
         canvas.delete("all")
@@ -15977,6 +16717,7 @@ class DesktopPet:
 
         self.speech_use_border5 = use_border5
         self._speech_border5_peak = (0, 0)
+        self._speech_border_layout_sig = None
         self.speech_dialog = tk.Toplevel(self.root)
         self.speech_dialog.overrideredirect(True)
         self._apply_window_layer(self.speech_dialog)
@@ -16007,6 +16748,14 @@ class DesktopPet:
         self.speech_type_ms = typewriter_ms if typewriter_ms is not None else TYPEWRITER_MS
         self.speech_on_complete = on_complete
         self.speech_dialog_color = color
+        # 打字前用全文预热边框尺寸，整段只合成一次
+        if use_border5 and text:
+            try:
+                self.speech_label.config(wraplength=SPEECH_BORDER2_TEXT_WRAP)
+                peak = self._speech_label_content_size(text, wrap_w=SPEECH_BORDER2_TEXT_WRAP)
+                self._speech_border5_peak = peak
+            except Exception:
+                self._speech_border5_peak = (0, 0)
         self._layout_speech_dialog("" if not instant else text, color)
         if instant:
             self.speech_label.config(text=text)
@@ -16162,10 +16911,12 @@ class DesktopPet:
         self._lift_pet_above_bg_fx()
 
     def _show_hi_dialog(self) -> str:
-        """打招呼：开语音时与 HI_TEXT 打字框随机二选一。"""
+        """打招呼：关语音=HI_TEXT 打字框；开语音=语音标题框 与 HI_TEXT 打字框随机。"""
 
         def dialog() -> None:
-            self._show_speech_dialog(HI_TEXT, typewriter_ms=HI_TYPEWRITER_MS)
+            self._show_speech_dialog(
+                HI_TEXT, typewriter_ms=HI_TYPEWRITER_MS, use_border5=False
+            )
 
         def voice() -> bool:
             self._hide_voice_subtitle()
@@ -16193,15 +16944,27 @@ class DesktopPet:
         """打电话：有 call 资源时一律先 ring，再播非 ring 台词+标题文本框；否则走旧 CALL_TEXT。"""
 
         def dialog() -> None:
-            self._show_speech_dialog(CALL_TEXT)
+            self._show_speech_dialog(
+                CALL_TEXT, typewriter_ms=TYPEWRITER_MS, use_border5=False
+            )
             self._play_call_audio()
 
         def voice() -> bool:
             self._pause_bg_music_for_call()
             self._hide_voice_subtitle()
-            seq = call_sequence or self.voice_player.catalog.pick_call_sequence()
-            if len(seq) < 2:
+            self._ensure_call_catalog()
+            seq = list(call_sequence) if call_sequence else self.voice_player.catalog.pick_call_sequence()
+            if len(seq) < 2 or not seq[0].is_ring:
+                seq = self.voice_player.catalog.pick_call_sequence()
+            if len(seq) < 2 or not seq[0].is_ring:
                 return False
+            # 开播前同步解析 ring，绝不准「跳过铃响直接播随机台词」
+            if not self.voice_player.resolve_wav(seq[0]):
+                return False
+            # 预解析台词，避免动作结束过早截断
+            for c in seq[1:]:
+                self.voice_player.resolve_wav(c)
+            self._last_call_seq = seq
             return self._try_voice_call(sequence=seq, ignore_cooldown=True)
 
         # 打电话不随机：能播语音就固定 ring → 台词音频 + 标题字幕
@@ -16289,6 +17052,7 @@ class DesktopPet:
         self._set_image(frames[0])
 
         if name == "call":
+            self._last_call_seq = None
             call_seq = self.voice_player.catalog.pick_call_sequence() if self._call_voice_ready() else None
             self._call_content_mode = self._show_call_dialog(call_sequence=call_seq)
         elif name == "hi":
@@ -16300,6 +17064,7 @@ class DesktopPet:
             self._action_animate()
 
         if name == "call":
+            call_seq = getattr(self, "_last_call_seq", call_seq)
             if getattr(self, "_call_content_mode", "dialog") == "voice" and call_seq and len(call_seq) >= 2:
                 total_ms = self.voice_player.estimate_sequence_ms(call_seq) + 1200
             else:
@@ -16406,15 +17171,19 @@ class DesktopPet:
     def _after_action(self) -> None:
         if self.dragging or self.state != "action":
             return
+        call_voice_busy = False
         if self.action_name == "call":
             if getattr(self, "_call_content_mode", "dialog") == "voice" and self._voice_enabled():
+                call_voice_busy = bool(
+                    self.voice_player.is_busy() or getattr(self, "_voice_subtitle_active", False)
+                )
                 self._finish_call_action()
             else:
                 self._hide_call_dialog()
         elif self.action_name == "hi":
-            self._hide_speech_dialog()
+            # 语音路径：标题框由语音时长+1s 自行关闭，动作结束绝不可提前关掉
             if getattr(self, "_hi_content_mode", "dialog") != "voice":
-                self._hide_voice_subtitle()
+                self._hide_speech_dialog()
         elif self.action_name == "eat":
             self._hide_food_fx()
         elif self.action_name == "sad":
@@ -16431,6 +17200,13 @@ class DesktopPet:
             self._set_image(self.sprites.sleep[1])
             self._show_sleep_zzz()
             self._schedule_rest_bobble()
+        # 通电话台词未完：禁止开心打断，否则字幕会被 interrupt 清掉
+        if call_voice_busy:
+            if self.mode != "quiet":
+                self.state = "stand"
+                self._set_image(self.sprites.stand)
+            self._resume_idle()
+            return
         if not self._check_mood_happy():
             self._resume_idle()
 
@@ -16483,11 +17259,34 @@ class DesktopPet:
         self.idle_watchdog_job = self.root.after(IDLE_WATCHDOG_MS, tick)
 
     def _idle_watchdog_tick(self) -> None:
-        if not self._startup_ready or self.dragging or self._closing:
+        if not self._startup_ready or self._closing:
             return
+        # 拖拽超时兜底：丢失松手事件时强制解除，避免永久卡死
+        if self.dragging:
+            pressed = False
+            try:
+                if sys.platform == "win32":
+                    pressed = bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)
+            except Exception:
+                pressed = False
+            if pressed:
+                return
+            self.dragging = False
+            try:
+                self._stop_drag_move()
+            except Exception:
+                pass
+            if self.state == "drag":
+                self.state = "stand"
+                try:
+                    self._set_image(self._current_stand_sprite())
+                    self._place_window()
+                except Exception:
+                    pass
+            # 继续往下做 idle 恢复
         if self.mode not in ("free", "stroll"):
             return
-        if self.state in ("work", "sleep", "game"):
+        if self.state in ("work", "sleep", "game", "drag"):
             return
         # 暴露 / 倒计时 / 进行中的 QTE 会话：不可被看门狗清掉
         if getattr(self, "expose_session_active", False) or self.action_name == "expose":
@@ -16504,12 +17303,33 @@ class DesktopPet:
             self.state = "stand"
             self._set_image(self._current_stand_sprite())
         if self.state == "walk":
+            # 半死 walk：没有有效定时器则回到站立并排程
             if self.walk_move_job or self.walk_anim_job:
-                return
+                # 有残留 job 也不要傻等：若超过一轮仍静止，强制重置
+                last = getattr(self, "_watchdog_walk_xy", None)
+                cur = (self.x, self.y)
+                if last == cur:
+                    stuck_n = int(getattr(self, "_watchdog_walk_stuck", 0)) + 1
+                    self._watchdog_walk_stuck = stuck_n
+                    if stuck_n >= 2:
+                        self._cancel_idle_chain()
+                        self.state = "stand"
+                        self._set_image(self._current_stand_sprite())
+                        self._watchdog_walk_stuck = 0
+                        self._watchdog_walk_xy = None
+                    else:
+                        self._watchdog_walk_xy = cur
+                        return
+                else:
+                    self._watchdog_walk_xy = cur
+                    self._watchdog_walk_stuck = 0
+                    return
             self.state = "stand"
             self._set_image(self._current_stand_sprite())
+            self._watchdog_walk_xy = None
+            self._watchdog_walk_stuck = 0
         if self.state == "stand" and not self.idle_job:
-            self._schedule_stand_idle(min_delay=500, max_delay=1500)
+            self._schedule_stand_idle(min_delay=400, max_delay=1200)
 
     def _resume_idle(self) -> None:
         if self.dragging:
@@ -16822,16 +17642,24 @@ class DesktopPet:
 
         self.state = "stand"
         self._set_image(self._current_stand_sprite())
+        # 语音/表情可与闲逛并行：即使触发了随机内容，也要继续排程走路，避免站死
+        triggered = False
         if self.mode == "free":
             if self._try_mood_random_expression():
-                return
-            if self._try_voice_free_random():
-                return
-            if self._try_voice_error_random():
-                return
-            if self._try_free_random_action():
-                return
-        self._schedule_stand_idle()
+                triggered = True
+            elif self._try_voice_free_random():
+                triggered = True
+            elif self._try_voice_error_random():
+                triggered = True
+            elif self._try_free_random_action():
+                triggered = True
+        if triggered and self.state != "stand":
+            # 已进入 action：结束回调会 _resume_idle；此处不再抢排程
+            return
+        self._schedule_stand_idle(
+            min_delay=1600 if triggered else 1200,
+            max_delay=4200 if triggered else 3500,
+        )
 
     def _idle_to_walk(self, tok: int) -> None:
         self.idle_job = None
@@ -16874,6 +17702,13 @@ class DesktopPet:
 
     def _walk_move(self) -> None:
         if self.state != "walk" or self.dragging or not self._supports_walk_idle():
+            # 半途失效时清状态，交给看门狗/stand 恢复
+            if self.state == "walk" and (self.dragging or not self._supports_walk_idle()):
+                self.state = "stand"
+                try:
+                    self._set_image(self._current_stand_sprite())
+                except Exception:
+                    pass
             return
 
         if self.walk_steps_left <= 0:
@@ -16881,8 +17716,7 @@ class DesktopPet:
             return
 
         dx, dy = self.DELTAS[self.direction]
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
+        screen_w, screen_h = self._screen_wh()
 
         next_x = self.x + dx
         next_y = self.y + dy
@@ -16898,18 +17732,22 @@ class DesktopPet:
 
         self.x = next_x
         self.y = next_y
-        self._try_voice_walk()
+        # 走动中隔段再尝试漫游语音，避免每步触发业务
+        if self.walk_steps_left % 18 == 0:
+            self._try_voice_walk()
         self.walk_steps_left -= 1
-        self._place_window()
+        self._place_window(light=True)
         tok = self.interaction_token
         self.walk_move_job = self.root.after(
             MOVE_INTERVAL_MS, lambda t=tok: self._walk_move_guarded(t)
         )
 
     def _walk_move_guarded(self, tok: int) -> None:
-        if tok != self.interaction_token:
-            return
         self.walk_move_job = None
+        if tok != self.interaction_token:
+            if self.state == "walk" and self._supports_walk_idle() and not self.dragging:
+                self._stand_tick()
+            return
         self._walk_move()
 
     def _setup_game_overlay(self) -> None:
@@ -17937,7 +18775,8 @@ class DesktopPet:
         if self.ai_chat_win and self.ai_chat_win.winfo_exists():
             self._close_ai_chat()
             return
-        self._addon_voice_vpet("email")
+        if self._vpet_voice_category_ready("email") and random.random() < 0.5:
+            self._addon_voice_vpet("email")
 
         self.ai_chat_win = tk.Toplevel(self.root)
         self.ai_chat_win.overrideredirect(True)
@@ -17949,14 +18788,35 @@ class DesktopPet:
         inner = tk.Frame(border, bg="#111122", padx=6, pady=4)
         inner.pack()
 
-        self.ai_input = tk.Entry(inner, width=22, font=PIXEL_FONT, bg="#222233", fg=PIXEL_COLOR, insertbackground=PIXEL_COLOR)
+        header = tk.Frame(inner, bg="#111122")
+        header.pack(fill=tk.X)
+        close_btn = tk.Label(
+            header,
+            text="×",
+            font=("Courier New", 14, "bold"),
+            fg=THEME_PINK,
+            bg="#111122",
+            cursor="hand2",
+            padx=4,
+        )
+        close_btn.pack(side=tk.RIGHT)
+        close_btn.bind("<Button-1>", lambda _e: self._close_ai_chat())
+        close_btn.bind("<FocusOut>", self._ai_chat_focus_out, add="+")
+        close_btn.bind("<FocusIn>", self._ai_chat_focus_in, add="+")
+
+        row = tk.Frame(inner, bg="#111122")
+        row.pack(fill=tk.X)
+
+        self.ai_input = tk.Entry(
+            row, width=22, font=PIXEL_FONT, bg="#222233", fg=PIXEL_COLOR, insertbackground=PIXEL_COLOR
+        )
         self.ai_input.pack(side=tk.LEFT, padx=(0, 4))
         self.ai_input.bind("<Return>", lambda _e: self._send_ai_message())
         self.ai_input.bind("<FocusOut>", self._ai_chat_focus_out, add="+")
         self.ai_input.bind("<FocusIn>", self._ai_chat_focus_in, add="+")
 
         send_btn = tk.Button(
-            inner,
+            row,
             text="发送",
             command=self._send_ai_message,
             font=PIXEL_FONT,

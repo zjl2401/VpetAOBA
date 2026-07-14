@@ -192,7 +192,7 @@ class VoiceCatalog:
         return random.choice(misc_pool) if misc_pool else None
 
     def pick_call_sequence(self) -> list[VoiceClip]:
-        """打电话语音：必须先 call-ring/ring，再从 Vpet/call 非 ring 条目随机选一条。"""
+        """打电话语音：必须先 call/ring，再从 call 目录非 ring 条目随机选一条（紧跟）。"""
         call_clips = self.vpet.get("call", [])
         rings = [c for c in call_clips if c.is_ring]
         body_pool = [c for c in call_clips if not c.is_ring]
@@ -208,7 +208,9 @@ class VoiceCatalog:
             return (len(_RING_STEM_PRIORITY), clip.src_path.name)
 
         ring = sorted(rings, key=_ring_rank)[0]
-        return [ring, random.choice(body_pool)]
+        body = random.choice(body_pool)
+        # 强制顺序：ring → 非 ring；调用方不得颠倒或拆开只播其一
+        return [ring, body]
 
     def pick_hi_clip(self) -> VoiceClip | None:
         """打招呼：从 Vpet/你好 目录随机选一条。"""
@@ -297,7 +299,9 @@ class VoicePlayer:
         self.init_mixer = init_mixer
         self.stop_sfx = stop_sfx
         self.enabled = False
-        self.catalog = VoiceCatalog.build()
+        self.catalog = VoiceCatalog()  # 启动时空目录，后台异步扫描
+        self._catalog_building = False
+        self._catalog_on_done: Callable[[], None] | None = None
         self._queue: list[VoiceClip] = []
         self._playing = False
         self._current: VoiceClip | None = None
@@ -310,6 +314,43 @@ class VoicePlayer:
         self._done_cb: Callable[[], None] | None = None
         self._session_priority = 0
         self._last_session_end_ms = 0
+        self.reload_catalog_async()
+
+    def reload_catalog_async(self, *, on_done: Callable[[], None] | None = None) -> None:
+        if on_done:
+            self._catalog_on_done = on_done
+        if self._catalog_building:
+            return
+        self._catalog_building = True
+
+        def worker() -> None:
+            cat = VoiceCatalog.build()
+
+            def apply() -> None:
+                self.catalog = cat
+                self._catalog_building = False
+                cb = self._catalog_on_done
+                self._catalog_on_done = None
+                if cb:
+                    try:
+                        cb()
+                    except Exception:
+                        pass
+
+            try:
+                self.root.after(0, apply)
+            except Exception:
+                self.catalog = cat
+                self._catalog_building = False
+                cb = self._catalog_on_done
+                self._catalog_on_done = None
+                if cb:
+                    try:
+                        cb()
+                    except Exception:
+                        pass
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _global_cooldown_ready(self) -> bool:
         if self._last_session_end_ms <= 0:
@@ -378,11 +419,26 @@ class VoicePlayer:
         return self._resolve_wav(clip)
 
     def estimate_sequence_ms(self, clips: list[VoiceClip]) -> int:
+        """只读已有 wav 头；缺缓存时用默认估值，避免主线程触发 ffmpeg。"""
         total = 0
         for clip in clips:
-            wav = self._resolve_wav(clip)
+            wav: Path | None = None
+            if clip.cache_wav and clip.cache_wav.exists():
+                wav = clip.cache_wav
+            else:
+                # 已有转换产物可直接量时长；勿调用 ensure_voice_wav
+                safe = f"{clip.source}_{clip.category}_{clip.src_path.stem}"
+                safe = re.sub(r'[<>:"/\\|?*]', "_", safe)[:120]
+                candidate = voice_cache_path(self.cache_dir, safe)
+                if candidate.exists():
+                    wav = candidate
+                    clip.cache_wav = candidate
+                elif clip.src_path.suffix.lower() == ".wav" and clip.src_path.exists():
+                    wav = clip.src_path
             if wav:
                 total += max(400, self.get_duration_ms(wav))
+            else:
+                total += 1600
         return total
 
     def _resolve_wav(self, clip: VoiceClip) -> Path | None:
@@ -410,9 +466,18 @@ class VoicePlayer:
             return
         title = _strip_title_prefix(clip.title)
         if not title:
+            title = (clip.title or "").strip() or "……"
+        cb = self._subtitle_cb
+        if not cb:
             return
-        if self._subtitle_cb:
-            self._subtitle_cb(title, duration_ms)
+        # 主线程直接弹（已在 after/主循环里则立刻显示，避免 after(0) 被后续 hide 冲掉）
+        try:
+            cb(title, int(duration_ms))
+        except Exception:
+            try:
+                self.root.after(0, lambda t=title, d=int(duration_ms): cb(t, d))
+            except Exception:
+                pass
 
     def _stop_sfx_if_needed(self) -> None:
         if self.stop_sfx:
@@ -518,12 +583,18 @@ class VoicePlayer:
         on_done=None,
         priority: int = VOICE_PRIORITY_SCENE,
         ignore_cooldown: bool = False,
+        interrupt_busy: bool = False,
     ) -> bool:
         clip = self.catalog.pick_random("vpet", category)
         if not clip:
             return False
         return self.play_clips(
-            [clip], chain=chain, on_done=on_done, priority=priority, ignore_cooldown=ignore_cooldown
+            [clip],
+            chain=chain,
+            on_done=on_done,
+            priority=priority,
+            ignore_cooldown=ignore_cooldown,
+            interrupt_busy=interrupt_busy,
         )
 
     def play_laimu_open(self, *, on_done=None, priority: int = VOICE_PRIORITY_SCENE, ignore_cooldown: bool = False) -> bool:
@@ -542,11 +613,29 @@ class VoicePlayer:
         priority: int = VOICE_PRIORITY_SCENE,
         ignore_cooldown: bool = False,
     ) -> bool:
-        seq = clips if clips is not None else self.catalog.pick_call_sequence()
-        if len(seq) < 2:
+        """打电话：必须 ring（无字幕）→ 紧跟一条非 ring call 台词（有字幕）。缺一不可。"""
+        seq = list(clips) if clips is not None else self.catalog.pick_call_sequence()
+        if len(seq) < 2 or not seq[0].is_ring or seq[1].is_ring:
+            seq = self.catalog.pick_call_sequence()
+        if len(seq) < 2 or not seq[0].is_ring or any(c.is_ring for c in seq[1:]):
             return False
+        # 同步解析整段，尤其确保 ring 一定有可播 wav；失败则整段不播，避免「只有随机台词」
+        resolved: list[VoiceClip] = []
+        for clip in seq:
+            if not self._resolve_wav(clip):
+                if clip.is_ring:
+                    return False
+                continue
+            resolved.append(clip)
+        # 必须保留：首条 ring + 至少一条非 ring
+        if not resolved or not resolved[0].is_ring:
+            return False
+        body = [c for c in resolved[1:] if not c.is_ring]
+        if not body:
+            return False
+        play_seq = [resolved[0], body[0]]
         return self.play_clips(
-            seq,
+            play_seq,
             chain=False,
             on_done=on_done,
             priority=priority,
@@ -595,6 +684,10 @@ class VoicePlayer:
                 if not self.enabled:
                     return
                 if wav is None:
+                    # ring 解析失败绝不跳过到后续随机台词
+                    if clip.is_ring:
+                        self._finish_all()
+                        return
                     self._play_next(rest, chain=chain)
                     return
                 self._start_clip(clip, rest, chain=chain)
@@ -609,13 +702,14 @@ class VoicePlayer:
     def _start_clip(self, clip: VoiceClip, rest: list[VoiceClip], *, chain: bool) -> None:
         wav = clip.cache_wav if clip.cache_wav and clip.cache_wav.exists() else self._resolve_wav(clip)
         if wav is None:
-            self._hide_subtitle_now()
+            if clip.is_ring:
+                self._finish_all()
+                return
             self._play_next(rest, chain=chain)
             return
         duration_ms = max(400, self.get_duration_ms(wav))
         min_play_ms = max(500, int(duration_ms * 0.88))
         if duration_ms < 200 and not clip.is_ring:
-            self._hide_subtitle_now()
             self._play_next(rest, chain=chain)
             return
         self._stop_sfx_if_needed()
@@ -623,15 +717,16 @@ class VoicePlayer:
             import pygame
 
             if not self.init_mixer():
-                self._hide_subtitle_now()
                 self._finish_all()
                 return
             ch = pygame.mixer.Channel(VOICE_CHANNEL_ID)
             ch.stop()
             self._sound = pygame.mixer.Sound(str(wav))
             ch.set_volume(self.get_volume())
-            played = ch.play(self._sound)
-            if played is None:
+            # 注意：pygame.mixer.Channel.play() 成功时也返回 None（与 Sound.play 不同）
+            # 原先用 `if played is None` 会误判失败 → 掐掉队列 → 有声音无字幕
+            ch.play(self._sound)
+            if not ch.get_busy():
                 for i in range(pygame.mixer.get_num_channels()):
                     if i != VOICE_CHANNEL_ID:
                         try:
@@ -639,14 +734,18 @@ class VoicePlayer:
                         except Exception:
                             pass
                 ch.stop()
-                played = ch.play(self._sound)
-            if played is None:
-                self._hide_subtitle_now()
+                ch.play(self._sound)
+            if not ch.get_busy():
+                if clip.is_ring:
+                    self._finish_all()
+                    return
                 self._play_next(rest, chain=chain)
                 return
             self._channel = ch
         except Exception:
-            self._hide_subtitle_now()
+            if clip.is_ring:
+                self._finish_all()
+                return
             self._play_next(rest, chain=chain)
             return
         self._playing = True
@@ -701,6 +800,9 @@ class VoicePlayer:
                 if not self.enabled:
                     return
                 if wav is None:
+                    if clip.is_ring:
+                        self._finish_all()
+                        return
                     self._play_next_sync(rest, chain=chain)
                     return
                 self._start_clip(clip, rest, chain=chain)
