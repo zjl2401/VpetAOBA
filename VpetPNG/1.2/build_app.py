@@ -17,6 +17,7 @@ EXE_NAME = "Vpet.exe"
 BUNDLED_SRC = ROOT / "bundled"
 LEGACY_VOICE_SRC = Path(r"C:\Users\36255\Desktop\Vpetvoice")
 LEGACY_MUSIC_SRC = Path(r"C:\Users\36255\Desktop\Vpetmusic")
+LEGACY_GAME_SRC = Path(r"C:\Users\36255\Desktop\Vpetgame")
 
 
 def _ensure_icon() -> Path:
@@ -80,8 +81,36 @@ def _collect_data_args() -> list[str]:
 
 
 
+def _sync_vpetgame() -> None:
+    """打包前：桌面 Vpetgame → bundled/Vpetgame（game.py + assets + maps）。"""
+    src = LEGACY_GAME_SRC
+    dst = BUNDLED_SRC / "Vpetgame"
+    if not src.is_dir():
+        print(f"警告：未找到 {src}，无法同步 bundled/Vpetgame")
+        return
+    print(f"同步 RPG {src} → {dst} …")
+    if dst.exists():
+        shutil.rmtree(dst)
+    dst.mkdir(parents=True)
+    game_py = src / "game.py"
+    if game_py.is_file():
+        shutil.copy2(game_py, dst / "game.py")
+    for name in ("assets", "maps"):
+        folder = src / name
+        if folder.is_dir():
+            shutil.copytree(folder, dst / name)
+    for name in ("README.md", "requirements.txt", "process_assets.py"):
+        file = src / name
+        if file.is_file():
+            shutil.copy2(file, dst / name)
+    has_game = (dst / "game.py").is_file()
+    asset_n = sum(1 for _ in (dst / "assets").rglob("*") if _.is_file()) if (dst / "assets").is_dir() else 0
+    map_n = sum(1 for _ in (dst / "maps").rglob("*") if _.is_file()) if (dst / "maps").is_dir() else 0
+    print(f"  bundled/Vpetgame: game.py={'有' if has_game else '无'}，assets {asset_n}，maps {map_n}")
+
+
 def _sync_bundled_media(*, force: bool = True) -> None:
-    """打包前：桌面 Vpetvoice/Vpetmusic → bundled/（仅音频，视频容器转为 wav）。"""
+    """打包前：桌面 Vpetvoice/Vpetmusic → bundled/（仅音频，视频容器转为 wav）；同步 Vpetgame。"""
     from media_bundled import count_media_files, sync_bundled_audio_only
 
     BUNDLED_SRC.mkdir(parents=True, exist_ok=True)
@@ -94,6 +123,7 @@ def _sync_bundled_media(*, force: bool = True) -> None:
         copied, converted, removed = sync_bundled_audio_only(src, dst, force=force)
         audio_n, video_n = count_media_files(dst)
         print(f"  bundled/{name}: 复制 {copied}，转换 {converted}，剔除视频 {removed}；现有音频 {audio_n}，残留视频 {video_n}")
+    _sync_vpetgame()
 
 
 def _clean_workspace() -> None:
@@ -136,6 +166,9 @@ def _publish_bundled_media(staging: Path) -> None:
         sub = dst / name
         audio_n, video_n = count_media_files(sub)
         print(f"  发布 bundled/{name}: 音频 {audio_n}，视频 {video_n}")
+    game = dst / "Vpetgame"
+    if game.is_dir():
+        print(f"  发布 bundled/Vpetgame: game.py={'有' if (game / 'game.py').is_file() else '无'}")
 
 
 _RELEASE_LOCK_HINT = (
@@ -207,6 +240,26 @@ def _publish_release(build_dir: Path, data_src: Path) -> tuple[Path, Path, str]:
 
     print(_RELEASE_LOCK_HINT)
     return staging, staging / EXE_NAME, stamp
+
+
+def _prune_old_builds(*, keep: int = 2) -> None:
+    """只保留最近若干份 Vpet_build_*，避免 release 堆积上百 GB。"""
+    release_root = ROOT / "release"
+    if not release_root.is_dir() or keep < 1:
+        return
+    builds = sorted(
+        (p for p in release_root.glob("Vpet_build_*") if p.is_dir()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for old in builds[keep:]:
+        print(f"清理旧包：{old.name}")
+        shutil.rmtree(old, ignore_errors=True)
+    for name in ("Vpet_old", "Vpet_new_old"):
+        path = release_root / name
+        if path.is_dir():
+            print(f"清理残留：{name}")
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def _create_shortcut(exe_path: Path, icon_path: Path | None = None) -> None:
@@ -284,6 +337,8 @@ def main() -> None:
             "bundled_paths",
             "--hidden-import",
             "media_bundled",
+            "--hidden-import",
+            "pet_id_cloud",
             str(ROOT / "vpet_app.py"),
         ]
         print("执行打包命令：")
@@ -299,6 +354,7 @@ def main() -> None:
         raise SystemExit(f"未找到输出文件：{DIST / EXE_NAME}")
 
     release_dir, release_exe, stamp = _publish_release(exe_path.parent, ROOT / "data")
+    _prune_old_builds(keep=2)
 
     icon = ROOT / "app_icon.ico"
     if icon.exists():

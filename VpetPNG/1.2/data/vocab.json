@@ -1,13 +1,18 @@
 {
   "words": [
     {
-      "word": "平凡",
-      "meaning": "旧货店店员，桌宠主角",
+      "word": "苍叶",
+      "meaning": "濑良垣苍叶，桌宠主角",
       "hint": "角色名"
     },
     {
+      "word": "平凡",
+      "meaning": "碧岛旧货店店名，苍叶兼职打工的地方",
+      "hint": "店名"
+    },
+    {
       "word": "旧货店",
-      "meaning": "平凡工作的地方",
+      "meaning": "店名「平凡」，苍叶工作的地方",
       "hint": "场景"
     },
     {
@@ -138,7 +143,7 @@
     {
       "word": "Work",
       "meaning": "工作",
-      "hint": "搬箱子"
+      "hint": "运送货物"
     },
     {
       "word": "Game",
@@ -199,136 +204,6 @@
       "word": "Call",
       "meaning": "打电话",
       "hint": "互动"
-    },
-    {
-      "word": "词库素材文件夹",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "================",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "把视频相关文本放进此文件夹",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "程序启动或「刷新词库」时会自动合并进词库",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "支持格式：",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "srt",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "vtt",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "ass",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "字幕文件（推荐：从视频导出字幕后放入",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "txt",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "纯文本",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "每行一个词或一句话",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "json",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "格式：{\"words\":[{\"word\":\"词\",\"meaning\":\"释义\",\"hint\":\"来源\"}]}",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "从视频提取字幕（需本机安装",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "ffmpeg）：",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "ffmpeg",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "-i",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "你的视频.mp4",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "-map",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "0:s:0",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "字幕.srt",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "进阶：运行同目录上一级的",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "extract_vocab.py",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "可批量扫描并生成",
-      "meaning": "来自视频素材",
-      "hint": "README"
-    },
-    {
-      "word": "vocab.json",
-      "meaning": "来自视频素材",
-      "hint": "README"
     }
   ]
 }

@@ -6,6 +6,7 @@ from pathlib import Path
 
 LEGACY_VOICE_ROOT = Path(r"C:\Users\36255\Desktop\Vpetvoice")
 LEGACY_MUSIC_ROOT = Path(r"C:\Users\36255\Desktop\Vpetmusic")
+LEGACY_GAME_ROOT = Path(r"C:\Users\36255\Desktop\Vpetgame")
 
 def app_dir() -> Path:
     if getattr(sys, "frozen", False):

@@ -1,7 +1,8 @@
-"""Vpet 桌面程序入口：默认打开托盘启动器；--pet 直接运行桌宠。"""
+"""Vpet 桌面程序入口：默认打开托盘启动器；--pet 直接运行桌宠；--rpg 打开 RPG。"""
 
 from __future__ import annotations
 
+import os
 import sys
 import traceback
 from datetime import datetime
@@ -44,7 +45,29 @@ def _show_pet_error(exc: BaseException) -> None:
         pass
 
 
+def _run_rpg() -> None:
+    """独立进程打开 Silent Oath（模式→游戏→RPG）。"""
+    from bundled_paths import LEGACY_GAME_ROOT, resolve_bundled
+
+    root = resolve_bundled("Vpetgame", legacy=LEGACY_GAME_ROOT)
+    game_py = root / "game.py"
+    if not game_py.is_file():
+        raise FileNotFoundError(f"未找到 RPG：{game_py}")
+    os.chdir(root)
+    import runpy
+
+    runpy.run_path(str(game_py), run_name="__main__")
+
+
 def main() -> None:
+    if "--rpg" in sys.argv:
+        try:
+            _run_rpg()
+        except Exception as exc:
+            _log_pet_error(exc)
+            _show_pet_error(exc)
+            raise SystemExit(1) from exc
+        return
     if "--pet" in sys.argv:
         try:
             from pet import DesktopPet
