@@ -1393,7 +1393,7 @@ GUIDE_TOPICS: dict[str, dict] = {
             "【面板】\n"
             "· 打开面板：查看体力/心情与背包（食物等）\n"
             "· 莱姆 ▶：练习对战（本地）/ 邀请对战（需联机）\n"
-            "· 智能伴侣：金目跟随；游戏时会跟紧\n"
+            "· 智能伴侣：莲跟随；游戏时会跟紧\n"
             "· 暴露：QTE 圆环，蓝区按 Enter 判定；连中通关，失败扣体力心情\n\n"
             "【互动】\n"
             "· 动作：吃东西 / 打招呼 / 打电话 / ×生活 / 工作 / 睡眠 / 下蹲 / 侧踢 / 判断 / 是 / 否\n"
@@ -1505,7 +1505,7 @@ ONCE_HINTS: dict[str, str] = {
     "operation_guide": OPERATION_GUIDE_TEXT,
     "game_mode": "采集：移动接食物，注意 ±3s 与晕眩物，Esc 可退出~",
     "rhythm_game": "音乐：D F J K · 长音需长按 · 右上可调流速 · Esc 退出~",
-    "companion_bar": "智能伴侣已开启~ 金目会跟在左右两侧；游戏模式会跟紧你哦！",
+    "companion_bar": "智能伴侣已开启~ 莲会跟在左右两侧；游戏模式会跟紧你哦！",
     "music_mode": "音乐漫步：边走边听，不会触发动作与语音；再点一次可关闭音乐~",
     "rhyme_invite": "邀请对战需要联机服务器，目前可先「练习对战」体验！",
 }
@@ -6064,7 +6064,7 @@ class DesktopPet:
         if self.size_loading_active:
             return "请耐心等待…切换尺寸"
         if self.companion_loading_active:
-            return "请耐心等待…加载金目"
+            return "请耐心等待…加载莲"
         if self._ui_lag_detected:
             return "请耐心等待…程序处理中"
         return WAIT_HINT_DEFAULT
@@ -14326,7 +14326,7 @@ class DesktopPet:
             self.companion_bar_enabled = True
         if len(self.mini_pets) >= MINI_PET_MAX:
             if not silent:
-                self._show_toast(f"最多同时存在 {MINI_PET_MAX} 个金目哦~", "#ff8844")
+                self._show_toast(f"最多同时存在 {MINI_PET_MAX} 只莲哦~", "#ff8844")
             return
         self._show_companion_loading(lambda: self._spawn_mini_pet_impl(silent=silent, skip_enter_anim=True))
 
@@ -14391,7 +14391,7 @@ class DesktopPet:
             self._sync_mini_pet_music_waves()
             self._notify_bg_fx_change()
             if not silent:
-                self._show_toast("噗~ 金目来陪你啦！", "#88ccff", duration_ms=1500)
+                self._show_toast("噗~ 莲来陪你啦！", "#88ccff", duration_ms=1500)
             return
         # 无前置加载时：像素聚拢入场后再显示精灵
         lbl.pack_forget()
@@ -14415,7 +14415,7 @@ class DesktopPet:
             self._sync_mini_pet_music_waves()
             self._notify_bg_fx_change()
             if not silent:
-                self._show_toast("噗~ 金目来陪你啦！", "#88ccff", duration_ms=1500)
+                self._show_toast("噗~ 莲来陪你啦！", "#88ccff", duration_ms=1500)
 
         _run_pixel_block_dissolve_animation(
             self.root,
@@ -14434,7 +14434,7 @@ class DesktopPet:
         self._try_voice_companion_startup()
 
     def _clamp_mini_pet_xy(self, x: float, y: float, size: int) -> tuple[float, float]:
-        """把金目位置钳在屏幕内，避免超出边界。"""
+        """把智能伴侣（莲）位置钳在屏幕内，避免超出边界。"""
         try:
             sw = int(self.root.winfo_screenwidth())
             sh = int(self.root.winfo_screenheight())
@@ -16064,7 +16064,7 @@ class DesktopPet:
         self.companion_loading_canvas.pack()
         self._place_companion_loading()
         self.root.after_idle(lambda: self._ensure_mini_pet_sprites(MINI_PET_SIZE))
-        self._show_wait_hint("请耐心等待…加载金目")
+        self._show_wait_hint("请耐心等待…加载莲")
         min_ms = COMPANION_LOAD_MIN_CACHED_MS if self.companion_loading_was_cached else COMPANION_LOAD_MIN_MS
 
         def finish_load() -> None:
