@@ -192,6 +192,73 @@ MUSIC_TRACK_LEGACY_IDS: dict[str, str] = {
     "extend_strings": "kurage_extend_strings",
 }
 
+# 文件夹名末尾颜色 → 音乐光圈主色（淡雅）；再配一档更浅色
+MUSIC_FOLDER_BASE_COLORS: dict[str, str] = {
+    "blue": "#9ec8e8",
+    "deep blue": "#8aa4c8",
+    "yellow": "#e8d6a0",
+    "red": "#e0a0ac",
+    "deep red": "#d0909c",
+    "pink": "#e8b8d0",
+    "green": "#a8d4b4",
+    "grey": "#b0bcc4",
+}
+DEFAULT_MUSIC_WAVE_BASE = MUSIC_FOLDER_BASE_COLORS["blue"]
+DEFAULT_MUSIC_WAVE_COLORS: tuple[str, ...] = (DEFAULT_MUSIC_WAVE_BASE, "#d0e8f5")
+_MUSIC_FOLDER_COLOR_KEYS: tuple[str, ...] = (
+    "deep red",
+    "deep blue",
+    "yellow",
+    "green",
+    "pink",
+    "blue",
+    "red",
+    "grey",
+    "gray",
+)
+
+
+def _music_folder_color_key(folder_name: str) -> str:
+    """从「aoba-blue / mizuki-deep red / virus&trip-grey」解析颜色键。"""
+    name = (folder_name or "").strip().lower().replace("_", " ")
+    if not name:
+        return "blue"
+    compact = re.sub(r"[\s\-]+", " ", name).strip()
+    for key in _MUSIC_FOLDER_COLOR_KEYS:
+        if compact.endswith(key) or compact.endswith(key.replace(" ", "-")):
+            return "grey" if key == "gray" else key
+        if f" {key}" in compact or compact.startswith(f"{key} "):
+            return "grey" if key == "gray" else key
+    tail = compact.rsplit(" ", 1)[-1]
+    if tail in MUSIC_FOLDER_BASE_COLORS:
+        return tail
+    if tail == "gray":
+        return "grey"
+    return "blue"
+
+
+def _lighten_hex_color(color: str, amount: float = 0.45) -> str:
+    """主色混白，得到更淡一档（音乐光圈用）。"""
+    text = (color or "").strip().lstrip("#")
+    if len(text) != 6:
+        return "#d0e8f5"
+    try:
+        r, g, b = int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16)
+    except ValueError:
+        return "#d0e8f5"
+    t = max(0.0, min(1.0, float(amount)))
+    r = int(r + (255 - r) * t)
+    g = int(g + (255 - g) * t)
+    b = int(b + (255 - b) * t)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _music_wave_colors_for_folder(folder_name: str) -> tuple[str, ...]:
+    """光圈只用：文件夹主色（淡雅）+ 更浅色。"""
+    key = _music_folder_color_key(folder_name)
+    base = MUSIC_FOLDER_BASE_COLORS.get(key, DEFAULT_MUSIC_WAVE_BASE)
+    return (base, _lighten_hex_color(base, 0.48))
+
 
 def _music_slug_id(stem: str) -> str:
     mapped = MUSIC_TRACK_ID_MAP.get(stem)
@@ -207,13 +274,19 @@ def _build_music_tracks() -> tuple[dict[str, dict], tuple[str, ...]]:
     tracks: dict[str, dict] = {}
     if not MUSIC_SRC_DIR.is_dir():
         return tracks, ()
-    for path in sorted(MUSIC_SRC_DIR.iterdir(), key=lambda p: p.name.lower()):
+    # 支持颜色子目录：Vpetmusic/<color-folder>/*.wav
+    for path in sorted(MUSIC_SRC_DIR.rglob("*"), key=lambda p: str(p).lower()):
         if not path.is_file() or not is_audio_media(path):
             continue
+        try:
+            rel = path.relative_to(MUSIC_SRC_DIR)
+        except ValueError:
+            continue
+        folder = rel.parts[0] if len(rel.parts) > 1 else ""
         stem = path.stem
         tid = _music_slug_id(stem)
         title = MUSIC_TRACK_TITLE_MAP.get(tid) or stem
-        # 同 id 重复时保留先出现的（优先 preferred 排序时再覆盖顺序）
+        # 同 id 重复时保留先出现的
         if tid in tracks:
             continue
         tracks[tid] = {
@@ -222,6 +295,9 @@ def _build_music_tracks() -> tuple[dict[str, dict], tuple[str, ...]]:
             "src": path,
             "cache": DATA_AUDIO_DIR / f"music_{tid}_cache.wav",
             "phonograph": f"音乐·{title}",
+            "folder": folder,
+            "color_key": _music_folder_color_key(folder),
+            "wave_colors": _music_wave_colors_for_folder(folder),
         }
     order: list[str] = []
     for tid in MUSIC_TRACK_PREFERRED_ORDER:
@@ -1076,6 +1152,9 @@ GAME_COUNTDOWN_W = 120
 GAME_COUNTDOWN_H = 120
 COUNTDOWN_FONT = ("Courier New", 42, "bold")
 MUSIC_WAVE_MS = 60
+# 光圈窗口相对立绘的外边距：需大于最外环「半径余量」，避免圆被方框裁成四角
+MUSIC_WAVE_PAD = 56
+MUSIC_WAVE_MINI_PAD = 36
 FOOD_INVENTORY_FILE = DATA_DIR / "food_inventory.json"
 ADULT_CONTENT_TEXT = "我只是像素哦，更多精彩内容请在正版游戏《戏剧性谋杀》中解锁"
 RESERVED_TOAST = "敬请期待~"
@@ -1267,7 +1346,7 @@ GUIDE_TOPICS: dict[str, dict] = {
             "· 跟随：桌宠跟上鼠标，过远会喊「等等我」\n"
             "· 漫步：只走路，不触发自由模式那套随机动作\n"
             "· 睡眠：安静休息，体力低会自动入睡；连点可偷看/唤醒\n"
-            "· 音乐（模式菜单）：音乐漫步＝边走边听（声音设置可选列表循环/随机），不触发动作与语音\n"
+            "· 音乐（模式菜单）：音乐漫步＝边走边听（声音设置：列表顺序循环 / 随机洗牌循环），不触发动作与语音\n"
             "  （与「游戏→音乐」节奏玩法不同）\n"
             "· 工作 ▶\n"
             "    - 开始工作：持续运送，终点旗可拖，点「结束」停止\n"
@@ -3426,6 +3505,15 @@ def _schedule_matches_today(item: dict, weekday: int) -> bool:
     return weekday in days
 
 
+def _default_full_music_playlist() -> list[str]:
+    """默认播放列表＝曲库全部（不再默认只塞 radical_mat）。"""
+    if MUSIC_TRACK_ORDER:
+        return list(MUSIC_TRACK_ORDER)
+    if DEFAULT_MUSIC_TRACK in MUSIC_TRACKS:
+        return [DEFAULT_MUSIC_TRACK]
+    return []
+
+
 def _normalize_music_playlist(raw, *, fallback: str | None = None) -> list[str]:
     """校验播放列表，至少保留一首有效曲。"""
     out: list[str] = []
@@ -3435,11 +3523,12 @@ def _normalize_music_playlist(raw, *, fallback: str | None = None) -> list[str]:
             if tid in MUSIC_TRACKS and tid not in out:
                 out.append(tid)
     if not out:
-        fb = MUSIC_TRACK_LEGACY_IDS.get(str(fallback or ""), str(fallback or DEFAULT_MUSIC_TRACK))
-        if fb not in MUSIC_TRACKS:
-            fb = DEFAULT_MUSIC_TRACK
-        if fb in MUSIC_TRACKS:
-            out = [fb]
+        fb_list = _default_full_music_playlist()
+        if fallback:
+            fb = MUSIC_TRACK_LEGACY_IDS.get(str(fallback), str(fallback))
+            if fb in MUSIC_TRACKS:
+                return [fb]
+        return fb_list or ([DEFAULT_MUSIC_TRACK] if DEFAULT_MUSIC_TRACK in MUSIC_TRACKS else [])
     return out
 
 
@@ -3447,14 +3536,15 @@ def _music_playlist_from_config(config: dict) -> list[str]:
     raw = config.get("playlist")
     if isinstance(raw, list) and raw:
         return _normalize_music_playlist(raw, fallback=DEFAULT_MUSIC_TRACK)
-    tid = str(config.get("normal_track", DEFAULT_MUSIC_TRACK))
-    return _normalize_music_playlist([tid], fallback=DEFAULT_MUSIC_TRACK)
+    # 无 playlist 字段：用整库，避免永远单曲 RADICAL MAT
+    return _normalize_music_playlist(_default_full_music_playlist(), fallback=DEFAULT_MUSIC_TRACK)
 
 
 def _load_music_config() -> dict:
     default = {
         "play_mode": "list",
-        "playlist": [DEFAULT_MUSIC_TRACK],
+        "playlist": _default_full_music_playlist(),
+        "playlist_user_set": False,
         "music_volume": 70,
         "volume": 70,
         "sfx_volume": 80,
@@ -3471,11 +3561,37 @@ def _load_music_config() -> dict:
         if "music_volume" not in data and "volume" in data:
             merged["music_volume"] = int(data["volume"])
         merged["volume"] = merged["music_volume"]
-        playlist = _normalize_music_playlist(
-            data.get("playlist"),
-            fallback=str(data.get("normal_track", DEFAULT_MUSIC_TRACK)),
-        )
+        user_set = bool(data.get("playlist_user_set"))
+        if "playlist" in data and isinstance(data.get("playlist"), list) and data.get("playlist"):
+            playlist = _normalize_music_playlist(
+                data.get("playlist"),
+                fallback=str(data.get("normal_track", DEFAULT_MUSIC_TRACK)),
+            )
+        else:
+            # 旧配置只有 normal_track：扩成整库
+            playlist = _normalize_music_playlist(_default_full_music_playlist())
+            user_set = False
+        # 未手动选曲且仍是「仅默认一首」→ 自动扩成全部曲目（修复随机永远从 RADICAL MAT 单曲循环）
+        if (
+            not user_set
+            and len(MUSIC_TRACK_ORDER) > 1
+            and len(playlist) == 1
+            and playlist[0] in (DEFAULT_MUSIC_TRACK, str(data.get("normal_track", "")))
+        ):
+            playlist = _normalize_music_playlist(_default_full_music_playlist())
+            user_set = False
+            try:
+                merged["playlist"] = playlist
+                merged["playlist_user_set"] = False
+                MUSIC_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+                MUSIC_CONFIG_FILE.write_text(
+                    json.dumps({**merged, "playlist": playlist, "playlist_user_set": False}, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
         merged["playlist"] = playlist
+        merged["playlist_user_set"] = user_set
         play_mode = str(merged.get("play_mode", "list"))
         if play_mode not in ("list", "random"):
             play_mode = "list"
@@ -3589,19 +3705,35 @@ def _draw_glitch_fault(canvas: tk.Canvas, width: int, height: int, message: str,
         fill="#88ccff",
         font=("Courier New", 9, "bold"),
     )
-def _draw_music_wave(canvas: tk.Canvas, width: int, height: int, phase: int, *, beat: float = 1.0) -> None:
-    """像素音波：外环光圈 + 底部节拍条，避开中央立绘区域。"""
+def _draw_music_wave(
+    canvas: tk.Canvas,
+    width: int,
+    height: int,
+    phase: int,
+    *,
+    beat: float = 1.0,
+    colors: tuple[str, ...] | None = None,
+) -> None:
+    """像素音波：外环光圈 + 底部节拍条；淡雅配色，最外圈始终完整落在方框内。"""
     canvas.delete("all")
     cx, cy = width // 2, height // 2
     amp = max(0.25, min(1.0, beat))
-    px = max(4, min(width, height) // 18)
-    colors = ("#88ccff", "#4488ff", "#66aaff", "#aadfff", "#ffcc66")
-    # 内半径从立绘外侧开始，避免盖住桌宠身体
+    half = min(width, height) // 2
+    # 像素块略细，视觉更柔；半径须留给像素方块半边，避免贴边被裁
+    px = max(3, min(width, height) // 28)
+    max_r = max(8, half - px - 1)
+    palette = colors if colors and len(colors) >= 2 else DEFAULT_MUSIC_WAVE_COLORS
+    base, light = palette[0], palette[1]
+    # 内圈贴近立绘外沿，外圈贴近 max_r；最大仍到满圈，最小压得更小，呼吸幅度更大
     for ring in range(4):
-        glow = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(phase * 0.22 + ring * 0.85))
-        base = min(width, height) * (0.40 + ring * 0.08)
-        r = int(base * (0.82 + 0.25 * amp) * glow)
-        _draw_pixel_ring(canvas, cx, cy, r, px, colors[ring % len(colors)])
+        wave = 0.5 + 0.5 * math.sin(phase * 0.22 + ring * 0.85)
+        frac = 0.48 + ring * 0.16  # 0.48 → 0.96
+        # 最大 1.0（外圈不破框），最小约 0.50（原先几乎只在 0.94～1.0 间抖）
+        pulse = 0.50 + 0.50 * wave
+        r = int(max_r * frac * pulse)
+        r = max(4, min(r, max_r))
+        col = base if ring % 2 == 0 else light
+        _draw_pixel_ring(canvas, cx, cy, r, px, col)
     bars = 7
     bar_w = max(px, width // (bars * 3))
     gap = bar_w
@@ -3610,8 +3742,8 @@ def _draw_music_wave(canvas: tk.Canvas, width: int, height: int, phase: int, *, 
     for i in range(bars):
         x = x0 + i * (bar_w + gap)
         wave = math.sin(phase * 0.35 + i * 0.8) * 0.5 + 0.5
-        h = int(wave * amp * (height // 7) + px)
-        col = "#88ccff" if i % 2 == 0 else "#4488ff"
+        h = int(wave * amp * (height // 10) + px)
+        col = base if i % 2 == 0 else light
         canvas.create_rectangle(x, height - h - 2, x + bar_w, height - 2, fill=col, outline="")
 
 
@@ -3639,6 +3771,9 @@ def _music_track(track_id: str | None) -> dict:
         "src": MUSIC_SRC_DIR / "missing.wav",
         "cache": DATA_AUDIO_DIR / "music_missing_cache.wav",
         "phonograph": "音乐·无曲目",
+        "folder": "",
+        "color_key": "blue",
+        "wave_colors": DEFAULT_MUSIC_WAVE_COLORS,
     }
 
 
@@ -5723,6 +5858,7 @@ class DesktopPet:
         self.bg_music_playing = False
         self.bg_music_paused_for_call = False
         self.bg_music_play_index = 0
+        self._bg_music_shuffle_bag: list[int] = []
         self.bg_music_watch_job: str | None = None
         self.music_config = _load_music_config()
         self.last_voice_error_ms = 0
@@ -7140,6 +7276,22 @@ class DesktopPet:
     def _music_playlist(self) -> list[str]:
         return _music_playlist_from_config(self.music_config)
 
+    def _current_bg_music_track_id(self) -> str:
+        playlist = self._music_playlist()
+        if not playlist:
+            return DEFAULT_MUSIC_TRACK
+        idx = int(getattr(self, "bg_music_play_index", 0) or 0)
+        if idx < 0 or idx >= len(playlist):
+            idx = 0
+        return playlist[idx]
+
+    def _current_music_wave_colors(self) -> tuple[str, ...]:
+        track = _music_track(self._current_bg_music_track_id())
+        colors = track.get("wave_colors")
+        if isinstance(colors, (tuple, list)) and len(colors) >= 2:
+            return tuple(str(c) for c in colors)
+        return DEFAULT_MUSIC_WAVE_COLORS
+
     def _music_play_mode_label(self) -> str:
         return "列表循环" if self.music_config.get("play_mode", "list") == "list" else "随机"
 
@@ -7151,6 +7303,21 @@ class DesktopPet:
                 pass
             self.bg_music_watch_job = None
 
+    def _reset_bg_music_shuffle_bag(self, *, avoid_first: int | None = None) -> None:
+        """随机模式：把播放列表打乱成一轮顺序；播完一轮再打乱，音乐模式不停则一直循环。"""
+        playlist = self._music_playlist()
+        n = len(playlist)
+        order = list(range(n))
+        if n <= 1:
+            self._bg_music_shuffle_bag = order
+            return
+        random.shuffle(order)
+        # 新一轮尽量不从刚播完的那首开头，避免连播同一首
+        if avoid_first is not None and order and order[0] == avoid_first and n > 1:
+            # 与第二首相换
+            order[0], order[1] = order[1], order[0]
+        self._bg_music_shuffle_bag = order
+
     def _bg_music_play_track(self, track_id: str, *, single_loop: bool) -> bool:
         wav = _resolve_music_wav(track_id)
         if wav is None or not wav.exists():
@@ -7160,6 +7327,7 @@ class DesktopPet:
         _init_pygame_mixer()
         pygame.mixer.music.load(str(wav))
         self._apply_music_volume()
+        # 单曲始终循环；多曲「播完一首 → 下一首」，由 watch 衔接，音乐模式不停就不会停
         pygame.mixer.music.play(-1 if single_loop else 0)
         self.bg_music_playing = True
         return True
@@ -7174,13 +7342,20 @@ class DesktopPet:
             return
         mode = self.music_config.get("play_mode", "list")
         if mode == "random":
-            if len(playlist) == 1:
-                self.bg_music_play_index = 0
+            bag = list(getattr(self, "_bg_music_shuffle_bag", []) or [])
+            # 去掉已离开列表的脏下标
+            bag = [i for i in bag if 0 <= i < len(playlist)]
+            if not bag:
+                prev = int(getattr(self, "bg_music_play_index", 0) or 0)
+                self._reset_bg_music_shuffle_bag(avoid_first=prev)
+                bag = list(getattr(self, "_bg_music_shuffle_bag", []) or [])
+            if not bag:
+                self.bg_music_play_index = random.randrange(len(playlist))
             else:
-                choices = [i for i in range(len(playlist)) if i != self.bg_music_play_index]
-                self.bg_music_play_index = random.choice(choices or list(range(len(playlist))))
+                self.bg_music_play_index = bag.pop(0)
+                self._bg_music_shuffle_bag = bag
         else:
-            self.bg_music_play_index = (self.bg_music_play_index + 1) % len(playlist)
+            self.bg_music_play_index = (int(getattr(self, "bg_music_play_index", 0) or 0) + 1) % len(playlist)
         tid = playlist[self.bg_music_play_index]
         if not self._bg_music_play_track(tid, single_loop=False):
             self._show_toast(f"找不到音乐：{_music_track(tid)['title']}", "#ff8844")
@@ -7190,6 +7365,7 @@ class DesktopPet:
 
     def _schedule_bg_music_watch(self) -> None:
         self._cancel_bg_music_watch()
+        # 多曲时：只要还在播（音乐模式未关），一首结束就接下一个
         if not self.bg_music_playing or len(self._music_playlist()) <= 1:
             return
 
@@ -7219,10 +7395,15 @@ class DesktopPet:
         single = len(playlist) == 1
         if single:
             self.bg_music_play_index = 0
+            self._bg_music_shuffle_bag = [0]
         elif self.music_config.get("play_mode", "list") == "random":
-            self.bg_music_play_index = random.randint(0, len(playlist) - 1)
+            self._reset_bg_music_shuffle_bag()
+            bag = list(getattr(self, "_bg_music_shuffle_bag", []) or [])
+            self.bg_music_play_index = bag.pop(0) if bag else 0
+            self._bg_music_shuffle_bag = bag
         else:
             self.bg_music_play_index = 0
+            self._bg_music_shuffle_bag = []
         tid = playlist[self.bg_music_play_index]
         try:
             if not self._bg_music_play_track(tid, single_loop=single):
@@ -7293,7 +7474,10 @@ class DesktopPet:
         mode_label = self._music_play_mode_label()
         if len(playlist) == 1:
             track = _music_track(playlist[0])
-            self._show_toast(f"音乐漫步开启（{mode_label} · {track['title']}）", "#88ccff")
+            tip = f"音乐漫步开启（{mode_label} · {track['title']}）"
+            if self.music_config.get("play_mode") == "random":
+                tip += "；列表仅 1 首，等同单曲循环，可在声音设置→选曲加入更多"
+            self._show_toast(tip, "#88ccff", duration_ms=3500)
         else:
             self._show_toast(f"音乐漫步开启（{mode_label} · {len(playlist)} 首）", "#88ccff")
         self._show_once_hint("music_mode", duration_ms=3500)
@@ -7379,6 +7563,15 @@ class DesktopPet:
             fg=MENU_FG,
         )
         random_btn.pack(side=tk.LEFT, padx=4)
+        tk.Label(
+            frame,
+            text="随机＝列表洗牌后依次播放，一轮结束再洗牌；音乐模式不停则一直循环",
+            font=("Courier New", 9),
+            fg="#8899aa",
+            bg=MENU_BG,
+            wraplength=320,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 4))
 
         track_row = tk.Frame(frame, bg=MENU_BG)
         track_row.pack(fill=tk.X, pady=(2, 4))
@@ -7395,6 +7588,7 @@ class DesktopPet:
 
         def set_playlist(track_ids: list[str]) -> None:
             self.music_config["playlist"] = _normalize_music_playlist(track_ids, fallback=DEFAULT_MUSIC_TRACK)
+            self.music_config["playlist_user_set"] = True
             _save_music_config(self.music_config)
             path_label.config(text=self._music_path_label())
             refresh_playlist_label()
@@ -9987,7 +10181,7 @@ class DesktopPet:
         self._stop_music_wave_fx()
         if not self.music_sprite_mode:
             return
-        pad = 28
+        pad = MUSIC_WAVE_PAD
         size = self.display_size + pad * 2
         self.music_wave_win = tk.Toplevel(self.root)
         self.music_wave_win.overrideredirect(True)
@@ -10012,7 +10206,7 @@ class DesktopPet:
     def _place_music_wave(self) -> None:
         if not self.music_wave_win or not self.music_wave_win.winfo_exists():
             return
-        pad = 28
+        pad = MUSIC_WAVE_PAD
         display_y = self.y + self.click_bounce_offset
         self.music_wave_win.geometry(f"+{self.x - pad}+{display_y - pad}")
         self._lift_pet_above_bg_fx()
@@ -10021,7 +10215,7 @@ class DesktopPet:
         if not self.music_wave_canvas or not self.music_sprite_mode:
             self._stop_music_wave_fx()
             return
-        pad = 28
+        pad = MUSIC_WAVE_PAD
         size = self.display_size + pad * 2
         beat = 1.0
         try:
@@ -10033,7 +10227,14 @@ class DesktopPet:
                     beat = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(pos * 0.014))
         except Exception:
             pass
-        _draw_music_wave(self.music_wave_canvas, size, size, self.music_wave_phase, beat=beat)
+        _draw_music_wave(
+            self.music_wave_canvas,
+            size,
+            size,
+            self.music_wave_phase,
+            beat=beat,
+            colors=self._current_music_wave_colors(),
+        )
         self.music_wave_phase += 1
         self._place_music_wave()
         self.root.after(MUSIC_WAVE_MS, self._animate_music_wave)
@@ -13129,7 +13330,8 @@ class DesktopPet:
         _save_diary(self.diary_entries)
         self.music_config = {
             "play_mode": "list",
-            "playlist": [DEFAULT_MUSIC_TRACK],
+            "playlist": _default_full_music_playlist(),
+            "playlist_user_set": False,
             "music_volume": 70,
             "volume": 70,
             "sfx_volume": 80,
@@ -14574,7 +14776,7 @@ class DesktopPet:
     def _start_mini_pet_music_wave(self, entry: dict) -> None:
         if entry.get("wave_canvas"):
             return
-        pad = 18
+        pad = MUSIC_WAVE_MINI_PAD
         size = entry["size"] + pad * 2
         wave_win = tk.Toplevel(self.root)
         wave_win.overrideredirect(True)
@@ -14594,7 +14796,7 @@ class DesktopPet:
         wave_win = entry.get("wave_win")
         if not wave_win or not wave_win.winfo_exists():
             return
-        pad = entry.get("wave_pad", 18)
+        pad = entry.get("wave_pad", MUSIC_WAVE_MINI_PAD)
         bounce = int(entry.get("bounce_offset", 0))
         wx = int(entry["x"] - pad)
         wy = int(entry["y"] + bounce - pad)
@@ -14615,7 +14817,7 @@ class DesktopPet:
         if not canvas or not self.music_sprite_mode or not self.companion_bar_enabled:
             self._stop_mini_pet_music_wave(entry)
             return
-        pad = entry.get("wave_pad", 18)
+        pad = entry.get("wave_pad", MUSIC_WAVE_MINI_PAD)
         size = entry["size"] + pad * 2
         beat = 1.0
         try:
@@ -14627,7 +14829,14 @@ class DesktopPet:
                     beat = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(pos * 0.014))
         except Exception:
             pass
-        _draw_music_wave(canvas, size, size, entry.get("wave_phase", 0), beat=beat)
+        _draw_music_wave(
+            canvas,
+            size,
+            size,
+            entry.get("wave_phase", 0),
+            beat=beat,
+            colors=self._current_music_wave_colors(),
+        )
         entry["wave_phase"] = entry.get("wave_phase", 0) + 1
         self._place_mini_pet_music_wave(entry)
         entry["wave_job"] = self.root.after(
