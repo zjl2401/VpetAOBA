@@ -6516,16 +6516,28 @@ class DesktopPet:
         )
 
     def _play_game_fail_voice(self, category: str = "hurt", *, show_subtitle: bool = True) -> bool:
-        """游戏失败附加语音（异步加载，不阻塞结算画面）。"""
+        """游戏失败附加语音：仅语音模式播 hurt；不挡结算画面，忽略冷却并可打断其它语音。"""
+        if not self._voice_enabled():
+            return False
         if not show_subtitle:
             player = self.voice_player
             saved = player._subtitle_cb
             player._subtitle_cb = None
             try:
-                return self._play_scene_voice_vpet(category, chain=False)
+                return self._play_scene_voice_vpet(
+                    category,
+                    chain=False,
+                    ignore_cooldown=True,
+                    interrupt_busy=True,
+                )
             finally:
                 player._subtitle_cb = saved
-        return self._play_scene_voice_vpet(category, chain=False)
+        return self._play_scene_voice_vpet(
+            category,
+            chain=False,
+            ignore_cooldown=True,
+            interrupt_busy=True,
+        )
 
     def _play_ambient_voice_vpet(self, category: str, *, chain: bool = True) -> bool:
         """自由随机类语音；播放中则不再触发。"""
@@ -12547,7 +12559,7 @@ class DesktopPet:
                 hold_ms=TYPING_CLEAR_HOLD_MS,
                 on_done=self._close_typing_game,
             )
-            if grade == "D":
+            if grade in ("D", "C"):
                 self._play_game_fail_voice("hurt")
 
         def tick_timer() -> None:
