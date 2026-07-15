@@ -355,6 +355,7 @@ class VoicePlayer:
         self._session_priority = 0
         self._last_session_end_ms = 0
         self._last_pick_path: dict[tuple[str, str], Path] = {}
+        self._play_gen = 0
         self.reload_catalog_async()
 
     def reload_catalog_async(self, *, on_done: Callable[[], None] | None = None) -> None:
@@ -429,11 +430,14 @@ class VoicePlayer:
         if self._playing or self._queue:
             self._done_cb = None
             self.stop()
+        self._play_gen = int(getattr(self, "_play_gen", 0)) + 1
         self._session_priority = priority
         self._done_cb = on_done
 
     def stop(self) -> None:
         was_busy = self.is_busy()
+        # 作废进行中的后台转码/after 回调，避免 stop 后旧 worker 把语音又拉回来
+        self._play_gen = int(getattr(self, "_play_gen", 0)) + 1
         self._queue.clear()
         self._playing = False
         self._current = None
@@ -553,7 +557,8 @@ class VoicePlayer:
         if not self.enabled or not clips:
             return False
         if self.is_busy():
-            if interrupt_busy or ignore_cooldown:
+            # 仅 interrupt_busy 可打断；ignore_cooldown 只跳过全局冷却，不得误掐正在播的场景语音
+            if interrupt_busy:
                 self.stop()
             else:
                 return False
@@ -564,7 +569,8 @@ class VoicePlayer:
         # 绝不在主线程跑 ffmpeg：直接入队，由 _play_next 后台解析。
         # 仅快速剔掉「已缓存路径不存在且无法同步换绑」的失败仍异步重试。
         self._begin_session(priority, on_done)
-        self._play_next(list(clips), chain=chain)
+        play_gen = self._play_gen
+        self._play_next(list(clips), chain=chain, play_gen=play_gen)
         return True
 
     def all_catalog_clips(self) -> list[VoiceClip]:
@@ -583,8 +589,39 @@ class VoicePlayer:
         self._preload_clips(clips)
 
     def preload_priority_clips(self, *, on_done: Callable[[int, int], None] | None = None) -> None:
-        """只预热高频场景若干条，避免启动时全量转码卡死。"""
-        want = ("call", "你好", "eat", "kick", "hurt", "end", "sleep", "normal", "interjection")
+        """预热高频 + 特定触发场景（与 normal 一并提前缓存，避免首次点播卡转码）。"""
+        # 特定触发 / 场景专用：整组进缓存；normal 也整组预热
+        want = (
+            "call",
+            "你好",
+            "eat",
+            "kick",
+            "hurt",
+            "end",
+            "sleep",
+            "work",
+            "yuqi",
+            "walk",
+            "dizzy",
+            "normal",
+            "interjection",
+        )
+        full_preload = frozenset(
+            {
+                "yuqi",
+                "eat",
+                "kick",
+                "hurt",
+                "sleep",
+                "work",
+                "walk",
+                "dizzy",
+                "end",
+                "你好",
+                "normal",
+                "call",
+            }
+        )
         clips: list[VoiceClip] = []
         for cat in want:
             pool = list(self.catalog.vpet.get(cat, []))
@@ -592,12 +629,15 @@ class VoicePlayer:
                 for c in self.all_catalog_clips():
                     if c.source == "vpet" and ("你好" in c.title or "你好" in c.src_path.stem):
                         pool.append(c)
-            # 高频场景类整组预热（eat 只有少量条目，应全部进缓存以便真正随机）
             rings = [c for c in pool if c.is_ring]
             bodies = [c for c in pool if not c.is_ring]
             if rings:
-                clips.append(rings[0])
-            limit = len(bodies) if cat == "eat" else 2
+                # call：ring 全部预热，保证打电话必响
+                if cat == "call":
+                    clips.extend(rings)
+                else:
+                    clips.append(rings[0])
+            limit = len(bodies) if cat in full_preload else 2
             for c in bodies[:limit]:
                 clips.append(c)
         # 伴侣启动音少量
@@ -732,7 +772,12 @@ class VoicePlayer:
         if not clip:
             return False
         return self.play_clips(
-            [clip], chain=False, on_done=on_done, priority=priority, ignore_cooldown=ignore_cooldown
+            [clip],
+            chain=False,
+            on_done=on_done,
+            priority=priority,
+            ignore_cooldown=ignore_cooldown,
+            interrupt_busy=True,
         )
 
     def play_companion_startup(self, *, on_done=None, priority: int = VOICE_PRIORITY_SCENE, ignore_cooldown: bool = False) -> bool:
@@ -748,10 +793,19 @@ class VoicePlayer:
         if not clip:
             return False
         return self.play_clips(
-            [clip], chain=False, on_done=on_done, priority=priority, ignore_cooldown=ignore_cooldown
+            [clip],
+            chain=False,
+            on_done=on_done,
+            priority=priority,
+            ignore_cooldown=ignore_cooldown,
+            interrupt_busy=True,
         )
 
-    def _play_next(self, clips: list[VoiceClip], *, chain: bool) -> None:
+    def _play_next(self, clips: list[VoiceClip], *, chain: bool, play_gen: int | None = None) -> None:
+        if play_gen is None:
+            play_gen = self._play_gen
+        if play_gen != self._play_gen:
+            return
         if not clips:
             self._finish_all()
             return
@@ -759,34 +813,34 @@ class VoicePlayer:
         rest = clips[1:]
         # 快速路径：已有内存/磁盘缓存则立刻播，绝不主线程转码
         if clip.cache_wav and clip.cache_wav.exists():
-            self._start_clip(clip, rest, chain=chain)
+            self._start_clip(clip, rest, chain=chain, play_gen=play_gen)
             return
         safe = f"{clip.source}_{clip.category}_{clip.src_path.stem}"
         safe = re.sub(r'[<>:"/\\|?*]', "_", safe)[:120]
         candidate = voice_cache_path(self.cache_dir, safe)
         if candidate.exists():
             clip.cache_wav = candidate
-            self._start_clip(clip, rest, chain=chain)
+            self._start_clip(clip, rest, chain=chain, play_gen=play_gen)
             return
         if clip.src_path.suffix.lower() == ".wav" and clip.src_path.exists():
             clip.cache_wav = clip.src_path
-            self._start_clip(clip, rest, chain=chain)
+            self._start_clip(clip, rest, chain=chain, play_gen=play_gen)
             return
 
         def worker() -> None:
             wav = self._resolve_wav(clip)
 
             def cont() -> None:
-                if not self.enabled:
+                if play_gen != self._play_gen or not self.enabled:
                     return
                 if wav is None:
                     # ring 解析失败绝不跳过到后续随机台词
                     if clip.is_ring:
                         self._finish_all()
                         return
-                    self._play_next(rest, chain=chain)
+                    self._play_next(rest, chain=chain, play_gen=play_gen)
                     return
-                self._start_clip(clip, rest, chain=chain)
+                self._start_clip(clip, rest, chain=chain, play_gen=play_gen)
 
             try:
                 self.root.after(0, cont)
@@ -795,19 +849,30 @@ class VoicePlayer:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _start_clip(self, clip: VoiceClip, rest: list[VoiceClip], *, chain: bool) -> None:
+    def _start_clip(
+        self,
+        clip: VoiceClip,
+        rest: list[VoiceClip],
+        *,
+        chain: bool,
+        play_gen: int | None = None,
+    ) -> None:
+        if play_gen is None:
+            play_gen = self._play_gen
+        if play_gen != self._play_gen:
+            return
         # 调用方已保证 cache 就绪，或经由 worker 解析；此处禁止再触发主线程 ffmpeg
         wav = clip.cache_wav if clip.cache_wav and clip.cache_wav.exists() else None
         if wav is None:
             if clip.is_ring:
                 self._finish_all()
                 return
-            self._play_next(rest, chain=chain)
+            self._play_next(rest, chain=chain, play_gen=play_gen)
             return
         duration_ms = max(400, self.get_duration_ms(wav))
         min_play_ms = max(500, int(duration_ms * 0.88))
         if duration_ms < 200 and not clip.is_ring:
-            self._play_next(rest, chain=chain)
+            self._play_next(rest, chain=chain, play_gen=play_gen)
             return
         self._stop_sfx_if_needed()
         try:
@@ -836,14 +901,20 @@ class VoicePlayer:
                 if clip.is_ring:
                     self._finish_all()
                     return
-                self._play_next(rest, chain=chain)
+                self._play_next(rest, chain=chain, play_gen=play_gen)
                 return
             self._channel = ch
         except Exception:
             if clip.is_ring:
                 self._finish_all()
                 return
-            self._play_next(rest, chain=chain)
+            self._play_next(rest, chain=chain, play_gen=play_gen)
+            return
+        if play_gen != self._play_gen:
+            try:
+                ch.stop()
+            except Exception:
+                pass
             return
         self._playing = True
         self._current = clip
@@ -855,9 +926,11 @@ class VoicePlayer:
             self._queue = rest
         else:
             self._queue = []
-        self._schedule_watch(duration_ms, chain=chain)
+        self._schedule_watch(duration_ms, chain=chain, play_gen=play_gen)
 
-    def _end_current_clip(self, *, chain: bool, force_stop: bool = False) -> None:
+    def _end_current_clip(self, *, chain: bool, force_stop: bool = False, play_gen: int | None = None) -> None:
+        if play_gen is not None and play_gen != self._play_gen:
+            return
         if force_stop:
             try:
                 import pygame
@@ -875,34 +948,38 @@ class VoicePlayer:
         if self._queue:
             pending = list(self._queue)
             self._queue.clear()
-            self._play_next_sync(pending, chain=chain)
+            self._play_next_sync(pending, chain=chain, play_gen=self._play_gen)
         else:
             self._finish_all()
 
-    def _play_next_sync(self, clips: list[VoiceClip], *, chain: bool) -> None:
+    def _play_next_sync(self, clips: list[VoiceClip], *, chain: bool, play_gen: int | None = None) -> None:
         """同步解析路径（仅供内部队列衔接）。"""
+        if play_gen is None:
+            play_gen = self._play_gen
+        if play_gen != self._play_gen:
+            return
         if not clips:
             self._finish_all()
             return
         clip = clips[0]
         rest = clips[1:]
         if clip.cache_wav and clip.cache_wav.exists():
-            self._start_clip(clip, rest, chain=chain)
+            self._start_clip(clip, rest, chain=chain, play_gen=play_gen)
             return
 
         def worker() -> None:
             wav = self._resolve_wav(clip)
 
             def cont() -> None:
-                if not self.enabled:
+                if play_gen != self._play_gen or not self.enabled:
                     return
                 if wav is None:
                     if clip.is_ring:
                         self._finish_all()
                         return
-                    self._play_next_sync(rest, chain=chain)
+                    self._play_next_sync(rest, chain=chain, play_gen=play_gen)
                     return
-                self._start_clip(clip, rest, chain=chain)
+                self._start_clip(clip, rest, chain=chain, play_gen=play_gen)
 
             try:
                 self.root.after(0, cont)
@@ -911,7 +988,9 @@ class VoicePlayer:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _schedule_watch(self, duration_ms: int, *, chain: bool) -> None:
+    def _schedule_watch(self, duration_ms: int, *, chain: bool, play_gen: int | None = None) -> None:
+        if play_gen is None:
+            play_gen = self._play_gen
         if self._watch_job:
             try:
                 self.root.after_cancel(self._watch_job)
@@ -920,13 +999,15 @@ class VoicePlayer:
 
         def tick() -> None:
             self._watch_job = None
+            if play_gen != self._play_gen:
+                return
             now_ms = int(time.time() * 1000)
             deadline_ms = getattr(self, "_clip_deadline_ms", now_ms)
             started_ms = getattr(self, "_clip_started_ms", now_ms)
             min_play_ms = getattr(self, "_clip_min_play_ms", 500)
             elapsed = now_ms - started_ms
             if now_ms >= deadline_ms:
-                self._end_current_clip(chain=chain, force_stop=True)
+                self._end_current_clip(chain=chain, force_stop=True, play_gen=play_gen)
                 return
             busy = False
             try:
@@ -939,7 +1020,7 @@ class VoicePlayer:
             if busy or elapsed < min_play_ms:
                 self._watch_job = self.root.after(80, tick)
                 return
-            self._end_current_clip(chain=chain, force_stop=False)
+            self._end_current_clip(chain=chain, force_stop=False, play_gen=play_gen)
 
         self._watch_job = self.root.after(80, tick)
 

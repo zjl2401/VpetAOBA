@@ -79,6 +79,7 @@ TILE_FILES = {
 }
 
 PALETTE = [
+    (EMPTY, "清除"),
     (GRASS, "草地"),
     (LAND, "土地"),
     (WATER, "水面"),
@@ -94,9 +95,8 @@ PALETTE = [
     (MOUNTAIN, "景区"),
 ]
 
-# 出发点房屋绘制放大（格数边长）；树木占 1 格逻辑、视觉高 2 格
+# 出发点房屋绘制放大（格数边长）；树木严格占 1 格草地（不拉长）
 HOUSE_DRAW_TILES = 3
-TREE_DRAW_TILES = 2
 MOUNTAIN_DRAW_TILES = 2
 
 TREASURE_LOOT = (
@@ -241,9 +241,6 @@ class Assets:
             if tid == HOUSE:
                 side = TILE * HOUSE_DRAW_TILES
                 self.tiles[tid] = pygame.transform.scale(img, (side, side))
-            elif tid == TREE:
-                # 逻辑占 1 格，视觉高 2 格（脚落格底）
-                self.tiles[tid] = pygame.transform.scale(img, (TILE, TILE * TREE_DRAW_TILES))
             elif tid == MOUNTAIN:
                 side = TILE * MOUNTAIN_DRAW_TILES
                 self.tiles[tid] = pygame.transform.scale(img, (side, side))
@@ -429,26 +426,90 @@ def border_brick(grid: list[list[int]]) -> None:
     border_wall(grid, ROCK)
 
 
-def normalize_map_tiles(data: dict) -> dict:
-    """地下：砖地=背景、岩石=隔断；旧图 BRICK 墙→ROCK，CAVE 地→BRICK。"""
-    if data.get("tile_schema") == 2:
+def _map_has_portal_pairs(data: dict) -> bool:
+    """新图：楼梯任意层，或同格双层洞窟（门户）。旧图地下满铺 CAVE 不当门户。"""
+    surf = data.get("surface") or data.get("tiles")
+    under = data.get("underground")
+    if not isinstance(surf, list) or not surf:
+        return False
+    for y, row in enumerate(surf):
+        for x, t in enumerate(row):
+            if t == STAIRS:
+                return True
+            if t == CAVE and isinstance(under, list) and under and under[y][x] == CAVE:
+                return True
+    if isinstance(under, list):
+        for row in under:
+            for t in row:
+                if t == STAIRS:
+                    return True
+    return False
+
+
+def repair_layer_portals(data: dict) -> dict:
+    """楼梯与洞窟并存：同格双层对齐全为同一种门户。"""
+    surf = data.get("surface")
+    under = data.get("underground")
+    if not isinstance(surf, list) or not isinstance(under, list) or not surf or not under:
         return data
+    h = min(len(surf), len(under))
+    stairs: list[list[int]] = []
+    caves: list[list[int]] = []
+    for y in range(h):
+        w = min(len(surf[y]), len(under[y]))
+        for x in range(w):
+            a, b = surf[y][x], under[y][x]
+            if a in LAYER_PORTALS or b in LAYER_PORTALS:
+                # 优先跟地面，其次地下；楼梯与洞窟都可切换层
+                kind = a if a in LAYER_PORTALS else b
+                if b in LAYER_PORTALS and a not in LAYER_PORTALS:
+                    kind = b
+                elif a in LAYER_PORTALS and b in LAYER_PORTALS and a != b:
+                    kind = a  # 同格冲突时以地面为准
+                surf[y][x] = kind
+                under[y][x] = kind
+                if kind == STAIRS:
+                    stairs.append([x, y])
+                else:
+                    caves.append([x, y])
+    data["stairs"] = stairs
+    data["caves"] = caves
+    return data
+
+
+def normalize_map_tiles(data: dict) -> dict:
+    """地下：砖地=背景、岩石=隔断；旧图 BRICK 墙→ROCK，非门户 CAVE 地→BRICK。"""
+    if data.get("tile_schema") == 2:
+        return repair_layer_portals(data)
+    # 已有楼梯/成对洞窟时不再做旧迁移（否则会清掉地下洞窟并堵死砖道）
+    if _map_has_portal_pairs(data):
+        data["tile_schema"] = 2
+        return repair_layer_portals(data)
+    surf = data.get("surface") or data.get("tiles")
     for key in ("surface", "underground", "tiles"):
         grid = data.get(key)
         if not isinstance(grid, list) or not grid:
             continue
         under = key == "underground"
-        for row in grid:
+        for y, row in enumerate(grid):
             for i, t in enumerate(row):
                 if under:
                     if t == CAVE:
+                        # 仅旧岩地：地面同格不是门户才改成砖
+                        if (
+                            isinstance(surf, list)
+                            and y < len(surf)
+                            and i < len(surf[y])
+                            and surf[y][i] in LAYER_PORTALS
+                        ):
+                            continue
                         row[i] = BRICK
                     elif t == BRICK:
                         row[i] = ROCK
                 elif t == BRICK:
                     row[i] = ROCK
     data["tile_schema"] = 2
-    return data
+    return repair_layer_portals(data)
 
 
 def carve_path(grid: list[list[int]], start: tuple[int, int], goal: tuple[int, int], rng: random.Random, floor: int) -> None:
@@ -932,18 +993,21 @@ class Game:
         self.nearby_hint = ""
         self.save_picker_idx = 0
         self.map_picker_idx = 0
-        self.picker_mode = ""  # "save" | "map" | ""
+        self.picker_mode = ""  # "save" | "map_editor" | "map_play" | ""
+        self.edit_map_path: Path | None = None
+        self.picker_delete_pending: Path | None = None
+        self.editor_delete_pending = False
         self.editor_panning = False
         self.editor_pan_origin = (0, 0, 0.0, 0.0)
         self.paint_drag = False
         # 开场升起：两 logo 缓缓汇合，再淡入菜单
         self.intro_t = 0.0
-        self.intro_dur = 4.2
+        self.intro_dur = 6.2
         self.logo1_delay = 0.0
-        self.logo2_delay = 0.85
+        self.logo2_delay = 1.15
         self.intro_done = False
         self.menu_fade = 0.0
-        self.menu_fade_speed = 0.85  # 更慢淡入
+        self.menu_fade_speed = 0.55  # 菜单淡入更慢
         self.logo1_y = 0.0
         self.logo2_y = 0.0
         self._reset_logo_anim_targets()
@@ -1094,38 +1158,62 @@ class Game:
             return
         self.picker_mode = "map_editor" if for_editor else "map_play"
         self.map_picker_idx = len(self.custom_maps) - 1
+        self.picker_delete_pending = None
         self.state = "picker"
 
     def run_picker(self, events: list) -> None:
         items = self._list_saves() if self.picker_mode == "save" else self._list_maps()
         if not items:
+            self.picker_delete_pending = None
+            self.picker_mode = ""
             self.enter_menu(play_intro=False)
             return
         for e in events:
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
                     self.picker_mode = ""
+                    self.picker_delete_pending = None
                     self.enter_menu(play_intro=False)
                     return
                 if e.key in (pygame.K_UP, pygame.K_w):
+                    self.picker_delete_pending = None
                     if self.picker_mode == "save":
                         self.save_picker_idx = (self.save_picker_idx - 1) % len(items)
                     else:
                         self.map_picker_idx = (self.map_picker_idx - 1) % len(items)
                 elif e.key in (pygame.K_DOWN, pygame.K_s):
+                    self.picker_delete_pending = None
                     if self.picker_mode == "save":
                         self.save_picker_idx = (self.save_picker_idx + 1) % len(items)
                     else:
                         self.map_picker_idx = (self.map_picker_idx + 1) % len(items)
                 elif e.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    self.picker_delete_pending = None
                     self._picker_confirm(items)
                     return
+                elif e.key in (pygame.K_DELETE, pygame.K_x) and self.picker_mode != "save":
+                    path = items[self.map_picker_idx]
+                    if self.picker_delete_pending and self.picker_delete_pending.resolve() == path.resolve():
+                        if self._delete_map_file(path):
+                            self.toast(f"已删除 {path.name}")
+                            self.picker_delete_pending = None
+                            items = self._list_maps()
+                            if not items:
+                                self.picker_mode = ""
+                                self.enter_menu(play_intro=False)
+                                return
+                            self.map_picker_idx = min(self.map_picker_idx, len(items) - 1)
+                            self.custom_maps = items
+                    else:
+                        self.picker_delete_pending = path
+                        self.toast(f"再按 Delete/X 确认删除 {path.name}")
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 mx, my = self._content_mouse(e.pos)
                 top = 80
                 for i, _path in enumerate(items):
                     rect = pygame.Rect(80, top + i * 36, SCREEN_W - 160, 32)
                     if rect.collidepoint(mx, my):
+                        self.picker_delete_pending = None
                         if self.picker_mode == "save":
                             self.save_picker_idx = i
                         else:
@@ -1146,7 +1234,11 @@ class Game:
             self.screen.blit(label, (96, top + i * 36 + 6))
             if selected:
                 pygame.draw.rect(self.screen, (255, 220, 100), (80, top + i * 36, SCREEN_W - 160, 32), 1)
-        tip = self.font_sm.render("W/S 或鼠标选择 · Enter 确认 · Esc 返回", True, (170, 180, 200))
+        if self.picker_mode == "save":
+            tip_text = "W/S 或鼠标选择 · Enter 确认 · Esc 返回"
+        else:
+            tip_text = "W/S 选择 · Enter 打开 · Delete/X 删除 · Esc 返回"
+        tip = self.font_sm.render(tip_text, True, (170, 180, 200))
         self.screen.blit(tip, (80, SCREEN_H - 40))
 
     def _picker_confirm(self, items: list[Path]) -> None:
@@ -1158,12 +1250,13 @@ class Game:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         if self.picker_mode == "map_editor":
-            self.start_editor(data)
+            self.start_editor(data, path=path)
             self.toast(f"已载入 {path.name}")
         else:
             self.start_play(data, campaign=False)
             self.toast(f"试玩 {path.name}")
         self.picker_mode = ""
+        self.picker_delete_pending = None
 
     def _interact_targets(self) -> list[tuple[int, int, int]]:
         """脚下与面前的可互动物。"""
@@ -1240,19 +1333,31 @@ class Game:
         pygame.draw.line(self.screen, (90, 100, 130), (0, VIEW_H - PALETTE_H), (SCREEN_W, VIEW_H - PALETTE_H), 2)
         for rect, tid, _name in self._editor_palette_rects():
             pygame.draw.rect(self.screen, (40, 46, 64), rect)
-            img = self.assets.tiles.get(tid)
-            if img:
-                thumb = img
-                max_s = min(rect.w - 4, rect.h - 4)
-                if thumb.get_width() > max_s or thumb.get_height() > max_s:
-                    scale = max_s / max(thumb.get_width(), thumb.get_height())
-                    thumb = pygame.transform.scale(
-                        thumb, (max(1, int(thumb.get_width() * scale)), max(1, int(thumb.get_height() * scale)))
-                    )
-                self.screen.blit(
-                    thumb,
-                    (rect.centerx - thumb.get_width() // 2, rect.centery - thumb.get_height() // 2),
+            if tid == EMPTY:
+                # 清除笔刷：空格 + 红叉
+                pygame.draw.rect(self.screen, (28, 32, 48), rect.inflate(-6, -6))
+                pygame.draw.line(
+                    self.screen, (220, 80, 80),
+                    (rect.left + 8, rect.top + 8), (rect.right - 8, rect.bottom - 8), 2,
                 )
+                pygame.draw.line(
+                    self.screen, (220, 80, 80),
+                    (rect.right - 8, rect.top + 8), (rect.left + 8, rect.bottom - 8), 2,
+                )
+            else:
+                img = self.assets.tiles.get(tid)
+                if img:
+                    thumb = img
+                    max_s = min(rect.w - 4, rect.h - 4)
+                    if thumb.get_width() > max_s or thumb.get_height() > max_s:
+                        scale = max_s / max(thumb.get_width(), thumb.get_height())
+                        thumb = pygame.transform.scale(
+                            thumb, (max(1, int(thumb.get_width() * scale)), max(1, int(thumb.get_height() * scale)))
+                        )
+                    self.screen.blit(
+                        thumb,
+                        (rect.centerx - thumb.get_width() // 2, rect.centery - thumb.get_height() // 2),
+                    )
             if tid == self.brush:
                 pygame.draw.rect(self.screen, (255, 220, 90), rect, 2)
             else:
@@ -1324,7 +1429,7 @@ class Game:
         self.treasures = 0
         self.stairs_cd = 0.0
         self.state = "play"
-        self.toast(data.get("name", "探险开始") + " · WASD移动 · 踩楼梯切换地面/地下")
+        self.toast(data.get("name", "探险开始") + " · WASD移动 · 踩楼梯/洞窟切换地面地下")
 
     def _migrate_old_map(self, data: dict) -> dict:
         w, h = data["width"], data["height"]
@@ -1338,11 +1443,12 @@ class Game:
             "goal_layer": "surface",
             "princess": True,
             "stairs": [],
+            "caves": [],
             "name": data.get("name", "自定义地图"),
             "level": 0,
         }
 
-    def start_editor(self, data: dict | None = None) -> None:
+    def start_editor(self, data: dict | None = None, path: Path | None = None) -> None:
         if data is None:
             # 空白画布：无草地填满、无边框、无预设房屋
             w, h = 52, 40
@@ -1359,19 +1465,24 @@ class Game:
                 "goal_layer": "surface",
                 "princess": True,
                 "stairs": [],
+                "caves": [],
                 "name": "DIY 地图",
                 "level": 0,
                 "tile_schema": 2,
             }
+            path = None
         elif "surface" not in data:
             data = self._migrate_old_map(data)
         data = normalize_map_tiles(data)
         self.map_data = data
+        self.edit_map_path = path
+        self.editor_delete_pending = False
         self.layer = "surface"
         self.edit_layer = "surface"
         self.state = "editor"
         self.camera.x = self.camera.y = 0
-        self.toast("空白画布 | 底部素材拖画 | B石头围一圈 | Tab切层 | Ctrl+S/O | P试玩")
+        hint = path.name if path else "新地图"
+        self.toast(f"{hint} | 保存/导出/删除点底栏 | Ctrl+S 保存 · Ctrl+Shift+S 导出")
 
     def draw_visible_map(self, surf: pygame.Surface, grid: list[list[int]], mw: int, mh: int, show_goal: bool) -> None:
         assert self.map_data
@@ -1403,11 +1514,12 @@ class Game:
                     surf.blit(stair_img, (sx, sy))
                 elif t in PROP_OVERLAY and t in self.assets.tiles:
                     prop = self.assets.tiles[t]
-                    if t in (HOUSE, TREE, GATE, MOUNTAIN):
+                    if t in (HOUSE, GATE, MOUNTAIN):
                         # 高大物体：以格底为脚点，向上伸出多格
                         ox = sx + (TILE - prop.get_width()) // 2
                         oy = sy + TILE - prop.get_height()
                     else:
+                        # 树木等：严格贴合当前一格
                         ox = sx + (TILE - prop.get_width()) // 2
                         oy = sy + (TILE - prop.get_height()) // 2
                     surf.blit(prop, (ox, oy))
@@ -1751,12 +1863,9 @@ class Game:
         if self.portal_stand_lock == (self.layer, tx, ty):
             return
         self.layer = "underground" if self.layer == "surface" else "surface"
-        # 保证对面同为入口 / 可走
+        # 对侧同格强制对齐为同一种门户（楼梯/洞窟可并存于地图，但同格类型一致）
         other = layer_grid(self.map_data, self.layer)
-        if other[ty][tx] in SOLID or other[ty][tx] == EMPTY:
-            other[ty][tx] = cell
-        elif other[ty][tx] not in LAYER_PORTALS:
-            other[ty][tx] = cell
+        other[ty][tx] = cell
         self.knight.place_on_tile(tx, ty)
         self.stairs_cd = 0.55
         self.layer_flash = 1.0
@@ -1959,6 +2068,7 @@ class Game:
         grid = self.current_grid()
         keys = pygame.key.get_pressed()
         ctrl = keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]
+        shift = keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
         space = keys[pygame.K_SPACE]
         pan = 320 * dt
         if keys[pygame.K_LEFT]:
@@ -1981,18 +2091,29 @@ class Game:
                     self.layer = self.edit_layer
                     self.toast("编辑层：" + ("地下" if self.edit_layer == "underground" else "地面"))
                 if e.key == pygame.K_s and ctrl:
-                    self._save_map()
+                    self.editor_delete_pending = False
+                    self._save_map(export_copy=bool(shift))
+                elif e.key == pygame.K_e and ctrl:
+                    self.editor_delete_pending = False
+                    self._save_map(export_copy=True)
                 elif e.key == pygame.K_o and ctrl:
+                    self.editor_delete_pending = False
                     self.open_map_picker(for_editor=True)
+                elif e.key in (pygame.K_DELETE, pygame.K_d) and (ctrl or e.key == pygame.K_DELETE):
+                    # Delete 或 Ctrl+D：删除当前已保存文件
+                    self._editor_delete_current()
                 elif e.key == pygame.K_s and not ctrl:
+                    self.editor_delete_pending = False
                     self.edit_mode = "start"
                     self.toast("点击地图设置起点（地面）")
                 elif e.key == pygame.K_g:
+                    self.editor_delete_pending = False
                     self.edit_mode = "goal"
                     self.toast("点击设置公主 / 终点（当前层）")
                 elif e.key == pygame.K_t:
                     self.edit_mode = "tile"
                 elif e.key == pygame.K_p:
+                    self.editor_delete_pending = False
                     self.start_play(json.loads(json.dumps(self.map_data)), campaign=False)
                 elif e.key == pygame.K_n:
                     self.start_editor(generate_level(0))
@@ -2022,7 +2143,16 @@ class Game:
                     self.toast(f"笔刷：{PALETTE[11][1]}")
                 elif e.key == pygame.K_LEFTBRACKET and len(PALETTE) > 12:
                     self.brush = PALETTE[12][0]
+                    self.edit_mode = "tile"
                     self.toast(f"笔刷：{PALETTE[12][1]}")
+                elif e.key == pygame.K_RIGHTBRACKET and len(PALETTE) > 13:
+                    self.brush = PALETTE[13][0]
+                    self.edit_mode = "tile"
+                    self.toast(f"笔刷：{PALETTE[13][1]}")
+                elif e.key == pygame.K_BACKSPACE:
+                    self.brush = EMPTY
+                    self.edit_mode = "tile"
+                    self.toast("笔刷：清除（左键擦除素材）")
             if e.type == pygame.MOUSEWHEEL:
                 self.camera.y -= e.y * TILE * 2
                 self.camera.clamp(mw, mh)
@@ -2033,6 +2163,10 @@ class Game:
                     self.editor_pan_origin = (e.pos[0], e.pos[1], self.camera.x, self.camera.y)
                     continue
                 if e.button == 1:
+                    file_action = self._hit_editor_file_button(pos)
+                    if file_action is not None:
+                        self._run_editor_file_action(file_action)
+                        continue
                     hit = self._hit_editor_palette(pos)
                     if hit is not None:
                         self.brush = hit
@@ -2040,8 +2174,9 @@ class Game:
                         name = next((n for t, n in PALETTE if t == hit), "?")
                         self.toast(f"笔刷：{name}")
                         continue
+                    # 清除笔刷：左键等同擦除；其它笔刷左键绘制
                     self.paint_drag = self.edit_mode == "tile"
-                    self._paint_at(pos, erase=False)
+                    self._paint_at(pos, erase=(self.brush == EMPTY))
                 elif e.button == 3:
                     if pos[1] >= VIEW_H - PALETTE_H:
                         continue
@@ -2066,7 +2201,7 @@ class Game:
                     if self._hit_editor_palette(pos) is not None:
                         continue
                     if e.buttons[0]:
-                        self._paint_at(pos, erase=False)
+                        self._paint_at(pos, erase=(self.brush == EMPTY))
                     elif e.buttons[2]:
                         self._paint_at(pos, erase=True)
 
@@ -2078,9 +2213,10 @@ class Game:
             wx = int(self.camera.x + mx) // TILE
             wy = int(self.camera.y + my) // TILE
             sx, sy = self.camera.apply(wx * TILE, wy * TILE)
-            # 树木预览：高 2 格
-            if self.brush == TREE and self.edit_mode == "tile":
-                pygame.draw.rect(world, (120, 255, 140), (sx, sy - TILE, TILE, TILE * 2), 2)
+            if self.brush == EMPTY and self.edit_mode == "tile":
+                pygame.draw.rect(world, (220, 80, 80), (sx, sy, TILE, TILE), 2)
+                pygame.draw.line(world, (220, 80, 80), (sx + 4, sy + 4), (sx + TILE - 4, sy + TILE - 4), 2)
+                pygame.draw.line(world, (220, 80, 80), (sx + TILE - 4, sy + 4), (sx + 4, sy + TILE - 4), 2)
             else:
                 pygame.draw.rect(world, (255, 255, 100), (sx, sy, TILE, TILE), 2)
         self.screen.blit(world, (0, 0))
@@ -2088,9 +2224,28 @@ class Game:
 
         brush_name = next((n for t, n in PALETTE if t == self.brush), "?")
         layer_cn = "地下" if self.edit_layer == "underground" else "地面"
-        self.draw_ui_bar(
-            f"DIY[{layer_cn}] {brush_name} | 拖画 | B围石边 | Ctrl+S/O | P试玩"
-        )
+        file_tag = self.edit_map_path.name if self.edit_map_path else "未保存"
+        erase_hint = " · 右键也可擦" if self.brush != EMPTY else " · 左键擦除"
+        self.draw_ui_bar(f"DIY[{layer_cn}] {brush_name}{erase_hint} · {file_tag}")
+        self._draw_editor_file_buttons()
+
+    def _erase_tile(self, tx: int, ty: int) -> None:
+        """清除已放上去的地块；楼梯/洞窟会同步双层并更新列表。"""
+        assert self.map_data
+        grid = self.current_grid()
+        cell = grid[ty][tx]
+        grid[ty][tx] = EMPTY
+        if cell in LAYER_PORTALS:
+            other = "underground" if self.edit_layer == "surface" else "surface"
+            other_grid = layer_grid(self.map_data, other)
+            if other_grid[ty][tx] in LAYER_PORTALS:
+                other_grid[ty][tx] = EMPTY
+            if cell == STAIRS:
+                stairs = self.map_data.setdefault("stairs", [])
+                self.map_data["stairs"] = [p for p in stairs if p != [tx, ty]]
+            else:
+                caves = self.map_data.setdefault("caves", [])
+                self.map_data["caves"] = [p for p in caves if p != [tx, ty]]
 
     def _paint_at(self, pos: tuple[int, int], erase: bool) -> None:
         assert self.map_data
@@ -2121,33 +2276,122 @@ class Game:
             self.toast(f"终点 ({tx},{ty}) @ {self.edit_layer}")
             return
 
-        grid = self.current_grid()
-        if erase:
-            grid[ty][tx] = EMPTY
+        if erase or self.brush == EMPTY:
+            self._erase_tile(tx, ty)
             return
+        grid = self.current_grid()
         grid[ty][tx] = self.brush
         if self.brush in LAYER_PORTALS:
-            # 双层同步楼梯 / 洞窟
+            # 双层同步楼梯 / 洞窟（可与另一类门户并存于不同格）
             other = "underground" if self.edit_layer == "surface" else "surface"
             layer_grid(self.map_data, other)[ty][tx] = self.brush
+            stairs = self.map_data.setdefault("stairs", [])
+            caves = self.map_data.setdefault("caves", [])
+            pos = [tx, ty]
             if self.brush == STAIRS:
-                stairs = self.map_data.setdefault("stairs", [])
-                if [tx, ty] not in stairs:
-                    stairs.append([tx, ty])
+                if pos not in stairs:
+                    stairs.append(pos)
+                self.map_data["caves"] = [p for p in caves if p != pos]
             else:
-                caves = self.map_data.setdefault("caves", [])
-                if [tx, ty] not in caves:
-                    caves.append([tx, ty])
+                if pos not in caves:
+                    caves.append(pos)
+                self.map_data["stairs"] = [p for p in stairs if p != pos]
 
-    def _save_map(self) -> None:
+    def _next_diy_path(self) -> Path:
+        MAPS_DIR.mkdir(exist_ok=True)
+        n = 1
+        while True:
+            path = MAPS_DIR / f"diy_{n:03d}.json"
+            if not path.exists():
+                return path
+            n += 1
+
+    def _write_map_file(self, path: Path) -> None:
         assert self.map_data
         MAPS_DIR.mkdir(exist_ok=True)
-        name = f"diy_{len(list(MAPS_DIR.glob('*.json'))) + 1:03d}.json"
-        path = MAPS_DIR / name
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.map_data, f, ensure_ascii=False)
+            json.dump(self.map_data, f, ensure_ascii=False, indent=2)
+        self.edit_map_path = path
         self.custom_maps = self._list_maps()
-        self.toast(f"已保存 {path.name}")
+
+    def _save_map(self, *, export_copy: bool = False) -> None:
+        """保存：覆盖当前文件（无则新建）；导出：始终另存新文件。"""
+        assert self.map_data
+        if export_copy or self.edit_map_path is None or not self.edit_map_path.exists():
+            path = self._next_diy_path()
+            self._write_map_file(path)
+            self.toast(("已导出 → " if export_copy else "已保存 → ") + path.name)
+            return
+        self._write_map_file(self.edit_map_path)
+        self.toast(f"已保存 → {self.edit_map_path.name}")
+
+    def _delete_map_file(self, path: Path) -> bool:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            self.toast("删除失败")
+            return False
+        if self.edit_map_path is not None and self.edit_map_path.resolve() == path.resolve():
+            self.edit_map_path = None
+        self.custom_maps = self._list_maps()
+        return True
+
+    def _editor_delete_current(self) -> None:
+        if self.edit_map_path is None or not self.edit_map_path.exists():
+            self.toast("当前地图尚未保存到文件")
+            self.editor_delete_pending = False
+            return
+        path = self.edit_map_path
+        if self.editor_delete_pending:
+            if self._delete_map_file(path):
+                self.toast(f"已删除 {path.name}（编辑内容仍在，可再保存）")
+            self.editor_delete_pending = False
+            return
+        self.editor_delete_pending = True
+        self.toast(f"再点删除 / 再按 Delete 确认删除 {path.name}")
+
+    def _editor_file_button_rects(self) -> list[tuple[pygame.Rect, str, str]]:
+        """底栏右侧：保存 / 导出 / 删除 / 打开。"""
+        specs = (("保存", "save"), ("导出", "export"), ("删除", "delete"), ("打开", "open"))
+        bw, bh, gap = 52, 28, 6
+        total = len(specs) * bw + (len(specs) - 1) * gap
+        x = SCREEN_W - total - 10
+        y = VIEW_H + (UI_H - bh) // 2
+        out: list[tuple[pygame.Rect, str, str]] = []
+        for label, action in specs:
+            out.append((pygame.Rect(x, y, bw, bh), label, action))
+            x += bw + gap
+        return out
+
+    def _hit_editor_file_button(self, pos: tuple[int, int]) -> str | None:
+        for rect, _label, action in self._editor_file_button_rects():
+            if rect.collidepoint(pos):
+                return action
+        return None
+
+    def _draw_editor_file_buttons(self) -> None:
+        for rect, label, action in self._editor_file_button_rects():
+            if action == "delete" and self.editor_delete_pending:
+                bg, fg, border = (90, 36, 36), (255, 200, 200), (255, 120, 120)
+            else:
+                bg, fg, border = (40, 48, 68), (230, 235, 245), (120, 140, 180)
+            pygame.draw.rect(self.screen, bg, rect, border_radius=4)
+            pygame.draw.rect(self.screen, border, rect, 1, border_radius=4)
+            txt = self.font_sm.render(label, True, fg)
+            self.screen.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
+
+    def _run_editor_file_action(self, action: str) -> None:
+        if action == "save":
+            self.editor_delete_pending = False
+            self._save_map(export_copy=False)
+        elif action == "export":
+            self.editor_delete_pending = False
+            self._save_map(export_copy=True)
+        elif action == "delete":
+            self._editor_delete_current()
+        elif action == "open":
+            self.editor_delete_pending = False
+            self.open_map_picker(for_editor=True)
 
     def run(self) -> None:
         while True:

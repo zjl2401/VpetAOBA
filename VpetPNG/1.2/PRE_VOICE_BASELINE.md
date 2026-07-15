@@ -223,13 +223,13 @@
 - [x] **V-CHAIN-NUM** Vpet 数字前缀 → 有伴侣时接 Allmate 同号
 - [x] **V-CHAIN-ALPHA** Allmate 字母前缀 → 接 Vpet normal 同字母
 - [x] **V-CD** 整段会话结束后 ≥10s 再触发下一段（链式对答算一段）
-- [x] **V-SCENE** eat/sleep/kick/call/hi/end 等专项优先于自由随机
+- [x] **V-SCENE** eat/sleep/kick/call/hi/end 等专项优先于自由随机；有专用资源时**强制播**（不被 50/50 打字框整段盖掉）；interrupt 后延后补播；stop 作废旧异步回调防抢声道
 - [x] **V-FREE** 自由：normal/forget/dizzy/jinmu；（有伴侣）+ren；error 长间隔
 - [x] **V-WALK/WORK** walk / work 随机
 - [x] **V-HUNGRY** 体力低 hungry
 - [x] **V-EMAIL** 点对话 email
 - [x] **V-GAME** 关于 game；莱姆开始前 laimu open
-- [x] **V-HURT** 游戏失败 hurt（**只附加**，原结算画面保留）— 采集/打字/音游已过；**对战失败受 G08 牵连**
+- [x] **V-HURT** 游戏失败 hurt（**只附加**，原结算画面保留）— 采集（错过≥接住或 0 接）/打字 D·C / 音游 D·C / 背词错 / 暴露失败；延迟补播+可重试；`ignore_cooldown` **不得**误掐 hurt；**对战失败受 G08 牵连**
 - [x] **V-END** 退出：`end` 与出场同步，时长由语音决定；结束后彻底退出（可超时强制退）
 - [x] **V-ADDON** 语音附加层不得 `return` 跳过原动画/结算/特效
 
@@ -254,7 +254,10 @@
 - [ ] **H-BORDER3** border3 绿幕抠图 + 形变（**仓库无 border3 资源/逻辑**；若已改用扁平/`#` 底则需确认是否废弃本条）
 - [x] **H-LAYER** 设置「显示层级」三档：`top` / `middle` / `bottom`（底部含智能伴侣）
 - [x] **H-RPG** 模式→游戏→**RPG**（Silent Oath / `Vpetgame`）独立进程启动；打包同步 `bundled/Vpetgame`
-- [x] **H-WALK** 走动顺畅；连续转向锁定 **≤3s**；自由/漫游/音乐步长为半速（`MOVE_STEP=2`），工作仍 `WORK_MOVE_STEP=8`
+- [x] **H-WALK** 走动顺畅；连续转向锁定 **≤3s**；自由/漫游/音乐/工作同半速步长（`MOVE_STEP=2`，工作用 `light` 位移）
+- [x] **H-WORK-VOICE-PACE** 工作（模式/动作）：语音抽检与自由同频（每 24 步、`VOICE_FREE_RANDOM_CHANCE`）；禁止每帧抽音与 30–90s 强制鼓励链
+- [x] **H-DRAG-YUQI** 拖动 move 超过 **5s** 强制随机播 `yuqi` 一条（长拖可再触发）；无资源退回台词框
+- [x] **H-VOICE-PRELOAD** 特定触发（`yuqi`/eat/kick/sleep/hurt/work/walk/dizzy/call/你好/end）与 **normal 整组**一并 `preload_priority_clips` 提前缓存
 - [x] **H-KEYOUT** 精灵抠图**只扣与外圈连通**的键色（边缘泛洪，不伤内色）
 - [x] **H-LOAD-FIXED** 入场/出场/加载像素动画**固定风格**（溶解 `radial`、加载 `pulse`），禁止随机换场
 - [x] **H-EXPOSE-NOSUB** 暴露失败：hurt 语音**无字幕**；故障反馈不得被全屏 clear 替代
@@ -262,12 +265,24 @@
 - [x] **H-CALL** = V-CALL-01（先 ring 无框 → 非 ring 有框）
 - [x] **H-HI** = V-HI-01/02（关：HI_TEXT；开：你好语音与打字框二选一）
 - [x] **H-MUSIC-WAVE** 音乐模式脚下光圈：**自主 phase 律动**，不跟曲目 BPM/响度；恢复像素环+底部条（走动 lite 可用）
+- [x] **H-PERSONA-JINMU** 面板「人格切换」↔ 金目（`nc*` / `ncstand`）；金目自由随机语音走 `Vpet/jinmu`；默认不抽 jinmu
+- [x] **H-STARTUP-SLEEP1** 开场立绘/像素入场**全部用 sleep1**（不占位 stand）；`mode=loading` **禁止走动**；资源与入场结束后再 `_begin_free_after_startup` 进入自由模式
+- [x] **H-SLEEP-NO-SHY** 睡眠模式 / 休息睡眠语境：**连击不触发脸红**；非睡眠的面颊双击连击脸红仍保留
+- [x] **H-SLEEP-YUQI** 睡眠语境（模式 quiet rest / 动作睡眠）：**多次双击**随机播 `Vpetvoice/Vpet/yuqi` 一条；保持睡眠（可 peek），不唤醒离模
+- [x] **H-QUIET-SLEEP-VOICE** 模式→睡眠与互动→动作→睡眠同源播 `sleep` 语音；切入 quiet 后延迟补播，避免模式切换 interrupt 掐声；已在睡眠时再点仍可补播
+- [x] **H-WORK-FLAG-BOX** 工作：**显示目的地**=终点旗（可拖时仍可拖）；**显示运送货物**=起点箱+终点堆箱；箱穿透点击；旗/箱保持可见且叠在桌宠后（桌宠可拖，禁止为防挡而整段隐藏）
+- [x] **H-GAME-FALL-VIS** 采集：下落食物 / +3s / -3s / 晕眩物**必须可见**；点透不挡拖；叠在桌宠后但同 display_layer（禁止 `lower` 埋没）
+- [x] **H-RPG-DIY-FILE** RPG DIY 底栏：保存 / 导出 / 删除 / 打开；`Ctrl+S` 覆盖保存，导出另存；删文件二次确认
+- [x] **H-RPG-DIY-ERASE** DIY 可删除已放素材：底栏「清除」+ 左键擦、任意笔刷右键擦；楼梯/洞窟双层同步清
+- [x] **H-RPG-TREE1** RPG 树木**严格占一格**草地（不纵向拉高、不一格双树）
+- [x] **H-RPG-PORTAL** 地图有洞窟时楼梯仍可用：门户并存；加载修复双层对齐；穿越时同格类型强制一致
+- [x] **H-RPG-INTRO-SLOW** RPG Start 页动画变慢（`intro_dur≈6.2`、`logo2_delay≈1.15`、`menu_fade_speed≈0.55`）
 
-### I. 核对结果摘要（代码核验 · 2026-07-14）
+### I. 核对结果摘要（代码核验 · 2026-07-15）
 
 | 结论 | 编号 |
 |------|------|
-| ✅ 已实现 | UI-01～04；P-UI / P-FEED / P-MATE；V-BORDER5；V-TEXT；V-PICK；D-TYPE；V-CALL；V-HI；V 场景链；H-SPEECH-BELOW；H-LAYER；H-RPG；H-WALK；H-KEYOUT；H-LOAD-FIXED；H-EXPOSE-NOSUB；H-INTERJECT；**H-MUSIC-WAVE** |
+| ✅ 已实现 | UI-01～04；P-UI / P-FEED / P-MATE；V-BORDER5；V-TEXT；V-PICK；D-TYPE；V-CALL；V-HI；V 场景链；H-SPEECH-BELOW；H-LAYER；H-RPG；H-WALK；**H-WORK-VOICE-PACE**；**H-SLEEP-PEEK-ONLY**；H-KEYOUT；H-LOAD-FIXED；H-EXPOSE-NOSUB；H-INTERJECT；H-MUSIC-WAVE；**H-PERSONA-JINMU**；**H-STARTUP-SLEEP1**；**H-SLEEP-NO-SHY**；**H-QUIET-SLEEP-VOICE**；**H-WORK-FLAG-BOX**；**H-GAME-FALL-VIS**；**H-RPG-DIY-FILE**；**H-RPG-DIY-ERASE**；**H-RPG-TREE1**；**H-RPG-PORTAL**；**H-RPG-INTRO-SLOW** |
 | ❌ / ⚠️ 未达标 | **G08** 练习对战失败仍 `_show_game_clear`（应保留对战窗 ~1.6s）；**H-BG-OPAQUE** 底色非 `#1a1a1a`；**H-BORDER3** 缺失；**F07** wink 走 `_show_like_fx` 未调 `_show_wink_fx`；**M01** 晕眩 1.5s≠文档 3s；**E05** 失败为 toast 2.2s 非 ~900ms+打字框 |
 
 ---
@@ -282,5 +297,6 @@
 | `FEATURES.md` | 功能清单（只读） |
 | `pet.py` | 主程序实现 |
 | `voice_system.py` | 仅语音逻辑 |
+| `bundled/Vpetgame/game.py` | Silent Oath RPG |
 
-**最后更新**：2026-07-14（音乐光波恢复初期 phase 呼吸动画，不跟拍；颜色/缩放范围不变；见 H-MUSIC-WAVE）
+**最后更新**：2026-07-15（并入人格/开场 sleep1/睡眠不脸红/模式睡眠语音/工作旗箱与采集下落物可见 H-WORK-FLAG-BOX·H-GAME-FALL-VIS/RPG DIY 擦除·树木一格·楼梯洞窟并存·Start 变慢）
