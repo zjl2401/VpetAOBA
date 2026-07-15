@@ -51,12 +51,13 @@ STAIRS = 11  # 地面↔地下
 CAVE = 12  # 旧地下地板（加载时规范为 BRICK）
 GATE = 13  # 通往下一关
 TREASURE_OPEN = 14  # 已开宝箱（装饰）
+MOUNTAIN = 15  # 景区（mountain 素材）
 
 # 砖地可走（地下背景）；岩石为隔断墙。旧图 BRICK 曾作墙，加载时规范为 ROCK。
-SOLID = {WATER, TREE, ROCK, OBSTACLE, HOUSE, BORDER}
+SOLID = {WATER, TREE, ROCK, OBSTACLE, HOUSE, BORDER, MOUNTAIN}
 WALKABLE_EXTRA = {EMPTY, GRASS, LAND, TREASURE, TREASURE_OPEN, STAIRS, CAVE, GATE, BRICK}
 # 叠在地板上的装饰物（岩石/砖地占满一格，不当道具叠层）
-PROP_OVERLAY = {TREE, OBSTACLE, HOUSE, TREASURE, TREASURE_OPEN, GATE}
+PROP_OVERLAY = {TREE, OBSTACLE, HOUSE, TREASURE, TREASURE_OPEN, GATE, MOUNTAIN}
 
 TILE_FILES = {
     GRASS: "grass.png",
@@ -71,6 +72,7 @@ TILE_FILES = {
     BORDER: "border.png",
     STAIRS: "stairs.png",
     CAVE: "cave.png",
+    MOUNTAIN: "mountain.png",
 }
 
 PALETTE = [
@@ -86,11 +88,13 @@ PALETTE = [
     (STAIRS, "楼梯"),
     (CAVE, "旧岩地"),
     (GATE, "关卡门"),
+    (MOUNTAIN, "景区"),
 ]
 
 # 出发点房屋绘制放大（格数边长）；树木占 1 格逻辑、视觉高 2 格
 HOUSE_DRAW_TILES = 3
 TREE_DRAW_TILES = 2
+MOUNTAIN_DRAW_TILES = 2
 
 TREASURE_LOOT = (
     ("金币", "得到几枚闪亮的金币。"),
@@ -224,6 +228,9 @@ class Assets:
             elif tid == TREE:
                 # 逻辑占 1 格，视觉高 2 格（脚落格底）
                 self.tiles[tid] = pygame.transform.scale(img, (TILE, TILE * TREE_DRAW_TILES))
+            elif tid == MOUNTAIN:
+                side = TILE * MOUNTAIN_DRAW_TILES
+                self.tiles[tid] = pygame.transform.scale(img, (side, side))
             else:
                 self.tiles[tid] = pygame.transform.scale(img, (TILE, TILE))
             # 关卡门：房屋着色提示（略小一点以免与出发点房屋混淆）
@@ -365,6 +372,38 @@ def border_wall(grid: list[list[int]], wall: int = ROCK) -> None:
     for y in range(h):
         grid[y][0] = wall
         grid[y][w - 1] = wall
+
+
+def rock_ring_around_content(grid: list[list[int]], wall: int = ROCK) -> tuple[int, int, int, int]:
+    """
+    石头围一圈：有绘制内容则绕内容包围盒外扩一格；
+    全空白则围整张地图边框。返回包围盒 (x0,y0,x1,y1)。
+    """
+    h, w = len(grid), len(grid[0])
+    xs: list[int] = []
+    ys: list[int] = []
+    for y in range(h):
+        for x in range(w):
+            if grid[y][x] != EMPTY:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        border_wall(grid, wall)
+        return 0, 0, w - 1, h - 1
+    x0, x1 = min(xs), max(xs)
+    y0, y1 = min(ys), max(ys)
+    # 外扩一格，石头贴在内容外围
+    x0 = max(0, x0 - 1)
+    y0 = max(0, y0 - 1)
+    x1 = min(w - 1, x1 + 1)
+    y1 = min(h - 1, y1 + 1)
+    for x in range(x0, x1 + 1):
+        grid[y0][x] = wall
+        grid[y1][x] = wall
+    for y in range(y0, y1 + 1):
+        grid[y][x0] = wall
+        grid[y][x1] = wall
+    return x0, y0, x1, y1
 
 
 def border_brick(grid: list[list[int]]) -> None:
@@ -1227,28 +1266,24 @@ class Game:
 
     def start_editor(self, data: dict | None = None) -> None:
         if data is None:
+            # 空白画布：无草地填满、无边框、无预设房屋
             w, h = 52, 40
-            surface = blank_grid(w, h, GRASS)
-            under = blank_grid(w, h, BRICK)
-            border_wall(surface, ROCK)
-            border_wall(under, ROCK)
-            # DIY 也放一座出发点房屋
-            hx, hy = 4, h - 5
-            surface[hy][hx] = HOUSE
+            surface = blank_grid(w, h, EMPTY)
+            under = blank_grid(w, h, EMPTY)
+            sx, sy = w // 2, h // 2
             data = {
                 "width": w,
                 "height": h,
                 "surface": surface,
                 "underground": under,
-                "start": [hx, hy + 1],
-                "goal": [w - 4, 3],
-                "goal_layer": "underground",
+                "start": [sx, sy],
+                "goal": [sx + 4, sy],
+                "goal_layer": "surface",
                 "princess": True,
                 "stairs": [],
                 "name": "DIY 地图",
                 "level": 0,
                 "tile_schema": 2,
-                "house": [hx, hy],
             }
         elif "surface" not in data:
             data = self._migrate_old_map(data)
@@ -1258,7 +1293,7 @@ class Game:
         self.edit_layer = "surface"
         self.state = "editor"
         self.camera.x = self.camera.y = 0
-        self.toast("滚轮/中键/空格拖平移 | 点底部素材再拖动画 | Tab切层 | Ctrl+S保存 Ctrl+O载入 | P试玩")
+        self.toast("空白画布 | 底部素材拖画 | B石头围一圈 | Tab切层 | Ctrl+S/O | P试玩")
 
     def draw_visible_map(self, surf: pygame.Surface, grid: list[list[int]], mw: int, mh: int, show_goal: bool) -> None:
         assert self.map_data
@@ -1271,16 +1306,18 @@ class Game:
         for y in range(ty0, ty1):
             for x in range(tx0, tx1):
                 t = grid[y][x]
+                sx, sy = self.camera.apply(x * TILE, y * TILE)
+                if t == EMPTY:
+                    # 未绘制格：暗底空白画布
+                    pygame.draw.rect(surf, (16, 18, 26), (sx, sy, TILE, TILE))
+                    continue
                 if t in PROP_OVERLAY:
                     base = default_base
                 elif t == STAIRS:
                     base = default_base
-                elif t == EMPTY:
-                    base = default_base
                 else:
                     base = t
                 img = self.assets.tiles.get(base) or self.assets.tiles[GRASS]
-                sx, sy = self.camera.apply(x * TILE, y * TILE)
                 surf.blit(img, (sx, sy))
 
                 if t == STAIRS:
@@ -1288,7 +1325,7 @@ class Game:
                     surf.blit(stair_img, (sx, sy))
                 elif t in PROP_OVERLAY and t in self.assets.tiles:
                     prop = self.assets.tiles[t]
-                    if t in (HOUSE, TREE, GATE):
+                    if t in (HOUSE, TREE, GATE, MOUNTAIN):
                         # 高大物体：以格底为脚点，向上伸出多格
                         ox = sx + (TILE - prop.get_width()) // 2
                         oy = sy + TILE - prop.get_height()
@@ -1859,6 +1896,10 @@ class Game:
                     self.toast("已载入随机第1关样式")
                 elif e.key == pygame.K_c and not ctrl:
                     self.start_editor()
+                elif e.key == pygame.K_b and not ctrl:
+                    grid = self.current_grid()
+                    x0, y0, x1, y1 = rock_ring_around_content(grid, ROCK)
+                    self.toast(f"岩石已围一圈 ({x0},{y0})-({x1},{y1})")
                 elif pygame.K_1 <= e.key <= pygame.K_9:
                     idx = e.key - pygame.K_1
                     if idx < len(PALETTE):
@@ -1875,6 +1916,9 @@ class Game:
                 elif e.key == pygame.K_EQUALS and len(PALETTE) > 11:
                     self.brush = PALETTE[11][0]
                     self.toast(f"笔刷：{PALETTE[11][1]}")
+                elif e.key == pygame.K_LEFTBRACKET and len(PALETTE) > 12:
+                    self.brush = PALETTE[12][0]
+                    self.toast(f"笔刷：{PALETTE[12][1]}")
             if e.type == pygame.MOUSEWHEEL:
                 self.camera.y -= e.y * TILE * 2
                 self.camera.clamp(mw, mh)
@@ -1941,7 +1985,7 @@ class Game:
         brush_name = next((n for t, n in PALETTE if t == self.brush), "?")
         layer_cn = "地下" if self.edit_layer == "underground" else "地面"
         self.draw_ui_bar(
-            f"DIY[{layer_cn}] {brush_name} | 点素材拖画 中键/空格拖镜 Ctrl+S/O P试玩"
+            f"DIY[{layer_cn}] {brush_name} | 拖画 | B围石边 | Ctrl+S/O | P试玩"
         )
 
     def _paint_at(self, pos: tuple[int, int], erase: bool) -> None:
@@ -1975,7 +2019,7 @@ class Game:
 
         grid = self.current_grid()
         if erase:
-            grid[ty][tx] = BRICK if self.edit_layer == "underground" else GRASS
+            grid[ty][tx] = EMPTY
             return
         grid[ty][tx] = self.brush
         if self.brush == STAIRS:
