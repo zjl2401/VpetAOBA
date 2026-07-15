@@ -17,6 +17,11 @@ ASSETS = ROOT / "assets"
 MAPS_DIR = ROOT / "maps"
 SAVES_DIR = ROOT / "saves"
 
+# BGM：开始冒险后先播 startmusic，再循环 music，直到关闭游戏
+MUSIC_END_EVENT = pygame.USEREVENT + 21
+STARTMUSIC_NAMES = ("startmusic.mp3", "startmusic.ogg", "startmusic.wav")
+LOOPMUSIC_NAMES = ("music.mp3", "music.ogg", "music.wav")
+
 TILE = 36
 # 屏幕可见格子（相机视口）
 VIEW_TILES_X, VIEW_TILES_Y = 16, 11
