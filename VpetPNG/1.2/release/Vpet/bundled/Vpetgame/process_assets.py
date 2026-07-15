@@ -23,6 +23,8 @@ TILE_ONLY = {
 
 # 对话框边框：抠绿后另存
 BORDER_SRC = "border.jpg"
+# 对白框（黑底白边）
+TEXT_SRC = "text.jpg"
 
 # 旧整屏标题（备用）
 TITLE = {"start.png"}
@@ -32,7 +34,7 @@ START_COLOR = "startcolor.png"
 START_LOGO = "startlogo.png"  # 旧整图备用
 START_LOGO1 = "startlogo1.jpg"  # 十字架，上方入场
 START_LOGO2 = "startlogo2.png"  # 标题字，下方入场（上层）
-SKIP_GENERIC = {START_COLOR, START_LOGO, START_LOGO1, START_LOGO2, BORDER_SRC}
+SKIP_GENERIC = {START_COLOR, START_LOGO, START_LOGO1, START_LOGO2, BORDER_SRC, TEXT_SRC}
 
 # 角色（含走路帧）
 CHARS = {
@@ -46,13 +48,21 @@ CHARS = {
     "princess.png",
 }
 
-# 障碍 / 道具
+# 障碍 / 道具（tree 源图偏高，单独处理为 48×96）
 PROPS = {
-    "tree.png",
     "rock.png",
     "obstacle.png",
     "treasure.png",
+    "mountain.png",
+    "cave.png",
 }
+
+TALL_PROPS = {
+    "tree.png": (PROP, PROP * 2),
+}
+
+# 楼梯源图 → stairs.png
+STAIRS_SRC = {"stairsleft.jpg", "stairsleft.png", "stairs.png"}
 
 # 超大建筑
 BIG = {"house.png"}
@@ -298,6 +308,22 @@ def process_border() -> None:
     print(f"[tile]  border.jpg -> border.png {TILE}x{TILE}")
 
 
+def process_text_frame() -> None:
+    """对白框 text.jpg → assets/text.png（保留黑底与底部箭头）。"""
+    src = ROOT / TEXT_SRC
+    if not src.exists():
+        return
+    OUT.mkdir(parents=True, exist_ok=True)
+    im = Image.open(src).convert("RGBA")
+    # 近白/绿外圈抠掉，保留框体
+    keyed = flood_key(im)
+    cropped = bbox_alpha(keyed)
+    if cropped.size[0] < 8 or cropped.size[1] < 8:
+        cropped = im
+    cropped.save(OUT / "text.png")
+    print(f"[ui]    text.jpg -> text.png {cropped.size}")
+
+
 def _key_logo_keep_align(src: Path, bg: tuple[int, int, int]) -> Image.Image:
     """只抠蓝，保留原画布尺寸，避免裁切导致两张图错位。"""
     return key_blue_bg(Image.open(src), bg, thresh=42.0)
@@ -344,38 +370,61 @@ def process_start_screen() -> tuple[int, int, int]:
 
 def process_one(src: Path) -> None:
     name = src.name
-    out_name = src.stem + ".png"
+    stem = src.stem
+    out_name = stem + ".png"
     OUT.mkdir(parents=True, exist_ok=True)
     im = Image.open(src)
 
     if name in SKIP_GENERIC:
         return
 
-    if name in TITLE:
-        # 标题屏专用，缩放到 800x600
+    # 角色/道具集合按「文件名」登记；源文件可能是 .jpg
+    char_stems = {Path(n).stem for n in CHARS}
+    prop_stems = {Path(n).stem for n in PROPS}
+    big_stems = {Path(n).stem for n in BIG}
+    tall_map = {Path(n).stem: size for n, size in TALL_PROPS.items()}
+    stairs_stems = {Path(n).stem for n in STAIRS_SRC}
+    title_stems = {Path(n).stem for n in TITLE}
+    tile_stems = {Path(n).stem for n in TILE_ONLY}
+
+    if stem in title_stems:
         im = im.convert("RGBA").resize((800, 600), Image.Resampling.NEAREST)
         im.save(OUT / out_name)
         print(f"[title] {name} -> {out_name} 800x600")
         return
 
-    if name in TILE_ONLY:
+    if stem in tile_stems:
         out = stretch_tile(im, TILE)
         out.save(OUT / out_name)
         print(f"[tile]  {name} -> {out_name} {TILE}x{TILE}")
         return
 
+    if stem in stairs_stems:
+        keyed = flood_key(im)
+        cropped = bbox_alpha(keyed)
+        out = fit_canvas(cropped, TILE, TILE)
+        out.save(OUT / "stairs.png")
+        out.transpose(Image.Transpose.FLIP_TOP_BOTTOM).save(OUT / "stairs_up.png")
+        print(f"[stairs] {name} -> stairs.png / stairs_up.png {TILE}x{TILE}")
+        return
+
     keyed = flood_key(im)
     cropped = bbox_alpha(keyed)
 
-    if name in CHARS:
+    if stem in char_stems:
         out = fit_canvas(cropped, CHAR_W, CHAR_H)
         out.save(OUT / out_name)
         print(f"[char]  {name} -> {out_name} {CHAR_W}x{CHAR_H}")
-    elif name in BIG:
+    elif stem in big_stems:
         out = fit_canvas(cropped, OVERSIZED, OVERSIZED)
         out.save(OUT / out_name)
         print(f"[big]   {name} -> {out_name} {OVERSIZED}x{OVERSIZED}")
-    elif name in PROPS:
+    elif stem in tall_map:
+        tw, th = tall_map[stem]
+        out = fit_canvas(cropped, tw, th)
+        out.save(OUT / out_name)
+        print(f"[tall]  {name} -> {out_name} {tw}x{th}")
+    elif stem in prop_stems:
         out = fit_canvas(cropped, PROP, PROP)
         out.save(OUT / out_name)
         print(f"[prop]  {name} -> {out_name} {PROP}x{PROP}")
@@ -393,6 +442,7 @@ def main() -> None:
     print(f"处理 {len(files)} 张素材 -> {OUT}")
     process_start_screen()
     process_border()
+    process_text_frame()
     for f in files:
         process_one(f)
     print("完成。")

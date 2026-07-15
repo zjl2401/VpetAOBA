@@ -1604,7 +1604,7 @@ FIRST_PLAY_GUIDES: dict[str, dict] = {
     "gather": {
         "title": "采集 · 操作指南",
         "body": (
-            "移动桌宠接取下落物。\n\n"
+            "移动鼠标（或按住拖动）接取下落物。\n\n"
             "· 普通食物：入库存\n"
             "· +3s / -3s：调整时间\n"
             "· 晕眩物：短暂晕眩\n"
@@ -7773,6 +7773,36 @@ class DesktopPet:
         except Exception:
             pass
 
+    def _win32_set_click_through(self, win: tk.Misc | None, enabled: bool = True) -> None:
+        """装饰性透明窗：穿透点击，避免挡住拖桌宠。"""
+        if sys.platform != "win32" or win is None:
+            return
+        try:
+            if not win.winfo_exists():
+                return
+            hwnd = int(win.winfo_id())
+            if not hwnd:
+                return
+            targets = [hwnd]
+            try:
+                parent = int(ctypes.windll.user32.GetParent(hwnd) or 0)
+                if parent and parent not in targets:
+                    targets.append(parent)
+            except Exception:
+                pass
+            GWL_EXSTYLE = -20
+            WS_EX_LAYERED = 0x00080000
+            WS_EX_TRANSPARENT = 0x00000020
+            user32 = ctypes.windll.user32
+            for h in targets:
+                style = int(user32.GetWindowLongW(h, GWL_EXSTYLE))
+                if enabled:
+                    user32.SetWindowLongW(h, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+                else:
+                    user32.SetWindowLongW(h, GWL_EXSTYLE, (style | WS_EX_LAYERED) & ~WS_EX_TRANSPARENT)
+        except Exception:
+            pass
+
     def _apply_window_layer(self, win: tk.Misc | None) -> None:
         """按系统设置统一窗口层级（含智能伴侣等附属窗）。"""
         if win is None:
@@ -9549,13 +9579,29 @@ class DesktopPet:
             "food_fx_win",
             "music_wave_win",
             "bulb_fx_win",
-            "follow_dizzy_win",
+            "follow_dizzy_fx_win",
             "companion_loading_win",
             "sleep_zzz_win",
+            # 工作装饰：旗/起点箱叠在桌宠上会吞掉拖动
+            "work_overlay",
+            "work_start_box_win",
         )
         out: list[tk.Misc] = []
         for name in names:
             win = getattr(self, name, None)
+            try:
+                if win is not None and win.winfo_exists():
+                    out.append(win)
+            except Exception:
+                pass
+        for win in list(getattr(self, "work_anchored_box_wins", []) or []):
+            try:
+                if win is not None and win.winfo_exists():
+                    out.append(win)
+            except Exception:
+                pass
+        for box in list(getattr(self, "game_boxes", []) or []):
+            win = box.get("win") if isinstance(box, dict) else None
             try:
                 if win is not None and win.winfo_exists():
                     out.append(win)
@@ -17612,6 +17658,18 @@ class DesktopPet:
             return
         self._hide_main_menu()
         if self.mode == "game":
+            # 采集：默认可鼠标跟随；左键按住任意部位可改用拖动
+            if self.game_dizzy:
+                return
+            self.dragging = True
+            self.drag_x = event.x_root - self.x
+            self.drag_y = event.y_root - self.y
+            self.drag_track_x = event.x_root
+            self.drag_track_y = event.y_root
+            self.drag_last_dir = ""
+            self.drag_spin_dir = 0
+            self.drag_spin_steps = 0
+            self.drag_dizzy_extra_spins = 0
             return
         if self.state == "action" and self.action_name == "shy" and not self._hit_drag_handle(event.x, event.y):
             self._handle_shy_click()
@@ -19374,6 +19432,7 @@ class DesktopPet:
         else:
             _draw_game_special_item(canvas, kind, size)
         win.geometry(f"+{bx}+{-GAME_BOX_SIZE}")
+        self._win32_set_click_through(win, True)
         base = max(2, float(self._game_box_speed))
         speed = base * random.uniform(GAME_BOX_SPEED_MIN_MULT, GAME_BOX_SPEED_MAX_MULT)
         self.game_boxes.append(
@@ -19387,6 +19446,7 @@ class DesktopPet:
             }
         )
         self.game_spawn_job = self.root.after(self._game_spawn_ms, self._game_spawn_box)
+        self._lift_pet_above_bg_fx()
 
     def _game_tick(self) -> None:
         if self.mode != "game":
@@ -19396,7 +19456,7 @@ class DesktopPet:
             self._finish_game()
             return
 
-        if not self.game_dizzy:
+        if not self.game_dizzy and not self.dragging:
             mx = self.root.winfo_pointerx()
             my = self.root.winfo_pointery()
             self.x = mx - self.display_size // 2
@@ -19694,6 +19754,31 @@ class DesktopPet:
         step = WORK_STACK_OFFSET
         return flag_x + dx * step, flag_y + dy * step
 
+    def _stack_work_props_under_pet(self) -> None:
+        """把工作旗/箱压到桌宠后面，避免终点堆箱后吞掉拖动手势。"""
+        wins: list[tk.Misc] = []
+        for attr in ("work_overlay", "work_start_box_win"):
+            win = getattr(self, attr, None)
+            if win is not None:
+                wins.append(win)
+        wins.extend(list(getattr(self, "work_anchored_box_wins", []) or []))
+        for win in wins:
+            try:
+                if win.winfo_exists():
+                    win.lower()
+            except Exception:
+                pass
+        try:
+            self.root.lift()
+        except Exception:
+            pass
+        # 「结束」按钮需可点，保持在前
+        if self.work_end_btn_win and self.work_end_btn_win.winfo_exists():
+            try:
+                self.work_end_btn_win.lift()
+            except Exception:
+                pass
+
     def _hide_work_end_button(self) -> None:
         if self.work_end_btn_win and self.work_end_btn_win.winfo_exists():
             self.work_end_btn_win.destroy()
@@ -19773,6 +19858,7 @@ class DesktopPet:
             # 旗子挪走后，新送达的箱子从新位置重新堆起；已送达的留在原位
             self.work_local_stack = 0
             self._refresh_work_overlay()
+            self._stack_work_props_under_pet()
 
     def _work_flag_button_down(self) -> bool:
         if sys.platform != "win32":
@@ -19823,9 +19909,13 @@ class DesktopPet:
         self.work_canvas.pack()
         if self.work_flag_movable:
             self._bind_work_flag_drag()
+            self._win32_set_click_through(self.work_overlay, False)
         else:
             self._unbind_work_flag_drag()
+            # 不可拖旗时整块 overlay 只作装饰，避免挡住桌宠
+            self._win32_set_click_through(self.work_overlay, True)
         self._refresh_work_overlay()
+        self._stack_work_props_under_pet()
 
     def _clear_work_anchored_boxes(self) -> None:
         for win in self.work_anchored_box_wins:
@@ -19860,8 +19950,10 @@ class DesktopPet:
         c.pack()
         c.create_image(size // 2, size - pad, image=self.sprites.box_img, anchor=tk.S)
         win.geometry(f"{size}x{size}+{box_sx - size // 2}+{box_sy - size + pad}")
+        self._win32_set_click_through(win, True)
         self.work_anchored_box_wins.append(win)
         self.work_local_stack += 1
+        self._stack_work_props_under_pet()
 
     def _refresh_work_overlay(self) -> None:
         if not self.work_canvas or not self.work_overlay:
@@ -19890,6 +19982,13 @@ class DesktopPet:
 
         self._sync_work_end_button(overlay_x, overlay_y, flag_x, flag_y)
         self._update_work_start_box()
+        # 拖旗中不要改 z-order，否则可能丢掉后续 B1-Motion
+        if not self.work_flag_dragging:
+            self._stack_work_props_under_pet()
+        if self.work_flag_movable:
+            self._win32_set_click_through(self.work_overlay, False)
+        else:
+            self._win32_set_click_through(self.work_overlay, True)
 
     def _update_work_start_box(self) -> None:
         pad = 40
@@ -19917,6 +20016,7 @@ class DesktopPet:
                 c.pack()
                 c.create_image(half, size - pad, image=self.sprites.box_img, anchor=tk.S)
             self.work_start_box_win.geometry(f"{size}x{size}+{sx}+{sy}")
+            self._win32_set_click_through(self.work_start_box_win, True)
         elif self.work_start_box_win and self.work_start_box_win.winfo_exists():
             self.work_start_box_win.destroy()
             self.work_start_box_win = None

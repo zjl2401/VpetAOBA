@@ -1,6 +1,94 @@
 {
   "entries": [
     {
+      "id": "ba22dec6-1e7d-4793-8403-e653a4816db4",
+      "date": "2026-07-15",
+      "time": "09:25",
+      "text": "背单词正确：debate",
+      "mood": 100,
+      "auto": true
+    },
+    {
+      "id": "48a9a535-5491-416b-b591-a821b0d68a61",
+      "date": "2026-07-15",
+      "time": "09:25",
+      "text": "背单词正确：dive",
+      "mood": 100,
+      "auto": true
+    },
+    {
+      "id": "1777f85b-5d6f-4b1a-9cf2-89f682a9dadb",
+      "date": "2026-07-15",
+      "time": "09:25",
+      "text": "背单词正确：complement",
+      "mood": 100,
+      "auto": true
+    },
+    {
+      "id": "4cf6638e-7706-4104-abe6-c4d6dcd26db7",
+      "date": "2026-07-15",
+      "time": "09:25",
+      "text": "背单词正确：community",
+      "mood": 100,
+      "auto": true
+    },
+    {
+      "id": "c4eee1fe-a43a-4eb2-a87a-10c8657b58a0",
+      "date": "2026-07-15",
+      "time": "09:25",
+      "text": "背单词正确：definite",
+      "mood": 100,
+      "auto": true
+    },
+    {
+      "id": "68773fb2-3ef7-4bf9-ba22-8c2fb96d5b44",
+      "date": "2026-07-15",
+      "time": "09:25",
+      "text": "背单词正确：compare",
+      "mood": 100,
+      "auto": true
+    },
+    {
+      "id": "ea8deb4b-d7d4-4e36-b0f8-f82507745ad7",
+      "date": "2026-07-15",
+      "time": "09:25",
+      "text": "背单词正确：crystal",
+      "mood": 100,
+      "auto": true
+    },
+    {
+      "id": "aedd4f2b-6f1a-42b3-9e03-99f67b1c8b9c",
+      "date": "2026-07-15",
+      "time": "09:24",
+      "text": "背单词正确：credible",
+      "mood": 100,
+      "auto": true
+    },
+    {
+      "id": "da14c401-bfd4-469b-b7c9-d8582a5a0db2",
+      "date": "2026-07-15",
+      "time": "09:24",
+      "text": "背单词正确：avenue",
+      "mood": 100,
+      "auto": true
+    },
+    {
+      "id": "689949f9-64d5-44f3-aac1-9f52f0b49dae",
+      "date": "2026-07-15",
+      "time": "09:24",
+      "text": "背单词正确：approach",
+      "mood": 97,
+      "auto": true
+    },
+    {
+      "id": "95975e1c-482d-47b7-9dcd-7ec17814cfd6",
+      "date": "2026-07-15",
+      "time": "09:24",
+      "text": "背单词正确：commit",
+      "mood": 94,
+      "auto": true
+    },
+    {
       "id": "c3726fb3-91e7-4911-bf1f-dc4c1837df4e",
       "date": "2026-07-11",
       "time": "14:11",

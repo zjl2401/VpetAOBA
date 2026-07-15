@@ -1,12 +1,5 @@
 {
-  "mode": "normal",
-  "music_volume": 70,
-  "volume": 70,
-  "sfx_volume": 80,
-  "voice_volume": 80,
-  "muted": false,
-  "custom_path": "",
-  "normal_track": "radical_mat",
+  "play_mode": "random",
   "playlist": [
     "radical_mat",
     "ai_catch",
@@ -33,6 +26,23 @@
     "free_end",
     "tears"
   ],
-  "playlist_user_set": false,
-  "play_mode": "random"
+  "playlist_folders": [
+    "aoba-blue",
+    "clear-yellow",
+    "noiz-green",
+    "koujaku-red",
+    "mink-pink",
+    "ren-deep blue",
+    "virus&trip-grey",
+    "mizuki-deep red"
+  ],
+  "playlist_user_set": true,
+  "music_volume": 70,
+  "volume": 70,
+  "sfx_volume": 80,
+  "voice_volume": 80,
+  "muted": false,
+  "mode": "normal",
+  "custom_path": "",
+  "normal_track": "radical_mat"
 }

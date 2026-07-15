@@ -1,5 +1,5 @@
 """
-Silent Oath — 骑士救公主 RPG
+Silent Oath — 地底冒险 RPG
 大地图 + 镜头跟随；地面 / 地下双层楼梯互通；多关卡冒险。
 """
 from __future__ import annotations
@@ -15,12 +15,14 @@ import pygame
 ROOT = Path(__file__).resolve().parent
 ASSETS = ROOT / "assets"
 MAPS_DIR = ROOT / "maps"
+SAVES_DIR = ROOT / "saves"
 
 TILE = 36
 # 屏幕可见格子（相机视口）
 VIEW_TILES_X, VIEW_TILES_Y = 16, 11
 VIEW_W, VIEW_H = VIEW_TILES_X * TILE, VIEW_TILES_Y * TILE
 UI_H = 44
+PALETTE_H = 52  # 编辑器底部素材条
 # 内容区尺寸（对白/菜单/地图都画在这里）
 SCREEN_W, SCREEN_H = VIEW_W, VIEW_H + UI_H
 # 外边框包围整块内容
@@ -43,12 +45,13 @@ BORDER = 10
 STAIRS = 11  # 地面↔地下
 CAVE = 12  # 旧地下地板（加载时规范为 BRICK）
 GATE = 13  # 通往下一关
+TREASURE_OPEN = 14  # 已开宝箱（装饰）
 
 # 砖地可走（地下背景）；岩石为隔断墙。旧图 BRICK 曾作墙，加载时规范为 ROCK。
 SOLID = {WATER, TREE, ROCK, OBSTACLE, HOUSE, BORDER}
-WALKABLE_EXTRA = {EMPTY, GRASS, LAND, TREASURE, STAIRS, CAVE, GATE, BRICK}
+WALKABLE_EXTRA = {EMPTY, GRASS, LAND, TREASURE, TREASURE_OPEN, STAIRS, CAVE, GATE, BRICK}
 # 叠在地板上的装饰物（岩石/砖地占满一格，不当道具叠层）
-PROP_OVERLAY = {TREE, OBSTACLE, HOUSE, TREASURE, GATE}
+PROP_OVERLAY = {TREE, OBSTACLE, HOUSE, TREASURE, TREASURE_OPEN, GATE}
 
 TILE_FILES = {
     GRASS: "grass.png",
@@ -79,6 +82,26 @@ PALETTE = [
     (CAVE, "旧岩地"),
     (GATE, "关卡门"),
 ]
+
+# 出发点房屋绘制放大（格数边长）；树木占 1 格逻辑、视觉高 2 格
+HOUSE_DRAW_TILES = 3
+TREE_DRAW_TILES = 2
+
+TREASURE_LOOT = (
+    ("金币", "得到几枚闪亮的金币。"),
+    ("药水", "一瓶恢复体力的药水。"),
+    ("地图碎片", "旧羊皮纸上画着洞窟记号。"),
+    ("护身符", "小小的护身符，感觉运气变好了。"),
+    ("宝石", "一颗透亮的彩色宝石。"),
+)
+
+INTERACT_HINTS = {
+    TREASURE: "按 E 打开宝箱",
+    HOUSE: "按 E 查看房屋",
+    GATE: "靠近关卡门即可进入下一关",
+    STAIRS: "踩上楼梯切换地面 / 地下",
+    TREASURE_OPEN: "空宝箱……什么都不剩了",
+}
 
 # 关卡设定：更大地图、更密集连片
 LEVEL_DEFS = [
@@ -140,10 +163,6 @@ LEVEL_DEFS = [
     },
 ]
 
-# 出发点房屋绘制放大（格数边长）
-HOUSE_DRAW_TILES = 3
-
-
 def load_img(name: str) -> pygame.Surface:
     path = ASSETS / name
     if not path.exists():
@@ -197,6 +216,9 @@ class Assets:
             if tid == HOUSE:
                 side = TILE * HOUSE_DRAW_TILES
                 self.tiles[tid] = pygame.transform.scale(img, (side, side))
+            elif tid == TREE:
+                # 逻辑占 1 格，视觉高 2 格（脚落格底）
+                self.tiles[tid] = pygame.transform.scale(img, (TILE, TILE * TREE_DRAW_TILES))
             else:
                 self.tiles[tid] = pygame.transform.scale(img, (TILE, TILE))
             # 关卡门：房屋着色提示（略小一点以免与出发点房屋混淆）
@@ -207,6 +229,12 @@ class Assets:
         tint.fill((255, 200, 60, 90))
         gate.blit(tint, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
         self.tiles[GATE] = gate
+        # 已开宝箱：同一素材加暗罩
+        open_chest = self.tiles[TREASURE].copy()
+        dark = pygame.Surface(open_chest.get_size(), pygame.SRCALPHA)
+        dark.fill((0, 0, 0, 110))
+        open_chest.blit(dark, (0, 0))
+        self.tiles[TREASURE_OPEN] = open_chest
         self.stairs_up = pygame.transform.scale(load_img("stairs_up.png"), (TILE, TILE))
 
         cw, ch = TILE, int(TILE * 64 / 48)
@@ -230,6 +258,21 @@ class Assets:
         self.start_bg = self._load_start_bg()
         self.start_logo1, self.start_logo2 = self._load_start_logos()
         self.window_frame = self._load_window_frame()
+        self.text_frame = self._load_text_frame()
+
+    def _load_text_frame(self) -> pygame.Surface:
+        path = ASSETS / "text.png"
+        if not path.exists():
+            from process_assets import process_text_frame
+
+            process_text_frame()
+        if path.exists():
+            return load_img("text.png")
+        # 兜底：简易黑底白框
+        fallback = pygame.Surface((240, 96), pygame.SRCALPHA)
+        fallback.fill((0, 0, 0, 255))
+        pygame.draw.rect(fallback, (255, 255, 255), fallback.get_rect(), 3)
+        return fallback
 
     def _load_window_frame(self) -> pygame.Surface:
         path = ASSETS / "window_frame.png"
@@ -662,6 +705,16 @@ class Knight:
     def tile_pos(self) -> tuple[int, int]:
         return int(self.x) // TILE, int(self.y) // TILE
 
+    def facing_tile(self) -> tuple[int, int]:
+        tx, ty = self.tile_pos()
+        if self.dir == "up":
+            return tx, ty - 1
+        if self.dir == "down":
+            return tx, ty + 1
+        if self.dir == "left":
+            return tx - 1, ty
+        return tx + 1, ty
+
     def place_on_tile(self, tx: int, ty: int) -> None:
         self.x = tx * TILE + TILE // 2
         self.y = ty * TILE + TILE // 2
@@ -702,12 +755,13 @@ class Game:
     def __init__(self) -> None:
         ensure_assets()
         MAPS_DIR.mkdir(exist_ok=True)
+        SAVES_DIR.mkdir(exist_ok=True)
         pygame.init()
         try:
             pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
         except pygame.error:
             pass
-        pygame.display.set_caption("Silent Oath — 骑士救公主")
+        pygame.display.set_caption("Silent Oath")
         self.window = pygame.display.set_mode((WINDOW_W, WINDOW_H))
         # 游戏内容画在内层；外边框包住整块画面
         self.screen = pygame.Surface((SCREEN_W, SCREEN_H))
@@ -721,6 +775,7 @@ class Game:
         # 英文菜单项 + 右侧按键提示
         self.menu_items = [
             ("START CAMPAIGN", "ENTER"),
+            ("LOAD SAVE", "C"),
             ("MAP EDITOR", "E"),
             ("LOAD DIY MAP", "L"),
             ("QUIT", "ESC"),
@@ -739,6 +794,14 @@ class Game:
         self.edit_layer = "surface"
         self.custom_maps = self._list_maps()
         self.campaign = True
+        self.dialog: dict | None = None  # {title, body, hold?}
+        self.nearby_hint = ""
+        self.save_picker_idx = 0
+        self.map_picker_idx = 0
+        self.picker_mode = ""  # "save" | "map" | ""
+        self.editor_panning = False
+        self.editor_pan_origin = (0, 0, 0.0, 0.0)
+        self.paint_drag = False
         # 开场升起：两 logo 开始时间不同，但同一时刻到达终点；整体上移
         self.intro_t = 0.0
         self.intro_dur = 2.6
@@ -769,6 +832,296 @@ class Game:
 
     def _list_maps(self) -> list[Path]:
         return sorted(MAPS_DIR.glob("*.json"))
+
+    def _list_saves(self) -> list[Path]:
+        return sorted(SAVES_DIR.glob("slot*.json"))
+
+    def toast(self, text: str, sec: float = 2.2) -> None:
+        self.message = text
+        self.message_t = sec
+
+    def show_dialog(self, title: str, body: str) -> None:
+        self.dialog = {"title": title, "body": body}
+
+    def close_dialog(self) -> None:
+        self.dialog = None
+
+    def draw_dialog_overlay(self) -> None:
+        if not self.dialog:
+            return
+        dim = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 120))
+        self.screen.blit(dim, (0, 0))
+        box = pygame.Rect(36, VIEW_H // 2 - 54, SCREEN_W - 72, 108)
+        self.draw_textbox(self.screen, box)
+        title = self.font.render(self.dialog_quote(self.dialog["title"]), True, (255, 230, 140))
+        body = self.font_sm.render(self.dialog["body"], True, (235, 235, 240))
+        hint = self.font_sm.render("ENTER / E / SPACE — 关闭", True, (180, 180, 190))
+        self.screen.blit(title, (box.x + 16, box.y + 16))
+        self.screen.blit(body, (box.x + 16, box.y + 48))
+        self.screen.blit(hint, (box.x + 16, box.bottom - 28))
+
+    def dialog_quote(self, text: str) -> str:
+        t = text.strip()
+        if t.startswith("*「") and t.endswith("」"):
+            return t
+        return f"*「{t}」"
+
+    def _save_path(self, slot: int) -> Path:
+        return SAVES_DIR / f"slot{slot}.json"
+
+    def save_game(self, slot: int = 1) -> None:
+        """冒险进度存档（含当前地图状态，已开宝箱会保留）。"""
+        if self.state != "play" or not self.map_data or not self.knight:
+            self.toast("只能在冒险中存档")
+            return
+        SAVES_DIR.mkdir(exist_ok=True)
+        payload = {
+            "version": 1,
+            "slot": slot,
+            "campaign": bool(self.campaign),
+            "level_idx": int(self.level_idx),
+            "treasures": int(self.treasures),
+            "total_treasures": int(self.total_treasures),
+            "layer": self.layer,
+            "player": [self.knight.x, self.knight.y, self.knight.dir],
+            "map_data": self.map_data,
+        }
+        path = self._save_path(slot)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        self.toast(f"已存档 → {path.name}")
+
+    def load_game(self, slot: int = 1, path: Path | None = None) -> bool:
+        if path is None:
+            path = self._save_path(slot)
+        if not path.exists():
+            # 兼容任意 slot*.json
+            saves = self._list_saves()
+            if not saves:
+                self.toast("没有存档")
+                return False
+            path = saves[min(max(0, slot - 1), len(saves) - 1)]
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            self.toast("存档损坏")
+            return False
+        map_data = data.get("map_data")
+        if not isinstance(map_data, dict):
+            self.toast("存档缺少地图")
+            return False
+        if "surface" not in map_data:
+            map_data = self._migrate_old_map(map_data)
+        map_data = normalize_map_tiles(map_data)
+        self.campaign = bool(data.get("campaign", True))
+        self.level_idx = int(data.get("level_idx", 0))
+        self.treasures = int(data.get("treasures", 0))
+        self.total_treasures = int(data.get("total_treasures", 0))
+        self.layer = str(data.get("layer", "surface"))
+        self.map_data = map_data
+        px, py, pdir = 0.0, 0.0, "down"
+        player = data.get("player") or []
+        if len(player) >= 2:
+            px, py = float(player[0]), float(player[1])
+            if len(player) >= 3:
+                pdir = str(player[2])
+        else:
+            sx, sy = map_data["start"]
+            px = sx * TILE + TILE // 2
+            py = sy * TILE + TILE // 2
+        self.knight = Knight(self.assets, (0, 0))
+        self.knight.x, self.knight.y = px, py
+        if pdir in self.assets.knight:
+            self.knight.dir = pdir
+        self.state = "play"
+        self.dialog = None
+        self.picker_mode = ""
+        mw, mh = map_size(map_data)
+        self.camera.follow(self.knight.x, self.knight.y, mw, mh)
+        self.toast(f"已读取 {path.name}")
+        return True
+
+    def open_save_picker(self) -> None:
+        saves = self._list_saves()
+        if not saves:
+            self.toast("暂无存档（冒险中按 F5 存档）")
+            return
+        self.picker_mode = "save"
+        self.save_picker_idx = 0
+        self.state = "picker"
+
+    def open_map_picker(self, *, for_editor: bool = False) -> None:
+        self.custom_maps = self._list_maps()
+        if not self.custom_maps:
+            self.toast("maps/ 里还没有 DIY 地图")
+            return
+        self.picker_mode = "map_editor" if for_editor else "map_play"
+        self.map_picker_idx = len(self.custom_maps) - 1
+        self.state = "picker"
+
+    def run_picker(self, events: list) -> None:
+        items = self._list_saves() if self.picker_mode == "save" else self._list_maps()
+        if not items:
+            self.enter_menu(play_intro=False)
+            return
+        for e in events:
+            if e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_ESCAPE:
+                    self.picker_mode = ""
+                    self.enter_menu(play_intro=False)
+                    return
+                if e.key in (pygame.K_UP, pygame.K_w):
+                    if self.picker_mode == "save":
+                        self.save_picker_idx = (self.save_picker_idx - 1) % len(items)
+                    else:
+                        self.map_picker_idx = (self.map_picker_idx - 1) % len(items)
+                elif e.key in (pygame.K_DOWN, pygame.K_s):
+                    if self.picker_mode == "save":
+                        self.save_picker_idx = (self.save_picker_idx + 1) % len(items)
+                    else:
+                        self.map_picker_idx = (self.map_picker_idx + 1) % len(items)
+                elif e.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    self._picker_confirm(items)
+                    return
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                mx, my = self._content_mouse(e.pos)
+                top = 80
+                for i, _path in enumerate(items):
+                    rect = pygame.Rect(80, top + i * 36, SCREEN_W - 160, 32)
+                    if rect.collidepoint(mx, my):
+                        if self.picker_mode == "save":
+                            self.save_picker_idx = i
+                        else:
+                            self.map_picker_idx = i
+                        self._picker_confirm(items)
+                        return
+
+        self.screen.fill((22, 26, 40))
+        title = "读取存档" if self.picker_mode == "save" else "选择 DIY 地图"
+        self.screen.blit(self.font.render(title, True, (255, 230, 140)), (80, 36))
+        idx = self.save_picker_idx if self.picker_mode == "save" else self.map_picker_idx
+        top = 80
+        for i, path in enumerate(items):
+            selected = i == idx
+            color = (255, 230, 120) if selected else (210, 215, 230)
+            prefix = "> " if selected else "  "
+            label = self.font_sm.render(prefix + path.name, True, color)
+            self.screen.blit(label, (96, top + i * 36 + 6))
+            if selected:
+                pygame.draw.rect(self.screen, (255, 220, 100), (80, top + i * 36, SCREEN_W - 160, 32), 1)
+        tip = self.font_sm.render("W/S 或鼠标选择 · Enter 确认 · Esc 返回", True, (170, 180, 200))
+        self.screen.blit(tip, (80, SCREEN_H - 40))
+
+    def _picker_confirm(self, items: list[Path]) -> None:
+        if self.picker_mode == "save":
+            path = items[self.save_picker_idx]
+            self.load_game(path=path)
+            return
+        path = items[self.map_picker_idx]
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if self.picker_mode == "map_editor":
+            self.start_editor(data)
+            self.toast(f"已载入 {path.name}")
+        else:
+            self.start_play(data, campaign=False)
+            self.toast(f"试玩 {path.name}")
+        self.picker_mode = ""
+
+    def _interact_targets(self) -> list[tuple[int, int, int]]:
+        """脚下与面前的可互动物。"""
+        assert self.map_data and self.knight
+        mw, mh = map_size(self.map_data)
+        grid = self.current_grid()
+        found: list[tuple[int, int, int]] = []
+        for tx, ty in (self.knight.tile_pos(), self.knight.facing_tile()):
+            if not (0 <= tx < mw and 0 <= ty < mh):
+                continue
+            cell = grid[ty][tx]
+            if cell in (TREASURE, TREASURE_OPEN, HOUSE, GATE, STAIRS):
+                found.append((tx, ty, cell))
+        return found
+
+    def try_interact(self) -> None:
+        assert self.map_data and self.knight
+        if self.dialog:
+            self.close_dialog()
+            return
+        targets = self._interact_targets()
+        if not targets:
+            self.toast("附近没什么可以互动的")
+            return
+        # 优先宝箱
+        targets.sort(key=lambda t: 0 if t[2] == TREASURE else 1)
+        tx, ty, cell = targets[0]
+        grid = self.current_grid()
+        if cell == TREASURE:
+            loot_name, loot_desc = random.choice(TREASURE_LOOT)
+            grid[ty][tx] = TREASURE_OPEN
+            self.treasures += 1
+            self.show_dialog("打开宝箱", f"找到了{loot_name}！{loot_desc}（本关 {self.treasures}）")
+            return
+        if cell == TREASURE_OPEN:
+            self.show_dialog("空宝箱", "已经被翻过了，里面什么也没有。")
+            return
+        if cell == HOUSE:
+            self.show_dialog("小屋", "温暖的出发点小屋。整理好行装，踏上旅途吧。")
+            return
+        if cell == GATE:
+            self.show_dialog("关卡门", "金色光芒流转的门扉——靠近即可前往下一关。")
+            return
+        if cell == STAIRS:
+            self.try_use_stairs()
+            return
+
+    def _editor_palette_rects(self) -> list[tuple[pygame.Rect, int, str]]:
+        """底部素材栏：图标可点。"""
+        n = len(PALETTE)
+        pad = 6
+        cell = min(40, (SCREEN_W - pad * 2) // max(1, n))
+        total = cell * n
+        x0 = (SCREEN_W - total) // 2
+        y0 = VIEW_H - PALETTE_H + 4
+        out: list[tuple[pygame.Rect, int, str]] = []
+        for i, (tid, name) in enumerate(PALETTE):
+            r = pygame.Rect(x0 + i * cell, y0, cell - 2, PALETTE_H - 8)
+            out.append((r, tid, name))
+        return out
+
+    def _hit_editor_palette(self, pos: tuple[int, int]) -> int | None:
+        mx, my = pos
+        if my < VIEW_H - PALETTE_H:
+            return None
+        for rect, tid, _name in self._editor_palette_rects():
+            if rect.collidepoint(mx, my):
+                return tid
+        return None
+
+    def draw_editor_palette(self) -> None:
+        strip = pygame.Rect(0, VIEW_H - PALETTE_H, SCREEN_W, PALETTE_H)
+        pygame.draw.rect(self.screen, (24, 28, 42), strip)
+        pygame.draw.line(self.screen, (90, 100, 130), (0, VIEW_H - PALETTE_H), (SCREEN_W, VIEW_H - PALETTE_H), 2)
+        for rect, tid, _name in self._editor_palette_rects():
+            pygame.draw.rect(self.screen, (40, 46, 64), rect)
+            img = self.assets.tiles.get(tid)
+            if img:
+                thumb = img
+                max_s = min(rect.w - 4, rect.h - 4)
+                if thumb.get_width() > max_s or thumb.get_height() > max_s:
+                    scale = max_s / max(thumb.get_width(), thumb.get_height())
+                    thumb = pygame.transform.scale(
+                        thumb, (max(1, int(thumb.get_width() * scale)), max(1, int(thumb.get_height() * scale)))
+                    )
+                self.screen.blit(
+                    thumb,
+                    (rect.centerx - thumb.get_width() // 2, rect.centery - thumb.get_height() // 2),
+                )
+            if tid == self.brush:
+                pygame.draw.rect(self.screen, (255, 220, 90), rect, 2)
+            else:
+                pygame.draw.rect(self.screen, (70, 80, 110), rect, 1)
 
     @staticmethod
     def _make_type_sfx() -> pygame.mixer.Sound | None:
@@ -801,15 +1154,6 @@ class Game:
             return pygame.mixer.Sound(str(path))
         except pygame.error:
             return None
-
-    def toast(self, text: str, seconds: float = 2.2) -> None:
-        self.message = text
-        self.message_t = seconds
-
-    @staticmethod
-    def dialog_quote(text: str) -> str:
-        """所有对白统一格式：*「文本」。"""
-        return f"*「{text}」"
 
     def current_grid(self) -> list[list[int]]:
         assert self.map_data
@@ -896,7 +1240,7 @@ class Game:
         self.edit_layer = "surface"
         self.state = "editor"
         self.camera.x = self.camera.y = 0
-        self.toast("滚轮/方向键平移 | Tab切地面地下 | 楼梯自动双层 | Ctrl+S保存 | P试玩")
+        self.toast("滚轮/中键/空格拖平移 | 点底部素材再拖动画 | Tab切层 | Ctrl+S保存 Ctrl+O载入 | P试玩")
 
     def draw_visible_map(self, surf: pygame.Surface, grid: list[list[int]], mw: int, mh: int, show_goal: bool) -> None:
         assert self.map_data
@@ -926,11 +1270,8 @@ class Game:
                     surf.blit(stair_img, (sx, sy))
                 elif t in PROP_OVERLAY and t in self.assets.tiles:
                     prop = self.assets.tiles[t]
-                    if t == HOUSE:
-                        # 放大房屋：以格底为基准居中落点
-                        ox = sx + (TILE - prop.get_width()) // 2
-                        oy = sy + TILE - prop.get_height()
-                    elif t == GATE:
+                    if t in (HOUSE, TREE, GATE):
+                        # 高大物体：以格底为脚点，向上伸出多格
                         ox = sx + (TILE - prop.get_width()) // 2
                         oy = sy + TILE - prop.get_height()
                     else:
@@ -966,11 +1307,10 @@ class Game:
         if self.message_t > 0:
             self.screen.blit(self.font_sm.render(self.message, True, (255, 220, 120)), (12, VIEW_H + 32))
 
-    @staticmethod
-    def draw_textbox(surf: pygame.Surface, rect: pygame.Rect) -> None:
-        """黑底白框（无底部箭头）。"""
-        pygame.draw.rect(surf, (0, 0, 0), rect)
-        pygame.draw.rect(surf, (255, 255, 255), rect, 2)
+    def draw_textbox(self, surf: pygame.Surface, rect: pygame.Rect) -> None:
+        """用 text.png 拉伸为对白框（保留底部三角箭头）。"""
+        frame = pygame.transform.scale(self.assets.text_frame, (rect.w, rect.h))
+        surf.blit(frame, rect.topleft)
 
     def _reset_logo_anim_targets(self) -> None:
         """两 logo 终点相同；启动时刻不同，但同一 intro_dur 抵达。"""
@@ -1087,9 +1427,9 @@ class Game:
             box_m = 36
             box_h = 96
             box = pygame.Rect(box_m, SCREEN_H - box_h - 28, SCREEN_W - box_m * 2, box_h)
-            box_surf = pygame.Surface((box.w, box.h), pygame.SRCALPHA)
-            pygame.draw.rect(box_surf, (0, 0, 0, princess_a), box_surf.get_rect())
-            pygame.draw.rect(box_surf, (255, 255, 255, princess_a), box_surf.get_rect(), 2)
+            box_surf = pygame.transform.scale(self.assets.text_frame, (box.w, box.h)).copy()
+            if princess_a < 255:
+                box_surf.set_alpha(princess_a)
             self.screen.blit(box_surf, box.topleft)
 
             full = self._prologue_display_line()
@@ -1142,13 +1482,16 @@ class Game:
                 elif e.key in (pygame.K_RETURN, pygame.K_SPACE):
                     self._menu_select()
                 elif e.key == pygame.K_e:
+                    self.menu_idx = 2
+                    self._menu_select()
+                elif e.key == pygame.K_c:
                     self.menu_idx = 1
                     self._menu_select()
                 elif e.key == pygame.K_l:
-                    self.menu_idx = 2
+                    self.menu_idx = 3
                     self._menu_select()
                 elif e.key == pygame.K_ESCAPE:
-                    self.menu_idx = 3
+                    self.menu_idx = 4
                     self._menu_select()
 
         # logo1 先动、logo2 稍后；两者在 intro_dur 同一时刻到位
@@ -1211,15 +1554,11 @@ class Game:
         if i == 0:
             self.start_campaign()
         elif i == 1:
-            self.start_editor()
+            self.open_save_picker()
         elif i == 2:
-            self.custom_maps = self._list_maps()
-            if not self.custom_maps:
-                self.message = "No DIY map in maps/"
-                self.message_t = 3
-                return
-            with open(self.custom_maps[-1], encoding="utf-8") as f:
-                self.start_play(json.load(f), campaign=False)
+            self.start_editor()
+        elif i == 3:
+            self.open_map_picker(for_editor=False)
         else:
             pygame.event.post(pygame.event.Event(pygame.QUIT))
 
@@ -1271,12 +1610,40 @@ class Game:
 
         for e in events:
             if e.type == pygame.KEYDOWN:
+                if self.dialog:
+                    if e.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_e, pygame.K_ESCAPE):
+                        self.close_dialog()
+                    continue
                 if e.key == pygame.K_ESCAPE:
                     self.enter_menu(play_intro=False)
                     return
                 if e.key == pygame.K_r and self.campaign:
                     self._load_level(self.level_idx)
                     return
+                if e.key == pygame.K_F5:
+                    self.save_game(1)
+                elif e.key == pygame.K_F9:
+                    self.load_game(1)
+                elif e.key == pygame.K_e:
+                    self.try_interact()
+
+        if self.dialog:
+            # 对话中暂停移动
+            world = pygame.Surface((VIEW_W, VIEW_H))
+            if self.layer == "underground":
+                world.fill((18, 16, 28))
+            else:
+                world.fill((30, 50, 40))
+            self.draw_visible_map(world, self.current_grid(), mw, mh, show_goal=True)
+            self.knight.draw(world, self.camera)
+            if self.layer == "underground":
+                shade = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
+                shade.fill((0, 0, 30, 50))
+                world.blit(shade, (0, 0))
+            self.screen.blit(world, (0, 0))
+            self.draw_dialog_overlay()
+            self.draw_ui_bar("对话中 · Enter 关闭")
+            return
 
         if self.stairs_cd > 0:
             self.stairs_cd -= dt
@@ -1288,12 +1655,16 @@ class Game:
         tx, ty = self.knight.tile_pos()
         if 0 <= tx < mw and 0 <= ty < mh:
             cell = grid[ty][tx]
-            if cell == TREASURE:
-                grid[ty][tx] = BRICK if self.layer == "underground" else GRASS
-                self.treasures += 1
-                self.toast(f"宝箱 +1 （本关 {self.treasures}）")
-            elif cell == STAIRS:
+            if cell == STAIRS:
                 self.try_use_stairs()
+
+        # 附近互动提示
+        self.nearby_hint = ""
+        for _tx, _ty, cell in self._interact_targets():
+            hint = INTERACT_HINTS.get(cell)
+            if hint and cell != STAIRS:
+                self.nearby_hint = hint
+                break
 
         self.check_goal()
 
@@ -1313,9 +1684,10 @@ class Game:
 
         layer_cn = "地下" if self.layer == "underground" else "地面"
         name = self.map_data.get("name", "")
+        tip = self.nearby_hint or "E互动 F5存档"
         self.draw_ui_bar(
-            f"{name} | {layer_cn} | 宝箱 {self.treasures} | Esc菜单"
-            + (" | R重开本关" if self.campaign else "")
+            f"{name} | {layer_cn} | 宝箱 {self.treasures} | {tip} | Esc"
+            + (" | R重开" if self.campaign else "")
         )
 
     def run_levelclear(self, events: list) -> None:
@@ -1391,6 +1763,7 @@ class Game:
         grid = self.current_grid()
         keys = pygame.key.get_pressed()
         ctrl = keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]
+        space = keys[pygame.K_SPACE]
         pan = 320 * dt
         if keys[pygame.K_LEFT]:
             self.camera.x -= pan
@@ -1413,9 +1786,11 @@ class Game:
                     self.toast("编辑层：" + ("地下" if self.edit_layer == "underground" else "地面"))
                 if e.key == pygame.K_s and ctrl:
                     self._save_map()
+                elif e.key == pygame.K_o and ctrl:
+                    self.open_map_picker(for_editor=True)
                 elif e.key == pygame.K_s and not ctrl:
                     self.edit_mode = "start"
-                    self.toast("点击设置起点（地面）")
+                    self.toast("点击地图设置起点（地面）")
                 elif e.key == pygame.K_g:
                     self.edit_mode = "goal"
                     self.toast("点击设置公主 / 终点（当前层）")
@@ -1427,7 +1802,7 @@ class Game:
                     self.start_editor(generate_level(0))
                     self.state = "editor"
                     self.toast("已载入随机第1关样式")
-                elif e.key == pygame.K_c:
+                elif e.key == pygame.K_c and not ctrl:
                     self.start_editor()
                 elif pygame.K_1 <= e.key <= pygame.K_9:
                     idx = e.key - pygame.K_1
@@ -1448,31 +1823,77 @@ class Game:
             if e.type == pygame.MOUSEWHEEL:
                 self.camera.y -= e.y * TILE * 2
                 self.camera.clamp(mw, mh)
-            if e.type == pygame.MOUSEBUTTONDOWN and e.button in (1, 3):
-                self._paint_at(self._content_mouse(e.pos), erase=(e.button == 3))
-            if e.type == pygame.MOUSEMOTION and e.buttons[0] and self.edit_mode == "tile":
-                self._paint_at(self._content_mouse(e.pos), erase=False)
+            if e.type == pygame.MOUSEBUTTONDOWN:
+                pos = self._content_mouse(e.pos)
+                if e.button == 2 or (e.button == 1 and space):
+                    self.editor_panning = True
+                    self.editor_pan_origin = (e.pos[0], e.pos[1], self.camera.x, self.camera.y)
+                    continue
+                if e.button == 1:
+                    hit = self._hit_editor_palette(pos)
+                    if hit is not None:
+                        self.brush = hit
+                        self.edit_mode = "tile"
+                        name = next((n for t, n in PALETTE if t == hit), "?")
+                        self.toast(f"笔刷：{name}")
+                        continue
+                    self.paint_drag = self.edit_mode == "tile"
+                    self._paint_at(pos, erase=False)
+                elif e.button == 3:
+                    if pos[1] >= VIEW_H - PALETTE_H:
+                        continue
+                    self.paint_drag = True
+                    self._paint_at(pos, erase=True)
+            if e.type == pygame.MOUSEBUTTONUP:
+                if e.button in (1, 2, 3):
+                    self.editor_panning = False
+                    self.paint_drag = False
+            if e.type == pygame.MOUSEMOTION:
+                if self.editor_panning or (space and e.buttons[0]):
+                    ox, oy, cx, cy = self.editor_pan_origin
+                    if not self.editor_panning:
+                        self.editor_pan_origin = (e.pos[0], e.pos[1], self.camera.x, self.camera.y)
+                        ox, oy, cx, cy = self.editor_pan_origin
+                        self.editor_panning = True
+                    self.camera.x = cx - (e.pos[0] - ox)
+                    self.camera.y = cy - (e.pos[1] - oy)
+                    self.camera.clamp(mw, mh)
+                elif self.paint_drag and self.edit_mode == "tile":
+                    pos = self._content_mouse(e.pos)
+                    if self._hit_editor_palette(pos) is not None:
+                        continue
+                    if e.buttons[0]:
+                        self._paint_at(pos, erase=False)
+                    elif e.buttons[2]:
+                        self._paint_at(pos, erase=True)
 
         world = pygame.Surface((VIEW_W, VIEW_H))
         world.fill((20, 20, 30) if self.edit_layer == "underground" else (30, 50, 40))
         self.draw_visible_map(world, grid, mw, mh, show_goal=True)
         mx, my = self._content_mouse(pygame.mouse.get_pos())
-        if my < VIEW_H:
+        if my < VIEW_H - PALETTE_H:
             wx = int(self.camera.x + mx) // TILE
             wy = int(self.camera.y + my) // TILE
             sx, sy = self.camera.apply(wx * TILE, wy * TILE)
-            pygame.draw.rect(world, (255, 255, 100), (sx, sy, TILE, TILE), 2)
+            # 树木预览：高 2 格
+            if self.brush == TREE and self.edit_mode == "tile":
+                pygame.draw.rect(world, (120, 255, 140), (sx, sy - TILE, TILE, TILE * 2), 2)
+            else:
+                pygame.draw.rect(world, (255, 255, 100), (sx, sy, TILE, TILE), 2)
         self.screen.blit(world, (0, 0))
+        self.draw_editor_palette()
 
         brush_name = next((n for t, n in PALETTE if t == self.brush), "?")
         layer_cn = "地下" if self.edit_layer == "underground" else "地面"
         self.draw_ui_bar(
-            f"DIY[{layer_cn}] {brush_name} | Tab切层 1-0/-/=笔刷 方向键平移 Ctrl+S P试玩"
+            f"DIY[{layer_cn}] {brush_name} | 点素材拖画 中键/空格拖镜 Ctrl+S/O P试玩"
         )
 
     def _paint_at(self, pos: tuple[int, int], erase: bool) -> None:
         assert self.map_data
         x, y = pos
+        if y >= VIEW_H - PALETTE_H:
+            return
         if y >= VIEW_H:
             return
         mw, mh = map_size(self.map_data)
@@ -1538,6 +1959,8 @@ class Game:
                 if self.message_t > 0:
                     tip = self.font_sm.render(self.message, True, (255, 200, 100))
                     self.screen.blit(tip, (SCREEN_W // 2 - tip.get_width() // 2, SCREEN_H - 70))
+            elif self.state == "picker":
+                self.run_picker(events)
             elif self.state == "play":
                 self.run_play(events, dt)
             elif self.state == "levelclear":
