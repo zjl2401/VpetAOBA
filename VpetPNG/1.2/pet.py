@@ -1024,6 +1024,262 @@ def _asset_path(filename: str) -> Path:
     return SPRITES_DIR / filename
 
 
+# —— 人格 / 新衣立绘（nc 前缀；站姿特认 ncstand）——
+PERSONA_DEFAULT = "default"
+PERSONA_NC = "nc"
+PERSONA_LABELS: dict[str, str] = {
+    PERSONA_DEFAULT: "默认",
+    PERSONA_NC: "新衣",
+}
+_ACTIVE_PERSONA = PERSONA_DEFAULT
+# 参与「新衣」生成与切换的立绘（道具箱旗不改）
+CORE_OUTFIT_SPRITE_FILES: tuple[str, ...] = (
+    "stand.jpg",
+    "happy.jpg",
+    "sleep1.jpg",
+    "sleep2.jpg",
+    "walkfront1.jpg",
+    "walkfront2.jpg",
+    "walkback1.jpg",
+    "walkback2.jpg",
+    "walkleft1.jpg",
+    "walkleft2.jpg",
+    "move1.jpg",
+    "move2.jpg",
+    "move3.jpg",
+    "workstand.jpg",
+    "workfront1.jpg",
+    "workfront2.jpg",
+    "workback1.jpg",
+    "workback2.jpg",
+    "workleft1.jpg",
+    "workleft2.jpg",
+    "kick.jpg",
+    "shy1.jpg",
+    "shy2.jpg",
+    "wink.jpg",
+    "like.jpg",
+    "sad1.jpg",
+    "sad2.jpg",
+    "yes.jpg",
+    "no.jpg",
+    "eat1.jpg",
+    "eat2.jpg",
+    "musicstand.jpg",
+    "musicfront1.jpg",
+    "musicfront2.jpg",
+    "musicback1.jpg",
+    "musicback2.jpg",
+    "musicleft1.jpg",
+    "musicleft2.jpg",
+    "hi1.jpg",
+    "hi2.jpg",
+    "squat.jpg",
+    "call1.jpg",
+    "call2.jpg",
+)
+
+
+def set_active_persona(persona: str) -> None:
+    global _ACTIVE_PERSONA
+    _ACTIVE_PERSONA = persona if persona in PERSONA_LABELS else PERSONA_DEFAULT
+
+
+def get_active_persona() -> str:
+    return _ACTIVE_PERSONA
+
+
+def _persona_nc_candidates(filename: str) -> list[str]:
+    stem = Path(filename).stem
+    if stem == "stand":
+        return ["ncstand.png", "ncstand.jpg", "ncstand.jpeg"]
+    return [f"nc{stem}.png", f"nc{stem}.jpg", f"nc{stem}.jpeg"]
+
+
+def _find_existing_asset(filename: str) -> Path | None:
+    path = _asset_path(filename)
+    return path if path.is_file() else None
+
+
+def _resolve_sprite_filename(filename: str, persona: str | None = None) -> str:
+    """人格=新衣时优先 nc*；站姿对应 ncstand。缺文件则回退原图。"""
+    persona = persona or _ACTIVE_PERSONA
+    if persona != PERSONA_NC:
+        return filename
+    if filename in {"box.jpg", "flag.jpg"}:
+        return filename
+    for cand in _persona_nc_candidates(filename):
+        if _find_existing_asset(cand) is not None:
+            return cand
+    return filename
+
+
+def _clear_sprite_image_caches() -> None:
+    _SOURCE_FILE_CACHE.clear()
+    _PROCESSED_CANVAS_CACHE.clear()
+
+
+def _is_key_green_rgb(r: int, g: int, b: int) -> bool:
+    if g > 200 and r < 90 and b < 90:
+        return True
+    return g > 100 and g >= r + 15 and g >= b + 25
+
+
+def _quantize_rgb(r: int, g: int, b: int, step: int = 8) -> tuple[int, int, int]:
+    return (r // step) * step, (g // step) * step, (b // step) * step
+
+
+def _build_outfit_color_map(base_img: Image.Image, outfit_img: Image.Image) -> dict[tuple[int, int, int], tuple[int, int, int]]:
+    """按站姿像素对齐投票：原衣颜色 → 新衣颜色（忽略绿幕）。"""
+    import numpy as np
+
+    def prepare(im: Image.Image) -> np.ndarray:
+        arr = np.array(im.convert("RGBA"))
+        r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
+        key = (a < 16) | ((g > 200) & (r < 90) & (b < 90)) | ((g > 100) & (g >= r + 15) & (g >= b + 25))
+        arr[key, 3] = 0
+        # 裁内容包围盒
+        ys, xs = np.where(arr[:, :, 3] > 0)
+        if len(xs) == 0:
+            return arr
+        return arr[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
+
+    a = prepare(base_img)
+    b = prepare(outfit_img)
+    th = max(a.shape[0], b.shape[0], 1)
+    tw = max(a.shape[1], b.shape[1], 1)
+    ca = np.zeros((th, tw, 4), dtype=np.uint8)
+    cb = np.zeros((th, tw, 4), dtype=np.uint8)
+    ay0, ax0 = th - a.shape[0], (tw - a.shape[1]) // 2
+    by0, bx0 = th - b.shape[0], (tw - b.shape[1]) // 2
+    ca[ay0 : ay0 + a.shape[0], ax0 : ax0 + a.shape[1]] = a
+    cb[by0 : by0 + b.shape[0], bx0 : bx0 + b.shape[1]] = b
+
+    mask = (ca[:, :, 3] >= 16) & (cb[:, :, 3] >= 16)
+    if not np.any(mask):
+        return {}
+    src_rgb = ca[mask][:, :3].astype(np.int16)
+    dst_rgb = cb[mask][:, :3].astype(np.int16)
+    step = 8
+    src_q = (src_rgb // step) * step
+    # 相同量化色跳过（头发/脸）
+    differ = np.any(src_q != (dst_rgb // step) * step, axis=1)
+    src_q = src_q[differ]
+    dst_rgb = dst_rgb[differ]
+    votes: dict[tuple[int, int, int], dict[tuple[int, int, int], int]] = {}
+    for i in range(src_q.shape[0]):
+        src = (int(src_q[i, 0]), int(src_q[i, 1]), int(src_q[i, 2]))
+        dst = (int(dst_rgb[i, 0]), int(dst_rgb[i, 1]), int(dst_rgb[i, 2]))
+        bucket = votes.setdefault(src, {})
+        bucket[dst] = bucket.get(dst, 0) + 1
+    return {src: max(bucket.items(), key=lambda kv: kv[1])[0] for src, bucket in votes.items()}
+
+
+def _apply_outfit_color_map(img: Image.Image, mapping: dict[tuple[int, int, int], tuple[int, int, int]]) -> Image.Image:
+    import numpy as np
+
+    out = img.convert("RGBA")
+    if not mapping:
+        return out
+    arr = np.array(out)
+    r = arr[:, :, 0].astype(np.int16)
+    g = arr[:, :, 1].astype(np.int16)
+    b = arr[:, :, 2].astype(np.int16)
+    a = arr[:, :, 3]
+    step = 8
+    rq = (r // step) * step
+    gq = (g // step) * step
+    bq = (b // step) * step
+    green = ((g > 200) & (r < 90) & (b < 90)) | ((g > 100) & (g >= r + 15) & (g >= b + 25))
+    valid = (a >= 16) & (~green)
+    for src, dst in mapping.items():
+        hit = valid & (rq == src[0]) & (gq == src[1]) & (bq == src[2])
+        if np.any(hit):
+            arr[hit, 0] = dst[0]
+            arr[hit, 1] = dst[1]
+            arr[hit, 2] = dst[2]
+    return Image.fromarray(arr, "RGBA")
+
+
+def _nc_output_name(filename: str) -> str:
+    stem = Path(filename).stem
+    if stem == "stand":
+        return "ncstand.png"
+    return f"nc{stem}.png"
+
+
+def _seed_ncstand_source() -> Path | None:
+    """把工程根目录 / 已有 ncstand 拷进 sprites。"""
+    targets = (
+        SPRITES_DIR / "ncstand.png",
+        SPRITES_DIR / "ncstand.jpg",
+    )
+    for t in targets:
+        if t.is_file():
+            return t
+    for src in (
+        Path(__file__).resolve().parent / "ncstand.png",
+        Path(__file__).resolve().parent / "ncstand.jpg",
+        BUNDLE_DIR / "ncstand.png",
+        BUNDLE_DIR / "ncstand.jpg",
+    ):
+        if src.is_file():
+            dst = SPRITES_DIR / ("ncstand.png" if src.suffix.lower() == ".png" else src.name)
+            try:
+                shutil.copy2(src, dst)
+                return dst
+            except Exception:
+                pass
+    return None
+
+
+def ensure_nc_outfit_sprites(*, force: bool = False) -> int:
+    """
+    用 ncstand + 原版 stand 学到换色表，批量生成各动作 nc* 图。
+    返回新生成（或强制重写）的文件数。
+    """
+    SPRITES_DIR.mkdir(parents=True, exist_ok=True)
+    ncstand_path = _seed_ncstand_source()
+    if ncstand_path is None:
+        return 0
+    base_stand = _find_existing_asset("stand.jpg")
+    if base_stand is None:
+        return 0
+    try:
+        mapping = _build_outfit_color_map(Image.open(base_stand), Image.open(ncstand_path))
+    except Exception:
+        return 0
+    made = 0
+    # 站姿：保证 sprites/ncstand.png 存在
+    stand_out = SPRITES_DIR / "ncstand.png"
+    if force or not stand_out.is_file():
+        try:
+            if ncstand_path.resolve() != stand_out.resolve():
+                shutil.copy2(ncstand_path, stand_out)
+            made += 1
+        except Exception:
+            pass
+    for fname in CORE_OUTFIT_SPRITE_FILES:
+        if Path(fname).stem == "stand":
+            continue
+        src_path = _find_existing_asset(fname)
+        if src_path is None:
+            continue
+        out_name = _nc_output_name(fname)
+        out_path = SPRITES_DIR / out_name
+        if out_path.is_file() and not force:
+            continue
+        try:
+            gen = _apply_outfit_color_map(Image.open(src_path), mapping)
+            gen.save(out_path)
+            made += 1
+        except Exception:
+            continue
+    if made:
+        _clear_sprite_image_caches()
+    return made
+
+
 DEFAULT_SIZE = 128
 SIZE_PRESETS: dict[str, int] = {"小": 96, "中": 128, "大": 176}
 
@@ -3136,7 +3392,7 @@ def _get_wav_duration_ms(wav_path: Path) -> int:
 
 def _compute_drag_handle(display_size: int) -> tuple[int, int, int, int]:
     ref = _reference_scale(display_size)
-    canvas = _get_processed_canvas("stand.jpg", display_size, ref)
+    canvas = _get_processed_canvas(_resolve_sprite_filename("stand.jpg"), display_size, ref)
     px = canvas.load()
     width, height = canvas.size
     blues: list[tuple[int, int]] = []
@@ -3168,7 +3424,7 @@ PET_INTERJECTION_PARTS = ("face", "body", "legs")
 def _compute_pet_click_zones(display_size: int) -> dict[str, tuple[int, int, int, int]]:
     """按立绘不透明区域纵向三等分为脸 / 躯干 / 腿。"""
     ref = _reference_scale(display_size)
-    canvas = _get_processed_canvas("stand.jpg", display_size, ref)
+    canvas = _get_processed_canvas(_resolve_sprite_filename("stand.jpg"), display_size, ref)
     px = canvas.load()
     width, height = canvas.size
     opaque: list[tuple[int, int]] = []
@@ -3202,7 +3458,7 @@ def _hit_pet_opaque_pixel(display_size: int, x: int, y: int) -> bool:
     if x < 0 or y < 0 or x >= display_size or y >= display_size:
         return False
     ref = _reference_scale(display_size)
-    canvas = _get_processed_canvas("stand.jpg", display_size, ref)
+    canvas = _get_processed_canvas(_resolve_sprite_filename("stand.jpg"), display_size, ref)
     try:
         return canvas.load()[x, y][3] >= 10
     except Exception:
@@ -4171,6 +4427,8 @@ def _load_app_config() -> dict:
         "voice_mode": False,
         # top=置顶 / middle=应用之下、桌面之上 / bottom=最底层（HWND_BOTTOM）
         "display_layer": "top",
+        # 人格：default=默认立绘 / nc=新衣（ncstand 等）
+        "persona": PERSONA_DEFAULT,
         # 桌宠编号服务由内置默认 / 环境变量提供，玩家不可手填
         "pet_id_api_url": "",
         "pet_id_activation_code": "",
@@ -5830,7 +6088,8 @@ class SpriteSet:
         self._apply_pack(_build_sprite_pack(self.display_size))
 
 
-def _build_sprite_pack(display_size: int) -> dict:
+def _build_sprite_pack(display_size: int, persona: str | None = None) -> dict:
+    persona = persona or _ACTIVE_PERSONA
     ref = _reference_scale(display_size)
     prop_ref = ref * WORK_PROP_SIZE / display_size
 
@@ -5843,7 +6102,8 @@ def _build_sprite_pack(display_size: int) -> dict:
     ) -> Image.Image:
         size = prop_size if prop_size is not None else display_size
         use_scale = scale if scale is not None else (prop_ref if prop_size else ref)
-        return _get_processed_canvas(filename, size, use_scale, flip=flip)
+        resolved = _resolve_sprite_filename(filename, persona)
+        return _get_processed_canvas(resolved, size, use_scale, flip=flip)
 
     stand_canvas = load_img("stand.jpg")
     return {
@@ -6004,6 +6264,14 @@ class DesktopPet:
         self.display_size = saved_size if saved_size in SIZE_PRESETS.values() else DEFAULT_SIZE
         self.font_size = int(app_cfg.get("font_size", 12))
         self.app_config = app_cfg
+        persona = str(self.app_config.get("persona") or PERSONA_DEFAULT)
+        if persona not in PERSONA_LABELS:
+            persona = PERSONA_DEFAULT
+        set_active_persona(persona)
+        try:
+            ensure_nc_outfit_sprites()
+        except Exception:
+            pass
         self.pet_profile = _load_pet_profile()
         self.pet_id = self.pet_profile.get("pet_id") if PET_ID_FEATURE else None
         if PET_ID_FEATURE and isinstance(self.pet_id, bool):
@@ -6657,6 +6925,7 @@ class DesktopPet:
         err = False
         try:
             _migrate_legacy_layout()
+            ensure_nc_outfit_sprites()
             _warm_reference_scales()
             pack = _build_sprite_pack(self.display_size)
             vocab = _load_vocab()
@@ -11254,15 +11523,94 @@ class DesktopPet:
 
     def _open_panel_menu(self) -> None:
         companion_label = "智能伴侣 ✓" if self.companion_bar_enabled else "智能伴侣"
+        persona = get_active_persona()
+        persona_label = f"人格切换 ▶（{PERSONA_LABELS.get(persona, persona)}）"
         self._show_sub_menu(
             [
                 ("打开面板", lambda: (self._hide_main_menu(), self._toggle_panel())),
                 (companion_label, self._toggle_companion_bar),
+                (persona_label, self._open_persona_menu),
                 ("莱姆 ▶", self._open_rhyme_menu),
                 ("暴露", self._play_expose_qte),
             ],
             offset_x=60,
         )
+
+    def _open_persona_menu(self) -> None:
+        cur = get_active_persona()
+        items: list[tuple[str, callable]] = []
+        for key, label in PERSONA_LABELS.items():
+            mark = " ✓" if key == cur else ""
+            items.append((f"{label}{mark}", lambda k=key: self._switch_persona(k)))
+        if cur == PERSONA_NC or _find_existing_asset("ncstand.png") or _find_existing_asset("ncstand.jpg"):
+            items.append(("重新生成新衣动作图", self._regen_nc_outfit_sprites))
+        self._show_sub_menu(items, offset_x=120)
+
+    def _regen_nc_outfit_sprites(self) -> None:
+        self._hide_main_menu()
+        n = ensure_nc_outfit_sprites(force=True)
+        if n <= 0:
+            self._show_toast("未找到 ncstand，请把新衣站立图放到 assets/sprites/ncstand.png", "#ff8844")
+            return
+        self._show_toast(f"已更新 {n} 张新衣动作图", "#88ffaa")
+        if get_active_persona() == PERSONA_NC:
+            self._reload_persona_sprites()
+
+    def _switch_persona(self, persona: str) -> None:
+        self._hide_main_menu()
+        if persona not in PERSONA_LABELS:
+            return
+        if persona == PERSONA_NC:
+            ensure_nc_outfit_sprites()
+            if _find_existing_asset("ncstand.png") is None and _find_existing_asset("ncstand.jpg") is None:
+                self._show_toast("缺少 ncstand.png，无法切换新衣人格", "#ff8844")
+                return
+        if persona == get_active_persona():
+            self._show_toast(f"当前已是「{PERSONA_LABELS[persona]}」", "#88ccff")
+            return
+        set_active_persona(persona)
+        self.app_config["persona"] = persona
+        _save_app_config(self.app_config)
+        self._reload_persona_sprites()
+        self._show_toast(f"已切换人格：{PERSONA_LABELS[persona]}", "#ffcc66")
+        self._show_speech_dialog(
+            f"嗯…换好了。现在是「{PERSONA_LABELS[persona]}」状态哦。",
+            auto_hide_ms=2600,
+        )
+
+    def _reload_persona_sprites(self) -> None:
+        """切换人格后重建立绘缓存并刷新当前画面。"""
+        _clear_sprite_image_caches()
+        self._sprite_cache.clear()
+        self._drag_handle_cache.clear()
+        self._pet_click_zones_cache.clear()
+        self._sprite_building.clear()
+        if self.display_size in self._sprite_building:
+            pass
+        try:
+            self._refresh_drag_handle()
+        except Exception:
+            pass
+        pack = _build_sprite_pack(self.display_size, get_active_persona())
+
+        def on_ready(ss: SpriteSet) -> None:
+            if self._closing:
+                return
+            self.sprites = ss
+            self._sprite_cache[self.display_size] = ss
+            # 打断当前动作，回到站立新衣/默认
+            try:
+                self._interrupt_for_mode_switch()
+            except Exception:
+                pass
+            self.state = "stand"
+            self.action_name = ""
+            img = self._current_stand_sprite()
+            self._set_image(img)
+            self._place_window()
+
+        self._show_wait_hint("请耐心等待…切换人格")
+        self._build_sprite_set_batched(self.display_size, pack, on_ready)
 
     def _open_my_menu(self) -> None:
         items: list[tuple[str, callable]] = []

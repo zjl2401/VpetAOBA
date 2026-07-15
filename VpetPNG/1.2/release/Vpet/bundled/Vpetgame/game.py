@@ -17,6 +17,11 @@ ASSETS = ROOT / "assets"
 MAPS_DIR = ROOT / "maps"
 SAVES_DIR = ROOT / "saves"
 
+# BGM：开始冒险后先播 startmusic，再循环 music，直到关闭游戏
+MUSIC_END_EVENT = pygame.USEREVENT + 21
+STARTMUSIC_NAMES = ("startmusic.mp3", "startmusic.ogg", "startmusic.wav")
+LOOPMUSIC_NAMES = ("music.mp3", "music.ogg", "music.wav")
+
 TILE = 36
 # 屏幕可见格子（相机视口）
 VIEW_TILES_X, VIEW_TILES_Y = 16, 11
@@ -326,12 +331,24 @@ class Assets:
             process_start_screen()
         l1 = load_img("startlogo1.png")
         l2 = load_img("startlogo2.png")
-        max_w = int(SCREEN_W * 0.92)
-        if l1.get_width() > max_w:
-            s = max_w / l1.get_width()
-            nw, nh = max_w, max(1, int(l1.get_height() * s))
-            l1 = pygame.transform.scale(l1, (nw, nh))
-            l2 = pygame.transform.scale(l2, (nw, nh))
+        # 给下方菜单预留空间：5 行 ×36 + 底提示 ≈ 220
+        menu_reserve = 220
+        max_w = int(SCREEN_W * 0.78)
+        max_h = max(72, SCREEN_H - menu_reserve - 28)
+        sw = max(l1.get_width(), l2.get_width(), 1)
+        sh = max(l1.get_height(), l2.get_height(), 1)
+        s = min(1.0, max_w / sw, max_h / sh)
+        if s < 0.999:
+            nw, nh = max(1, int(sw * s)), max(1, int(sh * s))
+            l1 = pygame.transform.smoothscale(l1, (max(1, int(l1.get_width() * s)), max(1, int(l1.get_height() * s))))
+            l2 = pygame.transform.smoothscale(l2, (max(1, int(l2.get_width() * s)), max(1, int(l2.get_height() * s))))
+            # 对齐到同一画布尺寸，叠合更稳
+            canvas_w, canvas_h = nw, nh
+            c1 = pygame.Surface((canvas_w, canvas_h), pygame.SRCALPHA)
+            c2 = pygame.Surface((canvas_w, canvas_h), pygame.SRCALPHA)
+            c1.blit(l1, ((canvas_w - l1.get_width()) // 2, (canvas_h - l1.get_height()) // 2))
+            c2.blit(l2, ((canvas_w - l2.get_width()) // 2, (canvas_h - l2.get_height()) // 2))
+            l1, l2 = c1, c2
         return l1, l2
 
 
@@ -802,13 +819,14 @@ class Game:
         self.editor_panning = False
         self.editor_pan_origin = (0, 0, 0.0, 0.0)
         self.paint_drag = False
-        # 开场升起：两 logo 开始时间不同，但同一时刻到达终点；整体上移
+        # 开场升起：两 logo 缓缓汇合，再淡入菜单
         self.intro_t = 0.0
-        self.intro_dur = 2.6
+        self.intro_dur = 4.2
         self.logo1_delay = 0.0
-        self.logo2_delay = 0.55
+        self.logo2_delay = 0.85
         self.intro_done = False
         self.menu_fade = 0.0
+        self.menu_fade_speed = 0.85  # 更慢淡入
         self.logo1_y = 0.0
         self.logo2_y = 0.0
         self._reset_logo_anim_targets()
@@ -823,11 +841,11 @@ class Game:
         self.prologue_chars = 0
         self.prologue_timer = 0.0
         self.prologue_hold = 0.0
-        self.prologue_char_delay = 0.07
-        self.prologue_line_hold = 1.15
+        self.prologue_char_delay = 0.12  # 打字稍慢
+        self.prologue_line_hold = 1.8
         self.prologue_fade_out = 0.0
         self.prologue_done_fade = False
-        self.prologue_fade_dur = 1.05  # 公主消失时长
+        self.prologue_fade_dur = 1.4
         self.state = "prologue"
 
     def _list_maps(self) -> list[Path]:
@@ -1317,15 +1335,26 @@ class Game:
         l1 = self.assets.start_logo1
         l2 = self.assets.start_logo2
         h = max(l1.get_height(), l2.get_height())
-        meet_y = SCREEN_H * 0.05  # 相对原先再上移一点
+        # 顶部留白，Logo 下方给菜单完整空间
+        menu_block = 36 * len(self.menu_items) + 48
+        meet_y = max(10.0, (SCREEN_H - menu_block - h) * 0.28)
         self.logo_meet_y = meet_y
         self.logo1_target_y = meet_y
         self.logo2_target_y = meet_y
-        self.logo1_start_y = -float(h) - 24
-        self.logo2_start_y = float(SCREEN_H) + 24
+        self.logo1_start_y = -float(h) - 36
+        self.logo2_start_y = float(SCREEN_H) + 36
         self.logo1_y = self.logo1_start_y
         self.logo2_y = self.logo2_start_y
         self.intro_t = 0.0
+
+    @staticmethod
+    def _ease_in_out(t: float) -> float:
+        t = max(0.0, min(1.0, t))
+        return t * t * (3.0 - 2.0 * t)
+
+    def _skip_prologue(self) -> None:
+        """开场剧情一键跳过 → 标题页（仍播 logo 动画）。"""
+        self.enter_menu(play_intro=True)
 
     def enter_menu(self, play_intro: bool = True) -> None:
         self.state = "menu"
@@ -1362,13 +1391,25 @@ class Game:
     def run_prologue(self, events: list, dt: float) -> None:
         for e in events:
             if e.type == pygame.KEYDOWN:
-                if e.key == pygame.K_ESCAPE:
-                    self.enter_menu(play_intro=True)
+                # ESC / S / 鼠标也可跳过整段开场
+                if e.key in (pygame.K_ESCAPE, pygame.K_s):
+                    self._skip_prologue()
                     return
                 if e.key in (pygame.K_RETURN, pygame.K_SPACE):
                     if self.prologue_done_fade:
                         self.enter_menu(play_intro=True)
                         return
+                    self._prologue_advance()
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                # 点一下：未打完则跳过本句；打完则下一段；淡出中则进标题
+                if self.prologue_done_fade:
+                    self.enter_menu(play_intro=True)
+                    return
+                line = self._prologue_display_line()
+                if self.prologue_chars < len(line):
+                    self.prologue_chars = len(line)
+                    self.prologue_hold = 0.0
+                else:
                     self._prologue_advance()
 
         # 打字推进（按 *「…」整句揭示）
@@ -1424,9 +1465,9 @@ class Game:
 
         # 文本框随公主一起淡出
         if princess_a > 0:
-            box_m = 36
-            box_h = 96
-            box = pygame.Rect(box_m, SCREEN_H - box_h - 28, SCREEN_W - box_m * 2, box_h)
+            box_m = 28
+            box_h = 110
+            box = pygame.Rect(box_m, SCREEN_H - box_h - 18, SCREEN_W - box_m * 2, box_h)
             box_surf = pygame.transform.scale(self.assets.text_frame, (box.w, box.h)).copy()
             if princess_a < 255:
                 box_surf.set_alpha(princess_a)
@@ -1442,13 +1483,16 @@ class Game:
             if princess_a < 255:
                 text_surf = text_surf.copy()
                 text_surf.set_alpha(princess_a)
-            self.screen.blit(text_surf, (box.x + 18, box.y + 22))
+            self.screen.blit(text_surf, (box.x + 18, box.y + 20))
 
-            hint = self.font_sm.render("ENTER / SPACE — Next     ESC — Skip to Title", True, (200, 200, 200))
+            hint = self.font_sm.render("ENTER/SPACE/点击 继续     ESC/S 跳过开场", True, (200, 200, 200))
             if princess_a < 255:
                 hint = hint.copy()
                 hint.set_alpha(princess_a)
-            self.screen.blit(hint, (box.x + 18, box.bottom - 26))
+            self.screen.blit(hint, (box.x + 18, box.bottom - 28))
+        else:
+            skip = self.font_sm.render("ESC / S — Skip", True, (160, 170, 190))
+            self.screen.blit(skip, (SCREEN_W // 2 - skip.get_width() // 2, SCREEN_H - 36))
 
     def draw_window_frame(self) -> None:
         """黑底衬托 + 外边框包住整个内容区。"""
@@ -1467,6 +1511,7 @@ class Game:
                     pygame.K_RETURN,
                     pygame.K_SPACE,
                     pygame.K_ESCAPE,
+                    pygame.K_s,
                 ):
                     self.logo1_y = self.logo1_target_y
                     self.logo2_y = self.logo2_target_y
@@ -1493,8 +1538,13 @@ class Game:
                 elif e.key == pygame.K_ESCAPE:
                     self.menu_idx = 4
                     self._menu_select()
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and not self.intro_done:
+                self.logo1_y = self.logo1_target_y
+                self.logo2_y = self.logo2_target_y
+                self.intro_done = True
+                self.menu_fade = 1.0
 
-        # logo1 先动、logo2 稍后；两者在 intro_dur 同一时刻到位
+        # logo1 先动、logo2 稍后；缓动汇合
         if not self.intro_done:
             self.intro_t += dt
 
@@ -1502,7 +1552,7 @@ class Game:
                 if self.intro_t <= delay:
                     return 0.0
                 span = max(0.01, self.intro_dur - delay)
-                return max(0.0, min(1.0, (self.intro_t - delay) / span))
+                return self._ease_in_out((self.intro_t - delay) / span)
 
             p1 = _logo_progress(self.logo1_delay)
             p2 = _logo_progress(self.logo2_delay)
@@ -1513,21 +1563,26 @@ class Game:
                 self.logo2_y = self.logo2_target_y
                 self.intro_done = True
         if self.intro_done:
-            self.menu_fade = min(1.0, self.menu_fade + dt * 2.2)
+            self.menu_fade = min(1.0, self.menu_fade + dt * self.menu_fade_speed)
 
         self.screen.fill(self.assets.start_bg)
 
         l1 = self.assets.start_logo1
         l2 = self.assets.start_logo2
-        # 同一水平位置，仅 Y 不同；汇合后 Y 相同 → 原图完全叠合
         lx = SCREEN_W // 2 - l1.get_width() // 2
         self.screen.blit(l1, (lx, int(self.logo1_y)))
         self.screen.blit(l2, (lx, int(self.logo2_y)))
 
         if self.menu_fade > 0.01:
             alpha = int(255 * self.menu_fade)
-            menu_top = int(self.logo_meet_y) + max(l1.get_height(), l2.get_height()) + 20
-            menu_top = min(menu_top, SCREEN_H - 180)
+            row_h = 34
+            menu_h = row_h * len(self.menu_items)
+            # Logo 底边之下居中放置菜单，保证 5 项完整可见
+            logo_bottom = int(self.logo_meet_y) + max(l1.get_height(), l2.get_height())
+            menu_top = logo_bottom + 14
+            max_top = SCREEN_H - menu_h - 44
+            if menu_top > max_top:
+                menu_top = max(8, max_top)
             for i, (label, key) in enumerate(self.menu_items):
                 selected = i == self.menu_idx and self.intro_done
                 color = (255, 230, 120) if selected else (235, 240, 250)
@@ -1538,16 +1593,16 @@ class Game:
                 )
                 left.set_alpha(alpha)
                 right.set_alpha(alpha)
-                y = menu_top + i * 40
-                self.screen.blit(left, (SCREEN_W // 2 - 140, y))
-                self.screen.blit(right, (SCREEN_W // 2 + 90, y + 4))
+                y = menu_top + i * row_h
+                self.screen.blit(left, (SCREEN_W // 2 - 150, y))
+                self.screen.blit(right, (SCREEN_W // 2 + 100, y + 4))
 
-            hint = self.font_sm.render("W/S Select   ENTER Confirm   ESC Quit", True, (190, 200, 220))
+            hint = self.font_sm.render("W/S 选择   ENTER 确认   ESC 退出", True, (190, 200, 220))
             hint.set_alpha(alpha)
-            self.screen.blit(hint, (SCREEN_W // 2 - hint.get_width() // 2, SCREEN_H - 40))
+            self.screen.blit(hint, (SCREEN_W // 2 - hint.get_width() // 2, SCREEN_H - 28))
         elif not self.intro_done:
-            skip = self.font_sm.render("ENTER — Skip", True, (180, 190, 210))
-            self.screen.blit(skip, (SCREEN_W // 2 - skip.get_width() // 2, SCREEN_H - 40))
+            skip = self.font_sm.render("ENTER / SPACE / 点击 — 跳过动画", True, (180, 190, 210))
+            self.screen.blit(skip, (SCREEN_W // 2 - skip.get_width() // 2, SCREEN_H - 28))
 
     def _menu_select(self) -> None:
         i = self.menu_idx

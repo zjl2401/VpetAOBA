@@ -68,28 +68,41 @@ STAIRS_SRC = {"stairsleft.jpg", "stairsleft.png", "stairs.png"}
 BIG = {"house.png"}
 
 
-def near_chroma(r: int, g: int, b: int, a: int) -> bool:
-    """外圈常见抠图色：白、黑、绿幕。"""
+def near_white_bg(r: int, g: int, b: int, a: int) -> bool:
+    """白底 / 灰白描边（不含浅绿树叶）。"""
     if a < 16:
         return True
-    # 近白
+    # 近纯白
     if r >= 245 and g >= 245 and b >= 245:
         return True
-    if r >= 230 and g >= 230 and b >= 230 and max(r, g, b) - min(r, g, b) <= 12:
+    # 略灰/微黄的白边（饱和度极低）
+    if r >= 220 and g >= 220 and b >= 220 and max(r, g, b) - min(r, g, b) <= 16:
         return True
-    # 近黑
-    if r <= 12 and g <= 12 and b <= 12:
-        return True
-    # 绿幕（饱和绿）
-    if g >= 180 and g > r + 40 and g > b + 40:
-        return True
-    if g >= 140 and r <= 100 and b <= 100 and g > r + 30 and g > b + 30:
+    # 浅灰白边
+    if r >= 235 and g >= 235 and b >= 235 and max(r, g, b) - min(r, g, b) <= 28:
         return True
     return False
 
 
-def flood_key(im: Image.Image) -> Image.Image:
+def near_chroma(r: int, g: int, b: int, a: int) -> bool:
+    """外圈常见抠图色：白、黑、绿幕。"""
+    if near_white_bg(r, g, b, a):
+        return True
+    # 近黑
+    if r <= 12 and g <= 12 and b <= 12:
+        return True
+    # 绿幕（饱和绿）；勿用过宽阈值，以免吃掉树叶绿
+    if g >= 200 and g > r + 50 and g > b + 50 and r <= 120 and b <= 120:
+        return True
+    if g >= 180 and r <= 80 and b <= 80 and g > r + 40 and g > b + 40:
+        return True
+    return False
+
+
+def flood_key(im: Image.Image, is_key=None) -> Image.Image:
     """从四角 flood-fill 去掉连通的色键背景（仅外圈连通，不伤图内同色）。"""
+    if is_key is None:
+        is_key = near_chroma
     im = im.convert("RGBA")
     w, h = im.size
     px = im.load()
@@ -98,18 +111,18 @@ def flood_key(im: Image.Image) -> Image.Image:
 
     for sx, sy in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
         r, g, b, a = px[sx, sy]
-        if near_chroma(r, g, b, a):
+        if is_key(r, g, b, a):
             stack.append((sx, sy))
     # 外围一圈也入栈，避免四角恰好不是色键
     for x in range(w):
         for y in (0, h - 1):
             r, g, b, a = px[x, y]
-            if near_chroma(r, g, b, a):
+            if is_key(r, g, b, a):
                 stack.append((x, y))
     for y in range(h):
         for x in (0, w - 1):
             r, g, b, a = px[x, y]
-            if near_chroma(r, g, b, a):
+            if is_key(r, g, b, a):
                 stack.append((x, y))
 
     while stack:
@@ -117,7 +130,7 @@ def flood_key(im: Image.Image) -> Image.Image:
         if x < 0 or y < 0 or x >= w or y >= h or visited[y][x]:
             continue
         r, g, b, a = px[x, y]
-        if not near_chroma(r, g, b, a):
+        if not is_key(r, g, b, a):
             continue
         visited[y][x] = True
         px[x, y] = (r, g, b, 0)
@@ -408,7 +421,9 @@ def process_one(src: Path) -> None:
         print(f"[stairs] {name} -> stairs.png / stairs_up.png {TILE}x{TILE}")
         return
 
-    keyed = flood_key(im)
+    # tree 白底：只抠白边，保留浅绿树叶（勿当绿幕）
+    key_fn = near_white_bg if stem == "tree" else near_chroma
+    keyed = flood_key(im, is_key=key_fn)
     cropped = bbox_alpha(keyed)
 
     if stem in char_stems:
