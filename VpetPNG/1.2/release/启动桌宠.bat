@@ -1,3 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
-start "" "C:\Users\36255\Desktop\VpetAOBA\VpetPNG\1.2\release\Vpet\Vpet.exe"
+cd /d "%~dp0Vpet"
+start "" "%~dp0Vpet\Vpet.exe"

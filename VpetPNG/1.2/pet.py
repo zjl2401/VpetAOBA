@@ -1,5 +1,7 @@
 """桌面桌宠 v1.2：四大模块菜单、打电话对话框、跟随鼠标、面板与大小调节。"""
 
+from __future__ import annotations
+
 import array
 import ctypes
 import json
@@ -10,6 +12,10 @@ import re
 import shutil
 import subprocess
 import sys
+
+if sys.version_info < (3, 8):
+    raise SystemExit("需要 Python 3.8 或更高版本（推荐 3.10+）。当前: %s" % sys.version)
+
 import threading
 import time
 import tkinter as tk
@@ -1237,10 +1243,23 @@ def ensure_nc_outfit_sprites(*, force: bool = False) -> int:
     """
     用 ncstand + 原版 stand 学到换色表，批量生成各动作 nc* 图。
     返回新生成（或强制重写）的文件数。
+    已齐全时立刻返回，避免每次启动重建调色板卡死加载。
     """
     SPRITES_DIR.mkdir(parents=True, exist_ok=True)
     ncstand_path = _seed_ncstand_source()
     if ncstand_path is None:
+        return 0
+    stand_out = SPRITES_DIR / "ncstand.png"
+    needed: list[tuple[str, Path]] = []
+    if force or not stand_out.is_file():
+        needed.append(("__stand__", stand_out))
+    for fname in CORE_OUTFIT_SPRITE_FILES:
+        if Path(fname).stem == "stand":
+            continue
+        out_path = SPRITES_DIR / _nc_output_name(fname)
+        if force or not out_path.is_file():
+            needed.append((fname, out_path))
+    if not needed:
         return 0
     base_stand = _find_existing_asset("stand.jpg")
     if base_stand is None:
@@ -1250,28 +1269,19 @@ def ensure_nc_outfit_sprites(*, force: bool = False) -> int:
     except Exception:
         return 0
     made = 0
-    # 站姿：保证 sprites/ncstand.png 存在
-    stand_out = SPRITES_DIR / "ncstand.png"
-    if force or not stand_out.is_file():
+    for key, out_path in needed:
         try:
-            if ncstand_path.resolve() != stand_out.resolve():
-                shutil.copy2(ncstand_path, stand_out)
-            made += 1
-        except Exception:
-            pass
-    for fname in CORE_OUTFIT_SPRITE_FILES:
-        if Path(fname).stem == "stand":
-            continue
-        src_path = _find_existing_asset(fname)
-        if src_path is None:
-            continue
-        out_name = _nc_output_name(fname)
-        out_path = SPRITES_DIR / out_name
-        if out_path.is_file() and not force:
-            continue
-        try:
-            gen = _apply_outfit_color_map(Image.open(src_path), mapping)
-            gen.save(out_path)
+            if key == "__stand__":
+                if ncstand_path.resolve() != out_path.resolve():
+                    shutil.copy2(ncstand_path, out_path)
+                elif not out_path.is_file():
+                    shutil.copy2(ncstand_path, out_path)
+                made += 1
+                continue
+            src_path = _find_existing_asset(key)
+            if src_path is None:
+                continue
+            _apply_outfit_color_map(Image.open(src_path), mapping).save(out_path)
             made += 1
         except Exception:
             continue
@@ -6272,10 +6282,7 @@ class DesktopPet:
         if persona not in PERSONA_LABELS:
             persona = PERSONA_DEFAULT
         set_active_persona(persona)
-        try:
-            ensure_nc_outfit_sprites()
-        except Exception:
-            pass
+        # nc 套图生成放到后台 _startup_load_worker，避免启动前卡住
         self.pet_profile = _load_pet_profile()
         self.pet_id = self.pet_profile.get("pet_id") if PET_ID_FEATURE else None
         if PET_ID_FEATURE and isinstance(self.pet_id, bool):

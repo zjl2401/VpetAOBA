@@ -987,14 +987,14 @@ class Game:
         dim = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
         dim.fill((0, 0, 0, 120))
         self.screen.blit(dim, (0, 0))
-        box = pygame.Rect(36, VIEW_H // 2 - 54, SCREEN_W - 72, 108)
+        box = pygame.Rect(48, VIEW_H // 2 - 44, SCREEN_W - 96, 92)
         self.draw_textbox(self.screen, box)
         title = self.font.render(self.dialog_quote(self.dialog["title"]), True, (255, 230, 140))
         body = self.font_sm.render(self.dialog["body"], True, (235, 235, 240))
         hint = self.font_sm.render("ENTER / E / SPACE — 关闭", True, (180, 180, 190))
-        self.screen.blit(title, (box.x + 16, box.y + 16))
-        self.screen.blit(body, (box.x + 16, box.y + 48))
-        self.screen.blit(hint, (box.x + 16, box.bottom - 28))
+        self.screen.blit(title, (box.x + 14, box.y + 12))
+        self.screen.blit(body, (box.x + 14, box.y + 38))
+        self.screen.blit(hint, (box.x + 14, box.bottom - 24))
 
     def dialog_quote(self, text: str) -> str:
         t = text.strip()

@@ -1,3 +1,4 @@
+# 建议 Python 3.10+（最低可用 3.8；勿用 3.7）
 Pillow>=10.0.0
 pygame>=2.5.0
 imageio-ffmpeg>=0.5.0
