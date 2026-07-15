@@ -48,16 +48,19 @@ HOUSE = 8
 TREASURE = 9
 BORDER = 10
 STAIRS = 11  # 地面↔地下
-CAVE = 12  # 旧地下地板（加载时规范为 BRICK）
+CAVE = 12  # 洞窟入口：地面↔地下（旧图规范时地下 CAVE→BRICK）
 GATE = 13  # 通往下一关
 TREASURE_OPEN = 14  # 已开宝箱（装饰）
 MOUNTAIN = 15  # 景区（mountain 素材）
 
-# 砖地可走（地下背景）；岩石为隔断墙。旧图 BRICK 曾作墙，加载时规范为 ROCK。
-SOLID = {WATER, TREE, ROCK, OBSTACLE, HOUSE, BORDER, MOUNTAIN}
-WALKABLE_EXTRA = {EMPTY, GRASS, LAND, TREASURE, TREASURE_OPEN, STAIRS, CAVE, GATE, BRICK}
+# 砖地可走（地下背景）；岩石为隔断墙。TREE 可走（森林）。旧图 BRICK 曾作墙→ROCK。
+SOLID = {WATER, ROCK, OBSTACLE, HOUSE, BORDER, MOUNTAIN}
+WALKABLE_EXTRA = {EMPTY, GRASS, LAND, TREASURE, TREASURE_OPEN, STAIRS, CAVE, GATE, BRICK, TREE}
 # 叠在地板上的装饰物（岩石/砖地占满一格，不当道具叠层）
-PROP_OVERLAY = {TREE, OBSTACLE, HOUSE, TREASURE, TREASURE_OPEN, GATE, MOUNTAIN}
+PROP_OVERLAY = {TREE, OBSTACLE, HOUSE, TREASURE, TREASURE_OPEN, GATE, MOUNTAIN, CAVE}
+# 踩上可切换地面 / 地下
+LAYER_PORTALS = {STAIRS, CAVE}
+LAYER_FLASH_DUR = 0.42  # 层切换黑屏淡出时长（秒）
 
 TILE_FILES = {
     GRASS: "grass.png",
@@ -86,7 +89,7 @@ PALETTE = [
     (HOUSE, "房屋"),
     (TREASURE, "宝箱"),
     (STAIRS, "楼梯"),
-    (CAVE, "旧岩地"),
+    (CAVE, "洞窟"),
     (GATE, "关卡门"),
     (MOUNTAIN, "景区"),
 ]
@@ -109,20 +112,24 @@ INTERACT_HINTS = {
     HOUSE: "按 E 查看房屋",
     GATE: "靠近关卡门即可进入下一关",
     STAIRS: "踩上楼梯切换地面 / 地下",
+    CAVE: "踩上洞窟切换地面 / 地下",
     TREASURE_OPEN: "空宝箱……什么都不剩了",
 }
 
-# 关卡设定：更大地图、更密集连片
+# 关卡设定：更多样素材（森林/水面/景区/洞窟）拼成
 LEVEL_DEFS = [
     {
         "name": "第一关 · 绿野秘洞",
         "w": 52,
         "h": 40,
-        "obstacles": 28,
+        "obstacles": 18,
+        "forests": 10,
+        "mountains": 4,
+        "caves": 2,
         "cluster_r": (2, 5),
         "lakes": 3,
         "land_blobs": 16,
-        "stairs": 3,
+        "stairs": 2,
         "treasures": 5,
         "ug_fill": 0.62,
         "ug_corridors": 22,
@@ -132,11 +139,14 @@ LEVEL_DEFS = [
         "name": "第二关 · 荒原地穴",
         "w": 60,
         "h": 46,
-        "obstacles": 36,
+        "obstacles": 22,
+        "forests": 12,
+        "mountains": 6,
+        "caves": 3,
         "cluster_r": (2, 6),
         "lakes": 4,
         "land_blobs": 20,
-        "stairs": 3,
+        "stairs": 2,
         "treasures": 6,
         "ug_fill": 0.58,
         "ug_corridors": 28,
@@ -146,11 +156,14 @@ LEVEL_DEFS = [
         "name": "第三关 · 湖畔洞窟",
         "w": 68,
         "h": 52,
-        "obstacles": 44,
+        "obstacles": 26,
+        "forests": 16,
+        "mountains": 8,
+        "caves": 4,
         "cluster_r": (3, 6),
         "lakes": 5,
         "land_blobs": 24,
-        "stairs": 4,
+        "stairs": 3,
         "treasures": 8,
         "ug_fill": 0.55,
         "ug_corridors": 34,
@@ -160,11 +173,14 @@ LEVEL_DEFS = [
         "name": "最终关 · 地下牢笼",
         "w": 76,
         "h": 58,
-        "obstacles": 55,
+        "obstacles": 30,
+        "forests": 18,
+        "mountains": 10,
+        "caves": 4,
         "cluster_r": (3, 7),
         "lakes": 6,
         "land_blobs": 28,
-        "stairs": 4,
+        "stairs": 3,
         "treasures": 10,
         "ug_fill": 0.52,
         "ug_corridors": 40,
@@ -266,7 +282,9 @@ class Assets:
             ],
         }
         self.knight["left"] = [pygame.transform.flip(s, True, False) for s in self.knight["right"]]
-        self.princess = pygame.transform.scale(load_img("princess.png"), (cw, ch))
+        # 公主略小于骑士
+        pw, ph = max(16, int(cw * 0.72)), max(20, int(ch * 0.72))
+        self.princess = pygame.transform.scale(load_img("princess.png"), (pw, ph))
         self.start_bg = self._load_start_bg()
         self.start_logo1, self.start_logo2 = self._load_start_logos()
         self.window_frame = self._load_window_frame()
@@ -520,15 +538,43 @@ def generate_level(level_idx: int, seed: int | None = None) -> dict:
 
     for _ in range(cfg["obstacles"]):
         cx, cy = rng.randint(2, w - 3), rng.randint(2, h - 3)
-        kind = rng.choice([TREE, TREE, ROCK, OBSTACLE, TREE])
+        kind = rng.choice([ROCK, OBSTACLE, ROCK, OBSTACLE, ROCK])
+        stamp_blob(
+            surface,
+            cx,
+            cy,
+            rng.randint(r_lo, max(r_lo, r_hi - 1)),
+            kind,
+            rng,
+            density=0.8,
+            only_on={GRASS, LAND},
+        )
+
+    # 可走森林（树木叠层）
+    for _ in range(cfg.get("forests", 8)):
+        cx, cy = rng.randint(2, w - 3), rng.randint(2, h - 3)
         stamp_blob(
             surface,
             cx,
             cy,
             rng.randint(r_lo, r_hi),
-            kind,
+            TREE,
             rng,
-            density=0.82,
+            density=0.78,
+            only_on={GRASS, LAND},
+        )
+
+    # 景区山峦（挡路）
+    for _ in range(cfg.get("mountains", 3)):
+        cx, cy = rng.randint(3, w - 4), rng.randint(3, h - 4)
+        stamp_blob(
+            surface,
+            cx,
+            cy,
+            rng.randint(1, max(2, r_lo)),
+            MOUNTAIN,
+            rng,
+            density=0.7,
             only_on={GRASS, LAND},
         )
 
@@ -578,10 +624,25 @@ def generate_level(level_idx: int, seed: int | None = None) -> dict:
             x, y = rng.randint(3, w - 4), rng.randint(3, h - 4)
             if abs(x - hx) + abs(y - hy) < 6:
                 continue
-            if surface[y][x] in (GRASS, LAND) and under[y][x] in (BRICK, ROCK):
+            if surface[y][x] in (GRASS, LAND, TREE) and under[y][x] in (BRICK, ROCK):
                 surface[y][x] = STAIRS
                 under[y][x] = STAIRS
                 stairs.append([x, y])
+                break
+
+    # 洞窟入口：地面 ↔ 地下（与楼梯同类）
+    caves: list[list[int]] = []
+    for _ in range(cfg.get("caves", 2)):
+        for _try in range(120):
+            x, y = rng.randint(3, w - 4), rng.randint(3, h - 4)
+            if abs(x - hx) + abs(y - hy) < 6:
+                continue
+            if surface[y][x] in (GRASS, LAND, TREE) and under[y][x] in (BRICK, ROCK):
+                if [x, y] in stairs:
+                    continue
+                surface[y][x] = CAVE
+                under[y][x] = CAVE
+                caves.append([x, y])
                 break
 
     if cfg["princess"]:
@@ -620,6 +681,9 @@ def generate_level(level_idx: int, seed: int | None = None) -> dict:
         for i in range(1, len(stairs)):
             carve_path(under, tuple(stairs[0]), tuple(stairs[i]), rng, BRICK)
             carve_path(surface, tuple(stairs[0]), tuple(stairs[i]), rng, GRASS)
+        for cx, cy in caves:
+            carve_path(surface, start, (cx, cy), rng, GRASS)
+            carve_path(under, (cx, cy), goal, rng, BRICK)
     else:
         sx, sy = max(2, start[0] + 2), max(2, start[1] - 4)
         surface[sy][sx] = STAIRS
@@ -627,6 +691,17 @@ def generate_level(level_idx: int, seed: int | None = None) -> dict:
         stairs = [[sx, sy]]
         carve_path(surface, start, (sx, sy), rng, GRASS)
         carve_path(under, (sx, sy), goal, rng, BRICK)
+        for cx, cy in caves:
+            carve_path(surface, start, (cx, cy), rng, GRASS)
+            carve_path(under, (cx, cy), goal, rng, BRICK)
+
+    # carve_path 可能覆盖门户，重新钉回
+    for sx, sy in stairs:
+        surface[sy][sx] = STAIRS
+        under[sy][sx] = STAIRS
+    for cx, cy in caves:
+        surface[cy][cx] = CAVE
+        under[cy][cx] = CAVE
 
     surface[hy][hx] = HOUSE
     surface[start[1]][start[0]] = GRASS
@@ -634,7 +709,7 @@ def generate_level(level_idx: int, seed: int | None = None) -> dict:
     for _ in range(cfg["treasures"]):
         if rng.random() < 0.5:
             x, y = rng.randint(1, w - 2), rng.randint(1, h - 2)
-            if surface[y][x] in (GRASS, LAND) and (x, y) != start:
+            if surface[y][x] in (GRASS, LAND, TREE) and (x, y) != start:
                 surface[y][x] = TREASURE
         else:
             x, y = rng.randint(1, w - 2), rng.randint(1, h - 2)
@@ -652,6 +727,7 @@ def generate_level(level_idx: int, seed: int | None = None) -> dict:
         "goal": list(goal),
         "goal_layer": goal_layer,
         "stairs": stairs,
+        "caves": caves,
         "princess": cfg["princess"],
         "seed": seed,
         "tile_schema": 2,
@@ -822,8 +898,8 @@ class Game:
         # 游戏内容画在内层；外边框包住整块画面
         self.screen = pygame.Surface((SCREEN_W, SCREEN_H))
         self.clock = pygame.time.Clock()
-        self.font = self._load_font(22)
-        self.font_sm = self._load_font(16)
+        self.font = self._load_font(16)
+        self.font_sm = self._load_font(13)
         self.assets = Assets()
         self.camera = Camera()
         self.state = "menu"
@@ -845,6 +921,8 @@ class Game:
         self.message = ""
         self.message_t = 0.0
         self.stairs_cd = 0.0
+        self.layer_flash = 0.0  # 1→0：地上地下切换黑屏
+        self.portal_stand_lock: tuple[str, int, int] | None = None
         self.brush = GRASS
         self.edit_mode = "tile"
         self.edit_layer = "surface"
@@ -909,14 +987,14 @@ class Game:
         dim = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
         dim.fill((0, 0, 0, 120))
         self.screen.blit(dim, (0, 0))
-        box = pygame.Rect(36, VIEW_H // 2 - 54, SCREEN_W - 72, 108)
+        box = pygame.Rect(48, VIEW_H // 2 - 44, SCREEN_W - 96, 92)
         self.draw_textbox(self.screen, box)
         title = self.font.render(self.dialog_quote(self.dialog["title"]), True, (255, 230, 140))
         body = self.font_sm.render(self.dialog["body"], True, (235, 235, 240))
         hint = self.font_sm.render("ENTER / E / SPACE — 关闭", True, (180, 180, 190))
-        self.screen.blit(title, (box.x + 16, box.y + 16))
-        self.screen.blit(body, (box.x + 16, box.y + 48))
-        self.screen.blit(hint, (box.x + 16, box.bottom - 28))
+        self.screen.blit(title, (box.x + 14, box.y + 12))
+        self.screen.blit(body, (box.x + 14, box.y + 38))
+        self.screen.blit(hint, (box.x + 14, box.bottom - 24))
 
     def dialog_quote(self, text: str) -> str:
         t = text.strip()
@@ -1097,7 +1175,7 @@ class Game:
             if not (0 <= tx < mw and 0 <= ty < mh):
                 continue
             cell = grid[ty][tx]
-            if cell in (TREASURE, TREASURE_OPEN, HOUSE, GATE, STAIRS):
+            if cell in (TREASURE, TREASURE_OPEN, HOUSE, GATE, STAIRS, CAVE):
                 found.append((tx, ty, cell))
         return found
 
@@ -1129,8 +1207,8 @@ class Game:
         if cell == GATE:
             self.show_dialog("关卡门", "金色光芒流转的门扉——靠近即可前往下一关。")
             return
-        if cell == STAIRS:
-            self.try_use_stairs()
+        if cell == STAIRS or cell == CAVE:
+            self.try_use_layer_portal()
             return
 
     def _editor_palette_rects(self) -> list[tuple[pygame.Rect, int, str]]:
@@ -1485,26 +1563,26 @@ class Game:
         princess_a = max(0, min(255, int(255 * (1.0 - fade_t))))
 
         if princess_a > 0:
-            glow = pygame.Surface((300, 300), pygame.SRCALPHA)
-            for r, a in ((140, 22), (95, 36), (55, 50)):
-                pygame.draw.circle(glow, (90, 70, 120, int(a * princess_a / 255)), (150, 150), r)
-            self.screen.blit(glow, (SCREEN_W // 2 - 150, SCREEN_H // 2 - 210))
+            glow = pygame.Surface((220, 220), pygame.SRCALPHA)
+            for r, a in ((100, 22), (70, 36), (40, 50)):
+                pygame.draw.circle(glow, (90, 70, 120, int(a * princess_a / 255)), (110, 110), r)
+            self.screen.blit(glow, (SCREEN_W // 2 - 110, SCREEN_H // 2 - 170))
 
             pr = self.assets.princess
-            big = pygame.transform.scale(pr, (pr.get_width(), pr.get_height()))
+            big = pr
             if princess_a < 255:
-                big = big.copy()
+                big = pr.copy()
                 big.set_alpha(princess_a)
-            bob = math.sin(pygame.time.get_ticks() / 700.0) * 4
+            bob = math.sin(pygame.time.get_ticks() / 700.0) * 3
             px = SCREEN_W // 2 - big.get_width() // 2
-            py = int(SCREEN_H // 2 - big.get_height() // 2 - 40 + bob)
+            py = int(SCREEN_H // 2 - big.get_height() // 2 - 28 + bob)
             self.screen.blit(big, (px, py))
 
         # 文本框随公主一起淡出
         if princess_a > 0:
-            box_m = 28
-            box_h = 110
-            box = pygame.Rect(box_m, SCREEN_H - box_h - 18, SCREEN_W - box_m * 2, box_h)
+            box_m = 36
+            box_h = 88
+            box = pygame.Rect(box_m, SCREEN_H - box_h - 16, SCREEN_W - box_m * 2, box_h)
             box_surf = pygame.transform.scale(self.assets.text_frame, (box.w, box.h)).copy()
             if princess_a < 255:
                 box_surf.set_alpha(princess_a)
@@ -1655,26 +1733,37 @@ class Game:
             pygame.event.post(pygame.event.Event(pygame.QUIT))
 
     def try_use_stairs(self) -> None:
+        """兼容旧名：楼梯 / 洞窟层切换。"""
+        self.try_use_layer_portal()
+
+    def try_use_layer_portal(self) -> None:
         assert self.map_data and self.knight
-        if self.stairs_cd > 0:
+        if self.stairs_cd > 0 or self.layer_flash > 0.55:
             return
         tx, ty = self.knight.tile_pos()
         mw, mh = map_size(self.map_data)
         if not (0 <= tx < mw and 0 <= ty < mh):
             return
-        if self.current_grid()[ty][tx] != STAIRS:
+        cell = self.current_grid()[ty][tx]
+        if cell not in LAYER_PORTALS:
+            return
+        # 刚穿过后仍站在对侧入口上：不再反复切换
+        if self.portal_stand_lock == (self.layer, tx, ty):
             return
         self.layer = "underground" if self.layer == "surface" else "surface"
-        # 保证对面也是楼梯 / 可走
+        # 保证对面同为入口 / 可走
         other = layer_grid(self.map_data, self.layer)
-        if other[ty][tx] in SOLID:
-            other[ty][tx] = STAIRS
-        elif other[ty][tx] != STAIRS:
-            other[ty][tx] = STAIRS
+        if other[ty][tx] in SOLID or other[ty][tx] == EMPTY:
+            other[ty][tx] = cell
+        elif other[ty][tx] not in LAYER_PORTALS:
+            other[ty][tx] = cell
         self.knight.place_on_tile(tx, ty)
-        self.stairs_cd = 0.6
+        self.stairs_cd = 0.55
+        self.layer_flash = 1.0
+        self.portal_stand_lock = (self.layer, tx, ty)
         where = "地下" if self.layer == "underground" else "地面"
-        self.toast(f"沿着楼梯来到了{where}")
+        via = "洞窟" if cell == CAVE else "楼梯"
+        self.toast(f"穿过{via}，来到了{where}")
 
     def check_goal(self) -> None:
         assert self.map_data and self.knight
@@ -1739,22 +1828,30 @@ class Game:
 
         if self.stairs_cd > 0:
             self.stairs_cd -= dt
+        if self.layer_flash > 0:
+            self.layer_flash = max(0.0, self.layer_flash - dt / LAYER_FLASH_DUR)
 
         keys = pygame.key.get_pressed()
-        self.knight.update(dt, keys, grid, mw, mh)
+        # 黑屏前半略过移动，避免刚切换又踩门口
+        if self.layer_flash < 0.55:
+            self.knight.update(dt, keys, grid, mw, mh)
         self.camera.follow(self.knight.x, self.knight.y, mw, mh)
 
         tx, ty = self.knight.tile_pos()
         if 0 <= tx < mw and 0 <= ty < mh:
             cell = grid[ty][tx]
-            if cell == STAIRS:
-                self.try_use_stairs()
+            if cell in LAYER_PORTALS:
+                self.try_use_layer_portal()
+            else:
+                self.portal_stand_lock = None
+        else:
+            self.portal_stand_lock = None
 
         # 附近互动提示
         self.nearby_hint = ""
         for _tx, _ty, cell in self._interact_targets():
             hint = INTERACT_HINTS.get(cell)
-            if hint and cell != STAIRS:
+            if hint and cell not in LAYER_PORTALS:
                 self.nearby_hint = hint
                 break
 
@@ -1773,6 +1870,13 @@ class Game:
             shade.fill((0, 0, 30, 50))
             world.blit(shade, (0, 0))
         self.screen.blit(world, (0, 0))
+
+        if self.layer_flash > 0:
+            # 黑一下再淡出
+            flash = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            a = int(255 * min(1.0, self.layer_flash))
+            flash.fill((0, 0, 0, a))
+            self.screen.blit(flash, (0, 0))
 
         layer_cn = "地下" if self.layer == "underground" else "地面"
         name = self.map_data.get("name", "")
@@ -2022,13 +2126,18 @@ class Game:
             grid[ty][tx] = EMPTY
             return
         grid[ty][tx] = self.brush
-        if self.brush == STAIRS:
-            # 双层同步楼梯
+        if self.brush in LAYER_PORTALS:
+            # 双层同步楼梯 / 洞窟
             other = "underground" if self.edit_layer == "surface" else "surface"
-            layer_grid(self.map_data, other)[ty][tx] = STAIRS
-            stairs = self.map_data.setdefault("stairs", [])
-            if [tx, ty] not in stairs:
-                stairs.append([tx, ty])
+            layer_grid(self.map_data, other)[ty][tx] = self.brush
+            if self.brush == STAIRS:
+                stairs = self.map_data.setdefault("stairs", [])
+                if [tx, ty] not in stairs:
+                    stairs.append([tx, ty])
+            else:
+                caves = self.map_data.setdefault("caves", [])
+                if [tx, ty] not in caves:
+                    caves.append([tx, ty])
 
     def _save_map(self) -> None:
         assert self.map_data

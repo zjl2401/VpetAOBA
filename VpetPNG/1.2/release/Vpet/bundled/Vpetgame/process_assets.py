@@ -427,9 +427,14 @@ def process_one(src: Path) -> None:
     cropped = bbox_alpha(keyed)
 
     if stem in char_stems:
-        out = fit_canvas(cropped, CHAR_W, CHAR_H)
+        # 公主再小一号
+        if stem == "princess":
+            tw, th = max(24, int(CHAR_W * 0.72)), max(32, int(CHAR_H * 0.72))
+        else:
+            tw, th = CHAR_W, CHAR_H
+        out = fit_canvas(cropped, tw, th)
         out.save(OUT / out_name)
-        print(f"[char]  {name} -> {out_name} {CHAR_W}x{CHAR_H}")
+        print(f"[char]  {name} -> {out_name} {tw}x{th}")
     elif stem in big_stems:
         out = fit_canvas(cropped, OVERSIZED, OVERSIZED)
         out.save(OUT / out_name)

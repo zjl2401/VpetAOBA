@@ -1469,6 +1469,9 @@ DRAG_DIZZY_SPIN_STEPS = 4
 DRAG_DIZZY_MIN_DELTA = 4
 DRAG_DIZZY_DIALOG_COOLDOWN_MS = 3200
 DRAG_DIZZY_EXTRA_DIALOG_SPINS = 4
+# 拖动（move 动画）持续超过此时长 → 可触发语音；长拖可隔一段时间再触发
+DRAG_MOVE_VOICE_AFTER_MS = 3000
+DRAG_MOVE_VOICE_RETRY_MS = 6500
 DRAG_DIZZY_LINES: tuple[str, ...] = (
     "别晃啦我晕了……",
     "慢—慢—点—拖—我—",
@@ -1568,6 +1571,7 @@ VOICE_WALK_RANDOM_CHANCE = 0.07
 VOICE_WORK_RANDOM_CHANCE = 0.055
 VOICE_ERROR_COOLDOWN_MS = 180_000
 VOICE_ERROR_CHANCE = 0.22
+VOICE_DRAG_MOVE_CHANCE = 0.9
 EXPOSE_QTE_TICK_MS = 16
 EXPOSE_GLITCH_HITS_REQUIRED = 5
 EXPOSE_GLITCH_ALERT_W = 240
@@ -6448,6 +6452,7 @@ class DesktopPet:
         self.drag_dizzy = False
         self.drag_dizzy_dialog_ms = 0
         self.drag_dizzy_extra_spins = 0
+        self.drag_move_voice_ms = 0
         self.drag_handle = (0, 0, self.display_size, self.display_size)
         self._drag_handle_cache[self.display_size] = self.drag_handle
         self.click_bounce_offset = 0
@@ -7604,11 +7609,12 @@ class DesktopPet:
         )
 
     def _trigger_sleep_banter(self) -> str:
-        return self._trigger_voice_or_dialog(
-            voice_fn=lambda: self._addon_voice_vpet("sleep", interrupt_busy=True),
-            dialog_fn=lambda: self._show_interact_banter_dialog("sleep"),
-            voice_available=self._vpet_voice_category_ready("sleep"),
-        )
+        # 开语音且有 sleep 资源时强制播（模式睡眠 / 动作睡眠共用）
+        if self._voice_enabled() and self._vpet_voice_category_ready("sleep"):
+            if self._addon_voice_vpet("sleep", chain=False, interrupt_busy=True):
+                return "voice"
+        self._show_interact_banter_dialog("sleep")
+        return "dialog"
 
     def _trigger_kick_banter(self) -> str:
         return self._trigger_voice_or_dialog(
@@ -7966,6 +7972,38 @@ class DesktopPet:
         if random.random() >= VOICE_WALK_RANDOM_CHANCE:
             return False
         return self._try_voice_vpet("walk")
+
+    def _try_voice_drag_move(self) -> bool:
+        """拖动 move 超时：播 dizzy/walk 等语音；无语音时退回台词框。"""
+        if not self.dragging or self.state != "drag":
+            return False
+        if random.random() >= VOICE_DRAG_MOVE_CHANCE:
+            return False
+        cats = [c for c in ("dizzy", "walk", "normal") if self._vpet_voice_category_ready(c)]
+        if cats and self._voice_enabled():
+            if self.voice_player.is_busy():
+                return False
+            if self._addon_voice_vpet(random.choice(cats), chain=False):
+                return True
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            return False
+        lines = DRAG_DIZZY_LINES + STATE_MULTI_CLICK.get("walk", ())
+        self._show_speech_dialog(random.choice(lines), auto_hide_ms=2400)
+        return True
+
+    def _maybe_drag_move_voice(self, elapsed_ms: int) -> None:
+        if elapsed_ms < DRAG_MOVE_VOICE_AFTER_MS:
+            return
+        now_ms = int(time.time() * 1000)
+        last = int(getattr(self, "drag_move_voice_ms", 0) or 0)
+        if last <= 0:
+            # 本次拖动首次：刚满 3s
+            pass
+        elif now_ms - last < DRAG_MOVE_VOICE_RETRY_MS:
+            return
+        if not self._try_voice_drag_move():
+            return
+        self.drag_move_voice_ms = now_ms
 
     def _try_voice_work(self) -> bool:
         if self.mode != "work" or self.state != "work":
@@ -10961,6 +10999,7 @@ class DesktopPet:
         self._set_image(self.sprites.sleep[1])
         self._show_sleep_zzz()
         self._schedule_rest_bobble()
+        self._trigger_sleep_banter()
 
     def _enable_follow(self) -> None:
         if self.mode == "follow":
@@ -18125,6 +18164,7 @@ class DesktopPet:
             self.action_name = ""
         self.state = "drag"
         self.drag_move_start_ms = int(time.time() * 1000)
+        self.drag_move_voice_ms = 0
         self.drag_last_dir = ""
         self.drag_spin_dir = 0
         self.drag_spin_steps = 0
@@ -18146,6 +18186,7 @@ class DesktopPet:
                 self._set_image(self.sprites.move[frame_idx])
             else:
                 self._set_image(self.sprites.move[0])
+        self._maybe_drag_move_voice(elapsed)
 
         self.drag_move_job = self.root.after(MOVE23_FRAME_MS, self._drag_move_tick)
 
@@ -19329,13 +19370,13 @@ class DesktopPet:
         if self.dragging:
             return
         self._interrupt_current_interaction()
-        self._trigger_sleep_banter()
         self.sleep_interact_active = True
         self.rest_base_y = self.y
         self.state = "rest"
         self._set_image(self.sprites.sleep[1])
         self._show_sleep_zzz()
         self._schedule_rest_bobble()
+        self._trigger_sleep_banter()
         tok = self.interaction_token
         self.sleep_interact_end_job = self.root.after(
             SLEEP_INTERACT_MS, lambda t=tok: self._finish_sleep_interact(t)
@@ -19373,8 +19414,8 @@ class DesktopPet:
         self.action_name = "sleep"
         self.sleep_in_deep = False
         self._hide_sleep_zzz()
-        self._trigger_sleep_banter()
         self._set_image(self.sprites.sleep[0])
+        self._trigger_sleep_banter()
         self.root.after(SLEEP_TRANSITION_MS, self._sleep_enter_deep)
 
     def _sleep_enter_deep(self) -> None:
