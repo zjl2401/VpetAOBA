@@ -21,6 +21,8 @@ SAVES_DIR = ROOT / "saves"
 MUSIC_END_EVENT = pygame.USEREVENT + 21
 STARTMUSIC_NAMES = ("startmusic.mp3", "startmusic.ogg", "startmusic.wav")
 LOOPMUSIC_NAMES = ("music.mp3", "music.ogg", "music.wav")
+MUSIC_DEFAULT_VOLUME = 0.28  # 默认偏小，可用音量加减键调节
+MUSIC_VOLUME_STEP = 0.08
 
 TILE = 36
 # 屏幕可见格子（相机视口）
@@ -945,15 +947,43 @@ class Game:
                     continue
         return pygame.font.Font(None, size)
 
+    @staticmethod
+    def _load_pixel_font(size: int) -> pygame.font.Font:
+        """标题菜单用像素字体（英文最佳）；缺失时回退系统字体。"""
+        candidates = (
+            ASSETS / "fonts" / "PressStart2P-Regular.ttf",
+            ASSETS / "PressStart2P-Regular.ttf",
+            ROOT / "assets" / "fonts" / "PressStart2P-Regular.ttf",
+        )
+        for path in candidates:
+            if path.exists():
+                try:
+                    return pygame.font.Font(str(path), size)
+                except Exception:
+                    continue
+        return Game._load_font(size)
+
+    @staticmethod
+    def _resolve_audio(names: tuple[str, ...]) -> Path | None:
+        for name in names:
+            for path in (ASSETS / name, ROOT / name, ASSETS / "audio" / name):
+                if path.exists():
+                    return path
+        return None
+
     def __init__(self) -> None:
         ensure_assets()
         MAPS_DIR.mkdir(exist_ok=True)
         SAVES_DIR.mkdir(exist_ok=True)
         pygame.init()
         try:
-            pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
+            # mp3 立体声；失败再退回单声道
+            pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
         except pygame.error:
-            pass
+            try:
+                pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
+            except pygame.error:
+                pass
         pygame.display.set_caption("Silent Oath")
         self.window = pygame.display.set_mode((WINDOW_W, WINDOW_H))
         # 游戏内容画在内层；外边框包住整块画面
@@ -961,13 +991,16 @@ class Game:
         self.clock = pygame.time.Clock()
         self.font = self._load_font(16)
         self.font_sm = self._load_font(13)
+        # Start 页菜单：像素风（Press Start 2P）
+        self.font_pixel = self._load_pixel_font(14)
+        self.font_pixel_sm = self._load_pixel_font(10)
         self.assets = Assets()
         self.camera = Camera()
         self.state = "menu"
         self.menu_idx = 0
         # 英文菜单项 + 右侧按键提示
         self.menu_items = [
-            ("START CAMPAIGN", "ENTER"),
+            ("START", "ENTER"),
             ("LOAD SAVE", "C"),
             ("MAP EDITOR", "E"),
             ("LOAD DIY MAP", "L"),
@@ -1000,6 +1033,10 @@ class Game:
         self.editor_panning = False
         self.editor_pan_origin = (0, 0, 0.0, 0.0)
         self.paint_drag = False
+        # BGM：点 START 播 startmusic，结束后循环 music
+        self._bgm_phase: str | None = None  # None | "start" | "loop"
+        self.music_volume = MUSIC_DEFAULT_VOLUME
+        self._apply_music_volume()
         # 开场升起：两 logo 缓缓汇合，再淡入菜单
         self.intro_t = 0.0
         self.intro_dur = 6.2
@@ -1403,6 +1440,7 @@ class Game:
         self.campaign = True
         self.level_idx = 0
         self.total_treasures = 0
+        self._begin_adventure_bgm()
         self._load_level(0)
 
     def _load_level(self, idx: int) -> None:
@@ -1429,6 +1467,7 @@ class Game:
         self.treasures = 0
         self.stairs_cd = 0.0
         self.state = "play"
+        self._begin_adventure_bgm()
         self.toast(data.get("name", "探险开始") + " · WASD移动 · 踩楼梯/洞窟切换地面地下")
 
     def _migrate_old_map(self, data: dict) -> dict:
@@ -1585,6 +1624,7 @@ class Game:
 
     def enter_menu(self, play_intro: bool = True) -> None:
         self.state = "menu"
+        self.stop_bgm()
         if play_intro:
             self._reset_logo_anim_targets()
             self.intro_done = False
@@ -1594,6 +1634,100 @@ class Game:
             self.logo2_y = self.logo2_target_y
             self.intro_done = True
             self.menu_fade = 1.0
+
+    def stop_bgm(self) -> None:
+        self._bgm_phase = None
+        if not pygame.mixer.get_init():
+            return
+        try:
+            pygame.mixer.music.set_endevent()
+            pygame.mixer.music.stop()
+        except pygame.error:
+            pass
+
+    def _apply_music_volume(self) -> None:
+        if not pygame.mixer.get_init():
+            return
+        try:
+            pygame.mixer.music.set_volume(max(0.0, min(1.0, self.music_volume)))
+        except pygame.error:
+            pass
+
+    def adjust_music_volume(self, delta: float) -> None:
+        """音量加减键调节 BGM（0%~100%）。"""
+        old = self.music_volume
+        self.music_volume = max(0.0, min(1.0, self.music_volume + delta))
+        if abs(self.music_volume - old) < 1e-6:
+            pct = int(round(self.music_volume * 100))
+            self.toast(f"音量 {pct}%")
+            return
+        self._apply_music_volume()
+        self.toast(f"音量 {int(round(self.music_volume * 100))}%")
+
+    def _handle_volume_keys(self, events: list) -> None:
+        # SDL_SCANCODE_VOLUMEUP / VOLUMEDOWN（部分键盘媒体键）；并兼容 +/- 与小键盘
+        vol_up_scan = {128}
+        vol_down_scan = {129}
+        for e in events:
+            if e.type != pygame.KEYDOWN:
+                continue
+            key = e.key
+            scan = getattr(e, "scancode", None)
+            if (
+                key in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS)
+                or scan in vol_up_scan
+            ):
+                self.adjust_music_volume(MUSIC_VOLUME_STEP)
+            elif (
+                key in (pygame.K_MINUS, pygame.K_KP_MINUS)
+                or scan in vol_down_scan
+            ):
+                self.adjust_music_volume(-MUSIC_VOLUME_STEP)
+
+    def _begin_adventure_bgm(self) -> None:
+        """点 START / 进入游玩：先播 startmusic，结束后续播循环 music。"""
+        if not pygame.mixer.get_init():
+            return
+        if self._bgm_phase in ("start", "loop"):
+            # 已在冒险 BGM 中（如下一关）则保持循环
+            if self._bgm_phase == "loop":
+                return
+            # start 未结束则继续等结束事件
+            return
+        start_path = self._resolve_audio(STARTMUSIC_NAMES)
+        if start_path is not None:
+            try:
+                pygame.mixer.music.stop()
+                pygame.mixer.music.set_endevent(MUSIC_END_EVENT)
+                pygame.mixer.music.load(str(start_path))
+                pygame.mixer.music.play(0)
+                self._apply_music_volume()
+                self._bgm_phase = "start"
+                return
+            except pygame.error:
+                pass
+        self._play_loop_music()
+
+    def _play_loop_music(self) -> None:
+        if not pygame.mixer.get_init():
+            return
+        loop_path = self._resolve_audio(LOOPMUSIC_NAMES)
+        if loop_path is None:
+            self._bgm_phase = None
+            return
+        try:
+            pygame.mixer.music.stop()
+            pygame.mixer.music.set_endevent()
+            pygame.mixer.music.load(str(loop_path))
+            pygame.mixer.music.play(-1)
+            self._apply_music_volume()
+            self._bgm_phase = "loop"
+        except pygame.error:
+            self._bgm_phase = None
+
+    def _on_music_end_event(self) -> None:
+        if self._bgm_phase == "start":
+            self._play_loop_music()
 
     def _prologue_display_line(self, idx: int | None = None) -> str:
         i = self.prologue_idx if idx is None else idx
@@ -1814,8 +1948,8 @@ class Game:
                 selected = i == self.menu_idx and self.intro_done
                 color = (255, 230, 120) if selected else (235, 240, 250)
                 prefix = "> " if selected else "  "
-                left = self.font.render(prefix + label, True, color)
-                right = self.font_sm.render(
+                left = self.font_pixel.render(prefix + label, True, color)
+                right = self.font_pixel_sm.render(
                     f"[{key}]", True, (200, 210, 230) if selected else (160, 175, 195)
                 )
                 left.set_alpha(alpha)
@@ -2401,8 +2535,12 @@ class Game:
             events = pygame.event.get()
             for e in events:
                 if e.type == pygame.QUIT:
+                    self.stop_bgm()
                     pygame.quit()
                     sys.exit(0)
+                if e.type == MUSIC_END_EVENT:
+                    self._on_music_end_event()
+            self._handle_volume_keys(events)
 
             if self.state == "prologue":
                 self.run_prologue(events, dt)

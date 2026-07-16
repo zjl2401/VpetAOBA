@@ -34,7 +34,7 @@ pip install pygame Pillow
 | 场景 | 按键 |
 |------|------|
 | 菜单 | ↑↓ / WS 选择，Enter 确认；C 读档；E 编辑器；L DIY |
-| 冒险 | WASD 移动；E 互动；F5 存档；F9 读档；Esc 菜单；R 重开本关 |
+| 冒险 | WASD 移动；E 互动；F5 存档；F9 读档；Esc 菜单；R 重开本关；音量加减键（或 +/-）调节 BGM |
 | 过关/通关 | Enter 继续 |
 | DIY | 点底部素材再拖动画；右键擦；中键/空格拖镜头；滚轮平移；Tab 切层；`S` 起点；`G` 终点；底栏/快捷键：保存·导出·删除·打开；`Ctrl+S` 保存；`Ctrl+Shift+S`/`Ctrl+E` 导出；`Delete`/`Ctrl+D` 删除；`Ctrl+O` 载入；列表里 `Delete`/`X` 删图；`P` 试玩 |
 

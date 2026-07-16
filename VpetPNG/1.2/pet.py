@@ -1872,7 +1872,7 @@ RHYTHM_CARNIVAL_URL = "https://www.nitrochiral.com/game/rhythm-carnival/"
 RHYTHM_CARNIVAL_TITLE = "THE CHiRAL NIGHT rhythm carnival"
 RHYTHM_CARNIVAL_INTRO = (
     "官方节奏作：《THE CHiRAL NIGHT rhythm carnival》。\n"
-    "本桌宠音游为同人小品，完整体验请支持正版。"
+    "桌宠内音游为同人小品，完整体验请支持正版。"
 )
 ABOUT_CREDITS: tuple[str, ...] = (
     "翛然而往",
@@ -1881,15 +1881,29 @@ ABOUT_TEXT = (
     "角色：濑良垣苍叶（《DRAMAtical Murder》 / Nitro+CHiRAL）。\n"
     "同人像素桌宠，非官方作品。完整剧情请支持正版。\n"
     "可基于本仓库二次开发；贡献者见致谢。\n\n"
-    f"开发者：{ABOUT_DEVELOPER}"
+    f"开发者：{ABOUT_DEVELOPER}\n\n"
+    "欢迎关注 B站 / 小红书；源码托管于 GitHub。"
 )
-# 问题反馈
+# 问题反馈 / 社区
 FEEDBACK_ISSUE_URL = f"{ABOUT_REPO_URL}/issues"
 FEEDBACK_XHS_ID = "444225910"
 FEEDBACK_XHS_URL = f"https://www.xiaohongshu.com/user/profile/{FEEDBACK_XHS_ID}"
 FEEDBACK_BILI_UID = "696083047"
 FEEDBACK_BILI_URL = f"https://space.bilibili.com/{FEEDBACK_BILI_UID}"
 FEEDBACK_NOTE = "反馈时请附：现象、复现步骤、构建版本号、系统环境。"
+COMMUNITY_FOLLOW_BLURB = (
+    "关注 B站 / 小红书，可及时看到：\n"
+    "· 最新进展与更新公告\n"
+    "· 新角色桌宠\n"
+    "· 新功能上线\n"
+    "· 已有桌宠的优化与修正\n"
+    "源码见 GitHub，欢迎 Star。"
+)
+COMMUNITY_LINKS: tuple[tuple[str, str], ...] = (
+    ("B站主页", FEEDBACK_BILI_URL),
+    ("小红书", FEEDBACK_XHS_URL),
+    ("GitHub 源码", ABOUT_REPO_URL),
+)
 VOCAB_DIALOGUE_CHANCE = 0.04
 AI_HISTORY_MAX = 10
 
@@ -1942,9 +1956,9 @@ DIFFICULTY_PRESETS: dict[str, dict] = {
 }
 
 OPERATION_GUIDE_INDEX = (
-    "选择专题查看说明。\n"
-    "快捷键 F1 可随时打开。\n"
-    "首次进入玩法时也会提示一次。"
+    "请选择下列专题查看说明。\n"
+    "可随时按 F1 打开本说明。\n"
+    "首次进入某一玩法时，会再提示一次。"
 )
 
 GUIDE_TOPICS: dict[str, dict] = {
@@ -1952,9 +1966,10 @@ GUIDE_TOPICS: dict[str, dict] = {
         "title": "基本操作",
         "body": (
             "· 右键：模式 / 面板 / 互动 / 系统\n"
-            "· 拖拽蓝色区域：移动\n"
+            "· 拖拽蓝色区域：移动桌宠\n"
+            "· 拖动约 5 秒以上：可能触发一句语音\n"
             "· 左键点击立绘：互动\n"
-            "· Esc：退出当前玩法或子窗口\n"
+            "· Esc：退出当前玩法或关闭子窗口\n"
             "· Ctrl+Shift+Q：强制退出\n"
             "· F1：操作说明\n"
             "· 菜单约 8 秒无操作自动关闭"
@@ -1964,36 +1979,37 @@ GUIDE_TOPICS: dict[str, dict] = {
         "title": "模式说明",
         "body": (
             "· 自由：走动，偶发动作\n"
-            "· 跟随：跟随光标\n"
+            "· 跟随：跟随光标；急转弯可能眩晕\n"
             "· 漫步：仅走动\n"
             "· 睡眠：休息；体力过低自动入睡\n"
-            "· 音乐：边走边听 BGM（设置内切换顺序/随机）\n"
-            "· 工作：持续运送；可显示旗帜与货物\n"
+            "　　睡眠时双击可短暂睁眼；多次双击可能触发语音（不离开关模式）\n"
+            "· 音乐：边走边听 BGM（设置内可切换顺序 / 随机）\n"
+            "· 工作：持续运送；设置中可分别显示旗帜与货物\n"
             "· 游戏：采集 / 打字 / 背单词 / 音乐 / RPG / 排名\n\n"
             "运送：\n"
-            "· 互动→自由运送：随机路线\n"
-            "· 互动→自定义：可设箱数与终点\n"
-            "· 模式→工作：持续运送"
+            "· 互动 → 自由运送：随机路线\n"
+            "· 互动 → 自定义：可设箱数与终点\n"
+            "· 模式 → 工作：持续运送"
         ),
     },
     "games": {
         "title": "小游戏总览",
         "body": (
             "入口：模式 → 游戏\n\n"
-            "· 采集：限时接取食物\n"
+            "· 采集：限时接取下落物\n"
             "· 打字：限时输入\n"
-            "· 背单词：选择释义\n"
+            "· 背单词：选择正确释义\n"
             "· 音乐：四轨节奏（D F J K）\n"
-            "· RPG：Silent Oath\n"
-            "· 排名：按桌宠编号"
+            "· RPG：Silent Oath（楼梯 / 洞窟均可切换地面与地下）\n"
+            "· 排名：按桌宠编号查看成绩"
         ),
     },
     "music_game": {
         "title": "音乐玩法 · 官方音游",
         "body": (
-            "桌宠内音乐：\n"
+            "桌宠内音乐玩法：\n"
             "· 键位 D / F / J / K\n"
-            "· 音符至判定线时按键\n"
+            "· 音符到达判定线时按键\n"
             "· 可选全曲或 90 秒\n"
             "· Esc 结束\n\n"
             + RHYTHM_CARNIVAL_INTRO
@@ -2010,7 +2026,7 @@ GUIDE_TOPICS: dict[str, dict] = {
             "· 体力 / 心情 / 背包\n"
             "· 莱姆：练习对战（邀请对战需联机）\n"
             "· 智能伴侣：莲跟随\n"
-            "· 暴露：蓝区按 Enter 判定\n\n"
+            "· 暴露：指针进入蓝区时按 Enter 判定\n\n"
             "互动：动作与表情\n"
             "音乐模式下暂停互动语音"
         ),
@@ -2023,44 +2039,52 @@ GUIDE_TOPICS: dict[str, dict] = {
             "  H 打招呼  E 喂食  T 电话  J 下蹲\n"
             "  N 睡眠    A 对话  V 菜单   Q 强制退出\n\n"
             "显示层级：顶部置顶 / 中层 / 底部\n"
-            "难度：影响衰减、采集、暴露与对战"
+            "难度：影响体力心情衰减、采集、暴露与对战"
         ),
+    },
+    "community": {
+        "title": "关注 · 源码 · Star",
+        "body": (
+            COMMUNITY_FOLLOW_BLURB
+            + "\n\n点击下方链接即可打开。GitHub 需可访问外网。"
+        ),
+        "links": COMMUNITY_LINKS,
     },
 }
 
 FIRST_PLAY_GUIDES: dict[str, dict] = {
     "gather": {
-        "title": "采集 · 操作指南",
+        "title": "采集 · 操作说明",
         "body": (
             "移动鼠标（或按住拖动）接取下落物。\n\n"
-            "· 普通食物：入库存\n"
-            "· +3s / -3s：调整时间\n"
-            "· 晕眩物：短暂晕眩\n"
-            "· Esc：结算退出\n\n"
+            "· 普通食物：收入背包\n"
+            "· +3s / -3s：增减剩余时间\n"
+            "· 晕眩物：短暂眩晕\n"
+            "· Esc：结算并退出\n\n"
             "每局约 30 秒。"
         ),
     },
     "typing": {
-        "title": "打字 · 操作指南",
+        "title": "打字 · 操作说明",
         "body": (
             "限时 30 秒输入题目。\n\n"
             "· 开始后可直接输入\n"
-            "· 正确得分并换词\n"
-            "· Esc 或关窗退出"
+            "· 输入正确得分并换词\n"
+            "· Esc 或关闭窗口退出"
         ),
     },
     "vocab": {
-        "title": "背单词 · 操作指南",
+        "title": "背单词 · 操作说明",
         "body": (
             "选择正确释义。\n\n"
-            "· 可选英 / 中词库\n"
-            "· Esc 或关窗退出"
+            "· 可选英语 / 中文词库\n"
+            "· Esc 或关闭窗口退出"
         ),
     },
     "rhythm_game": {
-        "title": "音乐 · 操作指南",
+        "title": "音乐 · 操作说明",
         "body": (
-            "四轨节奏：音符至判定线时按键。\n\n"
+            "四轨节奏：音符到达判定线时按键。\n\n"
             "· 键位：D F J K\n"
             "· 短音点按；长音按住至结束\n"
             "· 判定：Perfect / Great / Good / Miss\n"
@@ -2073,21 +2097,21 @@ FIRST_PLAY_GUIDES: dict[str, dict] = {
         ),
     },
     "expose": {
-        "title": "暴露 · 操作指南",
+        "title": "暴露 · 操作说明",
         "body": (
-            "指针进入蓝区时按 Enter。\n\n"
-            "· 连中通关\n"
-            "· 失败扣心情 / 体力\n"
+            "指针进入蓝色区域时按 Enter 判定。\n\n"
+            "· 连续命中即可通关\n"
+            "· 失败扣除心情 / 体力\n"
             "· Esc 中断"
         ),
     },
     "rhyme": {
-        "title": "莱姆对战 · 操作指南",
+        "title": "莱姆对战 · 操作说明",
         "body": (
             "练习对战：本地回合制。\n\n"
             "· 攻击 / 防御 / 必杀\n"
             "· 必杀有冷却\n"
-            "· 邀请对战需联机"
+            "· 邀请对战需联机，可先进行练习对战"
         ),
     },
 }
@@ -2097,10 +2121,10 @@ OPERATION_GUIDE_TEXT = "【操作说明】\n\n" + OPERATION_GUIDE_INDEX
 ONCE_HINTS: dict[str, str] = {
     "operation_guide": OPERATION_GUIDE_TEXT,
     "game_mode": "采集：接取下落物。Esc 退出。",
-    "rhythm_game": "音乐：D F J K。Esc 退出。",
+    "rhythm_game": "音乐：键位 D F J K。Esc 退出。",
     "companion_bar": "智能伴侣已开启。",
     "music_mode": "音乐漫步已开启。",
-    "rhyme_invite": "邀请对战需联机，可先练习对战。",
+    "rhyme_invite": "邀请对战需联机，可先进行练习对战。",
 }
 DEFAULT_VOCAB_WORDS: list[dict[str, str]] = [
     {"word": "苍叶", "meaning": "濑良垣苍叶，桌宠主角", "hint": "角色名"},
@@ -9921,7 +9945,7 @@ class DesktopPet:
             wraplength=GUIDE_TEXT_WRAP,
         ).pack(anchor=tk.W, pady=(8, 6))
 
-        topic_order = ("basic", "modes", "games", "music_game", "panel", "system")
+        topic_order = ("basic", "modes", "games", "music_game", "panel", "system", "community")
         for key in topic_order:
             info = GUIDE_TOPICS.get(key)
             if not info:
@@ -9938,9 +9962,28 @@ class DesktopPet:
                 cursor="hand2",
             ).pack(fill=tk.X, pady=2)
 
+        tk.Label(
+            frame,
+            text="关注与源码",
+            font=PIXEL_FONT,
+            fg=PIXEL_COLOR,
+            bg=MENU_BG,
+        ).pack(anchor=tk.W, pady=(12, 4))
+        tk.Label(
+            frame,
+            text=COMMUNITY_FOLLOW_BLURB,
+            font=PIXEL_FONT,
+            fg=MENU_FG,
+            bg=MENU_BG,
+            justify=tk.LEFT,
+            wraplength=GUIDE_TEXT_WRAP,
+        ).pack(anchor=tk.W, pady=(0, 6))
+        for label, url in COMMUNITY_LINKS:
+            _pack_web_link(frame, label, url, prefix="· ")
+
         tk.Button(
             frame,
-            text="知道了",
+            text="关闭",
             command=lambda: self.operation_guide_win.destroy() if self.operation_guide_win else None,
             font=PIXEL_FONT,
             bg="#555555",
@@ -10039,7 +10082,7 @@ class DesktopPet:
         ).pack(anchor=tk.W)
         tk.Label(
             frame,
-            text="（首次进入 · 详见 系统→操作说明）",
+            text="（首次进入 · 详见 系统→操作说明 / F1）",
             font=("Courier New", 9),
             fg="#888888",
             bg=MENU_BG,
@@ -15154,12 +15197,16 @@ class DesktopPet:
             ABOUT_NITROCHIRAL_URL,
             prefix="· ",
         )
-        _pack_web_link(
+        tk.Label(
             frame,
-            "开源仓库 GitHub",
-            ABOUT_REPO_URL,
-            prefix="· ",
-        )
+            text="关注 · 源码 · Star",
+            font=PIXEL_FONT,
+            fg=PIXEL_COLOR,
+            bg=MENU_BG,
+        ).pack(anchor=tk.W, pady=(10, 4))
+        _pack_panel_caption(frame, COMMUNITY_FOLLOW_BLURB, pady=(0, 6))
+        for label, url in COMMUNITY_LINKS:
+            _pack_web_link(frame, label, url, prefix="· ")
         credits = " · ".join(ABOUT_CREDITS) if ABOUT_CREDITS else "（暂无）"
         _pack_panel_caption(frame, f"致谢：{credits}", fg="#aaaaaa", pady=(8, 0))
         if PET_ID_FEATURE and self.pet_id is not None:
@@ -15180,7 +15227,11 @@ class DesktopPet:
         self.feedback_win.configure(bg=MENU_BG)
         _, frame = _pack_fixed_scroll_panel(self.feedback_win)
         _pack_panel_caption(frame, "问题反馈", fg=PIXEL_COLOR)
-        _pack_panel_caption(frame, "Bug 与建议可通过以下渠道提交。", pady=(8, 6))
+        _pack_panel_caption(
+            frame,
+            "Bug 与建议可通过以下渠道提交。",
+            pady=(8, 6),
+        )
         if FEEDBACK_ISSUE_URL:
             _pack_web_link(frame, "GitHub Issues", FEEDBACK_ISSUE_URL, prefix="· ")
         else:
@@ -15188,7 +15239,7 @@ class DesktopPet:
         if FEEDBACK_XHS_ID and FEEDBACK_XHS_URL:
             _pack_web_link(
                 frame,
-                FEEDBACK_XHS_ID,
+                "打开主页",
                 FEEDBACK_XHS_URL,
                 prefix="· 小红书：",
             )
@@ -15197,13 +15248,14 @@ class DesktopPet:
         if FEEDBACK_BILI_UID and FEEDBACK_BILI_URL:
             _pack_web_link(
                 frame,
-                FEEDBACK_BILI_UID,
+                "打开主页",
                 FEEDBACK_BILI_URL,
-                prefix="· bilibili：",
+                prefix="· B站：",
             )
         elif FEEDBACK_BILI_UID:
-            _pack_panel_caption(frame, f"· bilibili：{FEEDBACK_BILI_UID}")
+            _pack_panel_caption(frame, f"· B站：{FEEDBACK_BILI_UID}")
         _pack_panel_caption(frame, FEEDBACK_NOTE, fg="#aaaaaa", pady=(10, 0))
+        _pack_web_link(frame, "GitHub 源码", ABOUT_REPO_URL, prefix="· ")
         self._place_panel_popup(self.feedback_win)
 
     def _confirm_reset_settings(self) -> None:
