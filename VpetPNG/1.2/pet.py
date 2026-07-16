@@ -1592,9 +1592,9 @@ WORK_TOTAL_MAX = 8
 WORK_BOX_TOTAL_DEFAULT = 5
 WORK_TOTAL_SETTING_MIN = 1
 WORK_TOTAL_SETTING_MAX = 30
-WORK_PROP_SIZE = 104
+WORK_PROP_SIZE = 128
 # 堆箱相对旗脚的步进：须明显大于旗/箱重叠带，避免盖住旗面
-WORK_STACK_OFFSET = 72
+WORK_STACK_OFFSET = 88
 WORK_MODE_BANTER_COOLDOWN_MS = 30_000
 WORK_MODE_BANTER_INTERVAL_MS = (30_000, 90_000)
 WORK_MODE_BANTER: tuple[str, ...] = (
@@ -2178,9 +2178,9 @@ SELECT_ACTIONS: dict[str, tuple[str, ...]] = {
     "call": ("call1.jpg", "call2.jpg"),
 }
 
-# 互动「否」保留绿色底不做抠图；「是」只抠外圈绿幕，不动图内绿色细节
+# 互动「否」保留绿色底不做抠图；「是」/工作道具只抠外圈绿幕，不动图内绿色细节
 SKIP_GREEN_KEY_FILENAMES = frozenset({"no.jpg"})
-OUTER_LIME_KEY_FILENAMES = frozenset({"yes.jpg"})
+OUTER_LIME_KEY_FILENAMES = frozenset({"yes.jpg", "box.jpg", "flag.jpg"})
 
 CALL_TEXT = "你好，这里是旧货店「平凡」，\n我是苍叶，谢谢你的来电"
 HI_TEXT = "你好呀！今天也要加油哦~"
@@ -2848,9 +2848,14 @@ def _cap_source_image(img: Image.Image, display_size: int) -> Image.Image:
 
 
 def _get_processed_canvas(
-    filename: str, display_size: int, reference_scale: float, *, flip: bool = False
+    filename: str,
+    display_size: int,
+    reference_scale: float | None,
+    *,
+    flip: bool = False,
 ) -> Image.Image:
-    key = (filename, display_size, round(reference_scale, 5), flip)
+    scale_key = None if reference_scale is None else round(reference_scale, 5)
+    key = (filename, display_size, scale_key, flip)
     cached = _PROCESSED_CANVAS_CACHE.get(key)
     if cached is not None:
         return cached
@@ -2867,6 +2872,48 @@ def _get_processed_canvas(
     )
     _PROCESSED_CANVAS_CACHE[key] = canvas
     return canvas
+
+
+def _strip_box_black_mat(img: Image.Image) -> Image.Image:
+    """box.jpg：主体为棕灰，近黑仅绿幕后黑垫，整片去掉（勿用于旗）。"""
+    try:
+        import numpy as np
+
+        arr = np.asarray(img.convert("RGBA"), dtype=np.uint8).copy()
+        r = arr[..., 0]
+        g = arr[..., 1]
+        b = arr[..., 2]
+        a = arr[..., 3]
+        mat = (a > 8) & (r <= 28) & (g <= 28) & (b <= 28)
+        arr[..., 3] = np.where(mat, 0, a)
+        return Image.fromarray(arr, "RGBA")
+    except Exception:
+        rgba = img.convert("RGBA")
+        px = rgba.load()
+        w, h = rgba.size
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = px[x, y]
+                if a > 8 and r <= 28 and g <= 28 and b <= 28:
+                    px[x, y] = (r, g, b, 0)
+        return rgba
+
+
+def _work_prop_rgb_image(filename: str, size: int = WORK_PROP_SIZE) -> Image.Image:
+    """工作旗/箱：铺满道具画布，并把透明区烘焙成 magenta（Canvas+色键才能看见）。
+
+    若沿用桌宠 reference_scale，主体只剩十几像素；RGBA 透明在 Canvas 上还会变成黑块。
+    box 另去近黑垫，避免只剩「黑方块里一小箱」。
+    """
+    name = filename.lower()
+    img = _cap_source_image(_open_asset_image(filename), size)
+    if name in OUTER_LIME_KEY_FILENAMES:
+        img = _remove_outer_lime_green(img)
+    if name == "box.jpg":
+        img = _strip_box_black_mat(img)
+    rgba = _to_fixed_canvas(img, size, reference_scale=None, skip_green_removal=True)
+    bg = Image.new("RGBA", rgba.size, (255, 0, 255, 255))
+    return Image.alpha_composite(bg, rgba).convert("RGB")
 
 
 def _is_chroma_green(r: int, g: int, b: int) -> bool:
@@ -6288,7 +6335,6 @@ class SpriteSet:
 def _build_sprite_pack(display_size: int, persona: str | None = None) -> dict:
     persona = persona or _ACTIVE_PERSONA
     ref = _reference_scale(display_size)
-    prop_ref = ref * WORK_PROP_SIZE / display_size
 
     def load_img(
         filename: str,
@@ -6298,7 +6344,7 @@ def _build_sprite_pack(display_size: int, persona: str | None = None) -> dict:
         scale: float | None = None,
     ) -> Image.Image:
         size = prop_size if prop_size is not None else display_size
-        use_scale = scale if scale is not None else (prop_ref if prop_size else ref)
+        use_scale = scale if scale is not None else ref
         resolved = _resolve_sprite_filename(filename, persona)
         return _get_processed_canvas(resolved, size, use_scale, flip=flip)
 
@@ -6320,8 +6366,9 @@ def _build_sprite_pack(display_size: int, persona: str | None = None) -> dict:
         "work_left": (load_img("workleft1.jpg"), load_img("workleft2.jpg")),
         "work_right": (load_img("workleft1.jpg", flip=True), load_img("workleft2.jpg", flip=True)),
         "work_stand": load_img("workstand.jpg"),
-        "box_img": load_img("box.jpg", prop_size=WORK_PROP_SIZE, scale=prop_ref),
-        "flag_img": load_img("flag.jpg", prop_size=WORK_PROP_SIZE, scale=prop_ref),
+        # 旗/箱：铺满画布 + magenta 底（勿用桌宠 reference_scale，否则会缩成黑点）
+        "box_img": _work_prop_rgb_image("box.jpg"),
+        "flag_img": _work_prop_rgb_image("flag.jpg"),
         "kick": load_img("kick.jpg"),
         "shy": (load_img("shy1.jpg"), load_img("shy2.jpg")),
         "wink": load_img("wink.jpg"),
@@ -20670,6 +20717,8 @@ class DesktopPet:
                     continue
                 self._apply_window_layer(win)
                 win.lift()
+                # 点透后重打色键，避免旗/箱整窗变透明只剩黑块
+                self._win32_set_click_through(win, True)
             except Exception:
                 pass
         # 2) 终点旗：必须在堆箱之上，才能拖旗且不被挡住
@@ -20677,6 +20726,9 @@ class DesktopPet:
             try:
                 self._apply_window_layer(self.work_overlay)
                 self.work_overlay.lift()
+                self._win32_set_click_through(
+                    self.work_overlay, not bool(self.work_flag_movable)
+                )
             except Exception:
                 pass
         # 3) 桌宠立绘优先可拖

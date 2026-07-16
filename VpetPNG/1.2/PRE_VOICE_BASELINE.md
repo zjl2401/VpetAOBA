@@ -270,7 +270,7 @@
 - [x] **H-SLEEP-NO-SHY** 睡眠模式 / 休息睡眠语境：**连击不触发脸红**；非睡眠的面颊双击连击脸红仍保留
 - [x] **H-SLEEP-YUQI** 睡眠语境（模式 quiet rest / 动作睡眠）：**多次双击**随机播 `Vpetvoice/Vpet/yuqi` 一条；保持睡眠（可 peek），不唤醒离模
 - [x] **H-QUIET-SLEEP-VOICE** 模式→睡眠与互动→动作→睡眠同源播 `sleep` 语音；切入 quiet 后延迟补播，避免模式切换 interrupt 掐声；已在睡眠时再点仍可补播
-- [x] **H-WORK-FLAG-BOX** 工作：终点 **flag** 可拖；送达后在旗脚周围堆 **box**（左右/下方，不盖旗面）；层级：箱 < 旗 < 桌宠；箱点击穿透
+- [x] **H-WORK-FLAG-BOX** 工作：终点 **flag** 可拖；送达后在旗脚周围堆 **box**（左右/下方，不盖旗面）；层级：箱 < 旗 < 桌宠；箱点击穿透；旗/箱须铺满道具画布并以 magenta 烘焙透明（禁止桌宠 reference_scale 缩成黑块）
 - [x] **H-GAME-FALL-VIS** 采集：下落食物 / +3s / -3s / 晕眩物**必须可见**；点透不挡拖；叠在桌宠后但同 display_layer（禁止 `lower` 埋没）
 - [x] **H-RPG-DIY-FILE** RPG DIY 底栏：保存 / 导出 / 删除 / 打开；`Ctrl+S` 覆盖保存，导出另存；删文件二次确认
 - [x] **H-RPG-DIY-ERASE** DIY 可删除已放素材：底栏「清除」+ 左键擦、任意笔刷右键擦；楼梯/洞窟双层同步清
