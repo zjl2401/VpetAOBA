@@ -12,7 +12,7 @@
 |------|----------------|------|
 | 菜单、模式、小游戏、互动、面板 | ✅ 必须 | 与语音开关无关 |
 | 打字对话框、粒子/下雨/灯泡等 FX | ✅ 必须 | 语音不得替代或跳过 |
-| border5 对话条（仅系统→对话） | ✅ 必须 | `_layout_speech_dialog(use_border5=True)`；其余为扁平 |
+| border5 对话条（仅系统→对话） | ✅ 必须 | `SPEECH_BORDER_STEM=border5` + `_layout_speech_dialog(use_border5=True)`；内容区不透明；其余为扁平 |
 | 出场逆向像素扫描 | ✅ 必须 | 关闭桌宠时播放 |
 | 语音播放、语音台词框、Vpetvoice 扫描 | ❌ 不在此表 | 见 `voice_system.py`，仅作附加层 |
 | 留声机（音乐/音效/语音分类） | ⚠️ 部分 | 原留声 + 音乐/音效必须；语音导入为扩展 |
@@ -58,7 +58,7 @@
 |---|------|----------|----------|
 | D01 | 逐字打字 | 动作/表情打字框有打字动画 + `type_cache` | `_speech_type_next` |
 | D02 | 打字音效 | `type_cache.wav`，按字播放 | `_play_type_sound` |
-| D03 | border5 对话条 | **仅系统→对话**（AI / 普通对话）使用 border5；其余一律扁平框 | `_layout_speech_dialog(use_border5=True)` |
+| D03 | border5 对话条 | **仅系统→对话**（AI / 普通对话）使用 **border5 资源**九宫形变；内容区不透明（沿用面板内色，禁止透明底）；其余一律扁平框 | `_layout_speech_dialog(use_border5=True)` / `SPEECH_BORDER_STEM` |
 | D04 | 无台词动作 | wink、脸红、有主意、下蹲无 banter | `_interact_flair` banter 配置 |
 | D05 | ×生活文案 | 固定 ADULT 文案（扁平框） | `_play_adult_msg` |
 | D06 | 打电话 | 关语音：CALL_TEXT 扁平打字+铃声；开语音：**必先 ring→非 ring 台词+语音框**（专项，不参与二选一） | `_show_call_dialog` / `play_call` |
@@ -67,7 +67,7 @@
 | D09 | 开/关语音抽选 | **关语音**：只有动作/表情打字框；**开语音**：有对应语音时「语音框」与「动作/表情打字框」随机一条 | `_trigger_voice_or_dialog` / `_interact_flair` |
 
 **语音附加规则**：
-1. **border5 只用于系统→对话**（AI / 普通对话）；动作、表情、打招呼、电话（关语音）、语音字幕等**全部扁平框**。
+1. **系统→对话**必须用 **border5** 边框（`assets/ui/border5.*`），内容区**不透明**（不必改成 `#1a1a1a`，沿用现有内色即可）；动作、表情、打招呼、电话（关语音）、语音字幕等**全部扁平框**。
 2. 开语音抽中台词：播语音同时 `_show_voice_subtitle`；抽中打字框：仅 `_show_speech_dialog`（扁平）+ 打字音，不播语音。
 3. 关语音不得播语音；动作/表情原有文本框必须保留。
 4. 播放失败或无声时不得残留文本框（见第十二节 V-AUDIO）。
@@ -132,7 +132,7 @@
 | P04 | 面板关闭 | 面板右上角 **×** 可关闭（除自动隐藏外） | `_toggle_panel` / `_close_panel` |
 | P05 | 食物拖拽喂食 | 只拖给苍叶；有智能伴侣时伴侣不用吃；每次 1 份，恢复苍叶体力心情 | `_feed_food` / `_play_eat_food` |
 | P06 | 吃东西动画 | eat 序列 + 食物 FX + 咀嚼音 | `_play_eat_food` / `_play_eat_sound` |
-| P07 | 智能伴侣金目 | 100px 侧向跟随；游戏跟紧；工作导航 | `_mini_pet_follow_tick` |
+| P07 | 智能伴侣金目 | 100px 侧向跟随；游戏跟紧；工作导航；跟随朝向防抖（hold+轴向迟滞） | `_mini_pet_follow_tick` |
 | P08 | 面板弹出定位 | 靠屏外方向展开 | `_place_panel_popup` |
 
 ---
@@ -198,7 +198,7 @@
 - [x] **P-MATE-02** 点击金目 / 开启伴侣：Allmate ring 或启动音
 
 ### C. 文本框（最终规格）
-- [x] **V-BORDER5** `border5` **仅**系统→对话（`use_border5=True`）；其余一律扁平普通框
+- [x] **V-BORDER5** 系统→对话：`use_border5=True` 且资源为 **`border5`**（非 border2）；内容区不透明；其余一律扁平普通框
 - [x] **V-TEXT-01** 抽中语音有台词：显示**独立扁平** `voice_subtitle_win`，内容=去前缀标题
 - [x] **V-TEXT-02** 语音框显示时长 = 语音时长 + **1s**，然后必须消失
 - [x] **V-TEXT-03** 打字框与语音框**互斥**
@@ -234,24 +234,25 @@
 - [x] **V-ADDON** 语音附加层不得 `return` 跳过原动画/结算/特效
 
 ### F. 基线动画 / 特效 / 暴露 / 出场
-- [x] B01–B11 / M02–M08 / G01–G07 与基线表大体一致
-- [ ] **G08** 练习对战失败：保留对战界面 ~1.6s 后关闭（**当前仍全屏 game_clear「对战失败」→ 未过**）
-- [ ] M01 跟随晕眩 **3s**（**当前 `FOLLOW_DIZZY_STAND_MS=1500` → 未过**）
-- [ ] F07 wink 专用特效 `_show_wink_fx`（**当前复用 `_show_like_fx` → 未过**）
+- [x] B01–B11 / M02–M08 / G01–G07 与基线表大体一致（2026-07-16 代码抽检）
+- [ ] **G08** 练习对战失败：保留对战界面 ~1.6s 后关闭（**仍** `_show_game_clear(title="对战失败")` → 未过）
+- [ ] **M01** 跟随晕眩 **3s**（**仍** `FOLLOW_DIZZY_STAND_MS=1500` → 未过）
+- [ ] **F07** wink 专用特效 `_show_wink_fx`（**仍** `_play_like_or_wink` → `_show_like_fx` → 未过）
+- [ ] **E05** 暴露失败：故障界面保留约 **900ms** + 打字「暴露失败…」（**仍** toast 2.2s + 无打字框 → 未过；hurt 无字幕见 H-EXPOSE-NOSUB 已过）
 - [x] 暴露成功 game_clear；失败不用全屏 clear（见 H-EXPOSE-NOSUB）
 - [x] 进出场像素动画保留；语音开启不吃掉特效；风格固定见 H-LOAD-FIXED
 
 ### G. 文档 / 发布
-- [x] 未改写 `REQUIREMENTS.md` / `FEATURES.md` 原文
-- [x] 新包路径明确；托盘退出旧进程后再开快捷方式
+- [x] 未改写 `REQUIREMENTS.md` / `FEATURES.md` 原文（只读对照仍在）
+- [x] 新包路径明确；托盘退出旧进程后再开快捷方式；`BUILD_STAMP` 可核对
 
 ### H. 会话后追加（写入必做 · 逐条核对）
 > 下列为基线之后陆续提出、现已并入必做的规格。**缺项不得按已完成发布。**
 
 - [x] **H-SPEECH-BELOW** 对话/语音文本框**优先**桌宠正下方；越界则夹进屏内**强制显示**（禁止因放不下/重叠直接销毁；系统→对话回答框必现）
-- [ ] **H-BG-OPAQUE** 面板与文本框内容区为不透明 **`#1a1a1a`**（当前实现为 `#12182a` / 叠层黑，**未达标**）
-- [x] **H-BORDER2** 对话条/字幕可用 border2（或当前 border5/扁平规格）按内容九宫形变；去外圈白边
-- [ ] **H-BORDER3** border3 绿幕抠图 + 形变（**仓库无 border3 资源/逻辑**；若已改用扁平/`#` 底则需确认是否废弃本条）
+- [x] **H-BG-OPAQUE** 面板与文本框内容区**必须不透明**；底色**不必**改成 `#1a1a1a`，沿用现有内色（如 `#12182a`）即可；**禁止透明底**
+- [x] **H-BORDER5** 系统→对话边框资源为 **border5**（九宫按内容形变、去外圈白边）；动作/表情/语音字幕等仍扁平；**废弃**对 border2/border3 对话条的强制要求
+- [x] **H-BORDER3** **废弃**（有资源无逻辑；对话统一 border5，不再做 border3）
 - [x] **H-LAYER** 设置「显示层级」三档：`top` / `middle` / `bottom`（底部含智能伴侣）
 - [x] **H-RPG** 模式→游戏→**RPG**（Silent Oath / `Vpetgame`）独立进程启动；打包同步 `bundled/Vpetgame`
 - [x] **H-WALK** 走动顺畅；连续转向锁定 **≤3s**；自由/漫游/音乐/工作同半速步长（`MOVE_STEP=2`，工作用 `light` 位移）
@@ -269,21 +270,30 @@
 - [x] **H-STARTUP-SLEEP1** 开场立绘/像素入场**全部用 sleep1**（不占位 stand）；`mode=loading` **禁止走动**；资源与入场结束后再 `_begin_free_after_startup` 进入自由模式
 - [x] **H-SLEEP-NO-SHY** 睡眠模式 / 休息睡眠语境：**连击不触发脸红**；非睡眠的面颊双击连击脸红仍保留
 - [x] **H-SLEEP-YUQI** 睡眠语境（模式 quiet rest / 动作睡眠）：**多次双击**随机播 `Vpetvoice/Vpet/yuqi` 一条；保持睡眠（可 peek），不唤醒离模
+- [x] **H-SLEEP-PEEK-ONLY** 睡眠模式连点：仅 `_rest_peek_sleep1` 短暂睁眼，**不离开关模式**（仍回 rest）
 - [x] **H-QUIET-SLEEP-VOICE** 模式→睡眠与互动→动作→睡眠同源播 `sleep` 语音；切入 quiet 后延迟补播，避免模式切换 interrupt 掐声；已在睡眠时再点仍可补播
-- [x] **H-WORK-FLAG-BOX** 工作：终点 **flag** 可拖；送达后在旗脚周围堆 **box**（左右/下方，不盖旗面）；层级：箱 < 旗 < 桌宠；箱点击穿透；旗/箱须铺满道具画布并以 magenta 烘焙透明（禁止桌宠 reference_scale 缩成黑块）
+- [x] **H-MATE-TURN** 智能伴侣跟随朝向防抖：`MINI_PET_TURN_HOLD_MS` + 轴向迟滞，避免斜向/贴身狂切面
+- [x] **H-WORK-FLAG-BOX** 工作：终点 **flag** 可拖；起点搬走一箱立刻再生成（持续到结束/箱数搬完）；送达后旗脚堆 **box**；层级：箱 < 旗 < 桌宠；箱点击穿透；旗/箱铺满画布并以 magenta 烘焙透明
 - [x] **H-GAME-FALL-VIS** 采集：下落食物 / +3s / -3s / 晕眩物**必须可见**；点透不挡拖；叠在桌宠后但同 display_layer（禁止 `lower` 埋没）
 - [x] **H-RPG-DIY-FILE** RPG DIY 底栏：保存 / 导出 / 删除 / 打开；`Ctrl+S` 覆盖保存，导出另存；删文件二次确认
 - [x] **H-RPG-DIY-ERASE** DIY 可删除已放素材：底栏「清除」+ 左键擦、任意笔刷右键擦；楼梯/洞窟双层同步清
-- [x] **H-RPG-TREE1** RPG 树木**严格占一格**草地（不纵向拉高、不一格双树）
+- [x] **H-RPG-TREE1** RPG 树木：两张 `tree` **横向并排**拼成一图，整体宽高**严格占一格**草地（逻辑仍一格）
 - [x] **H-RPG-PORTAL** 地图有洞窟时楼梯仍可用：门户并存；加载修复双层对齐；穿越时同格类型强制一致
 - [x] **H-RPG-INTRO-SLOW** RPG Start 页动画变慢（`intro_dur≈6.2`、`logo2_delay≈1.15`、`menu_fade_speed≈0.55`）
+- [x] **H-RPG-STARTMUSIC** 点 START 先播 `startmusic`（相对循环 BGM 更响，`STARTMUSIC_VOLUME_MULT≈1.75`），再循环 `music`；可用音量键调节
+- [x] **H-RPG-DIY-LAYER** DIY 双层：楼梯/洞窟画一格同步另一层；`Tab` 切地面/地下编辑与试玩穿越
+- [x] **H-RPG-DIY-PRINCESS** DIY 底栏「公主」素材可拖放；落点写入 `goal`/`goal_layer`/`princess`
+- [x] **H-RPG-DIY-START-CENTER** DIY 加载：未设合法 `start` 时镜头与出生点用地图中心；有起点则对准起点
+- [x] **H-WORK-GAME-MUTEX** 工作模式与采集互斥：进入工作硬停采集（清 spawn/tick/HUD/下落窗）；进入采集硬停工作；倒计时结束若已在工作则不再开局
+- [x] **H-FOOD-MORE** 背包展示 **全部 18 种**食物（含 ×0）；新增种类首次入库种子 `FOOD_NEW_KIND_SEED=3`；采集随机池同步扩展
+- [x] **H-LOCAL-CACHE** 语音/音乐/打字音/工作道具优先本地+`data/` 缓存；天气联网失败回退 `weather_cache.json`；启动 `_seed_local_runtime_assets` 落盘缺文件
 
-### I. 核对结果摘要（代码核验 · 2026-07-15）
+### I. 核对结果摘要（代码核验 · 2026-07-16）
 
 | 结论 | 编号 |
 |------|------|
-| ✅ 已实现 | UI-01～04；P-UI / P-FEED / P-MATE；V-BORDER5；V-TEXT；V-PICK；D-TYPE；V-CALL；V-HI；V 场景链；H-SPEECH-BELOW；H-LAYER；H-RPG；H-WALK；**H-WORK-VOICE-PACE**；**H-SLEEP-PEEK-ONLY**；H-KEYOUT；H-LOAD-FIXED；H-EXPOSE-NOSUB；H-INTERJECT；H-MUSIC-WAVE；**H-PERSONA-JINMU**；**H-STARTUP-SLEEP1**；**H-SLEEP-NO-SHY**；**H-QUIET-SLEEP-VOICE**；**H-WORK-FLAG-BOX**；**H-GAME-FALL-VIS**；**H-RPG-DIY-FILE**；**H-RPG-DIY-ERASE**；**H-RPG-TREE1**；**H-RPG-PORTAL**；**H-RPG-INTRO-SLOW** |
-| ❌ / ⚠️ 未达标 | **G08** 练习对战失败仍 `_show_game_clear`（应保留对战窗 ~1.6s）；**H-BG-OPAQUE** 底色非 `#1a1a1a`；**H-BORDER3** 缺失；**F07** wink 走 `_show_like_fx` 未调 `_show_wink_fx`；**M01** 晕眩 1.5s≠文档 3s；**E05** 失败为 toast 2.2s 非 ~900ms+打字框 |
+| ✅ 已实现 | **A** UI-01～04；**B** P-UI / P-FEED / P-MATE；**C** V-BORDER5 + V-TEXT + V-PICK + D-TYPE；**D** V-CALL / V-HI；**E** V-MODE～V-ADDON；**G** 文档只读；**H** 全段（含 H-WORK-GAME-MUTEX、H-FOOD-MORE、H-LOCAL-CACHE、RPG DIY 双层/公主/起点、工作旗箱/采集可见） |
+| ❌ / ⚠️ 未达标 | **G08** 对战失败仍全屏 clear；**M01** 晕眩 1.5s≠3s；**F07** wink 未接 `_show_wink_fx`；**E05** 暴露失败 toast 2.2s≠900ms+打字框 |
 
 ---
 
@@ -298,5 +308,6 @@
 | `pet.py` | 主程序实现 |
 | `voice_system.py` | 仅语音逻辑 |
 | `bundled/Vpetgame/game.py` | Silent Oath RPG |
+| `panel_decor.py` | 面板主题色（含不透明内色） |
 
-**最后更新**：2026-07-15（并入人格/开场 sleep1/睡眠不脸红/模式睡眠语音/工作旗箱与采集下落物可见 H-WORK-FLAG-BOX·H-GAME-FALL-VIS/RPG DIY 擦除·树木一格·楼梯洞窟并存·Start 变慢）
+**最后更新**：2026-07-16（H-WORK-GAME-MUTEX / H-FOOD-MORE / H-LOCAL-CACHE + RPG DIY 双层/公主/起点）

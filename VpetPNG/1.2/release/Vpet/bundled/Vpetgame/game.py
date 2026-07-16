@@ -23,6 +23,8 @@ STARTMUSIC_NAMES = ("startmusic.mp3", "startmusic.ogg", "startmusic.wav")
 LOOPMUSIC_NAMES = ("music.mp3", "music.ogg", "music.wav")
 MUSIC_DEFAULT_VOLUME = 0.28  # 默认偏小，可用音量加减键调节
 MUSIC_VOLUME_STEP = 0.08
+# startmusic 相对循环 BGM 更响（仍受 music_volume / 音量键约束）
+STARTMUSIC_VOLUME_MULT = 1.75
 
 TILE = 36
 # 屏幕可见格子（相机视口）
@@ -54,6 +56,10 @@ CAVE = 12  # 洞窟入口：地面↔地下（旧图规范时地下 CAVE→BRICK
 GATE = 13  # 通往下一关
 TREASURE_OPEN = 14  # 已开宝箱（装饰）
 MOUNTAIN = 15  # 景区（mountain 素材）
+
+# DIY 素材栏虚拟笔刷（非地块 ID）
+BRUSH_START = -1
+BRUSH_PRINCESS = -2
 
 # 砖地可走（地下背景）；岩石为隔断墙。TREE 可走（森林）。旧图 BRICK 曾作墙→ROCK。
 SOLID = {WATER, ROCK, OBSTACLE, HOUSE, BORDER, MOUNTAIN}
@@ -95,9 +101,11 @@ PALETTE = [
     (CAVE, "洞窟"),
     (GATE, "关卡门"),
     (MOUNTAIN, "景区"),
+    (BRUSH_START, "起点"),
+    (BRUSH_PRINCESS, "公主"),
 ]
 
-# 出发点房屋绘制放大（格数边长）；树木严格占 1 格草地（不拉长）
+# 出发点房屋绘制放大（格数边长）；树木：两张 tree 横向并排，整体仍只占 1 格
 HOUSE_DRAW_TILES = 3
 MOUNTAIN_DRAW_TILES = 2
 
@@ -246,6 +254,9 @@ class Assets:
             elif tid == MOUNTAIN:
                 side = TILE * MOUNTAIN_DRAW_TILES
                 self.tiles[tid] = pygame.transform.scale(img, (side, side))
+            elif tid == TREE:
+                # 两棵树图横向并排；整体宽高都压进 1 格（逻辑仍占一格草地）
+                self.tiles[tid] = self._make_pair_tree_tile(img)
             else:
                 self.tiles[tid] = pygame.transform.scale(img, (TILE, TILE))
             # 关卡门：房屋着色提示（略小一点以免与出发点房屋混淆）
@@ -263,7 +274,25 @@ class Assets:
         open_chest.blit(dark, (0, 0))
         self.tiles[TREASURE_OPEN] = open_chest
         self.stairs_up = pygame.transform.scale(load_img("stairs_up.png"), (TILE, TILE))
+        self._load_knight_and_ui()
 
+    @staticmethod
+    def _make_pair_tree_tile(img: pygame.Surface) -> pygame.Surface:
+        """两张 tree 左右并排，整体严格落在 TILE×TILE 内。"""
+        dst = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+        slot_w = TILE // 2
+        ow, oh = max(1, img.get_width()), max(1, img.get_height())
+        scale = min(slot_w / ow, TILE / oh)
+        nw = max(1, int(ow * scale))
+        nh = max(1, int(oh * scale))
+        one = pygame.transform.scale(img, (nw, nh))
+        y = TILE - nh  # 底对齐，像扎在草地上
+        for i in range(2):
+            x = i * slot_w + (slot_w - nw) // 2
+            dst.blit(one, (x, y))
+        return dst
+
+    def _load_knight_and_ui(self) -> None:
         cw, ch = TILE, int(TILE * 64 / 48)
         self.knight = {
             "down": [
@@ -807,6 +836,32 @@ def layer_grid(data: dict, layer: str) -> list[list[int]]:
     return data["underground"] if layer == "underground" else data["surface"]
 
 
+def map_center_tile(data: dict) -> tuple[int, int]:
+    w, h = map_size(data)
+    return max(0, w // 2), max(0, h // 2)
+
+
+def has_start(data: dict) -> bool:
+    """地图是否已显式设置合法起点。"""
+    w, h = map_size(data)
+    raw = data.get("start")
+    if not isinstance(raw, (list, tuple)) or len(raw) < 2:
+        return False
+    try:
+        tx, ty = int(raw[0]), int(raw[1])
+    except (TypeError, ValueError):
+        return False
+    return 0 <= tx < w and 0 <= ty < h
+
+
+def resolve_start(data: dict) -> tuple[int, int]:
+    """出生/镜头锚点：有起点用起点，否则用地图中心。"""
+    if has_start(data):
+        raw = data["start"]
+        return int(raw[0]), int(raw[1])
+    return map_center_tile(data)
+
+
 class Camera:
     def __init__(self) -> None:
         self.x = 0.0
@@ -1164,7 +1219,7 @@ class Game:
             if len(player) >= 3:
                 pdir = str(player[2])
         else:
-            sx, sy = map_data["start"]
+            sx, sy = resolve_start(map_data)
             px = sx * TILE + TILE // 2
             py = sy * TILE + TILE // 2
         self.knight = Knight(self.assets, (0, 0))
@@ -1381,6 +1436,24 @@ class Game:
                     self.screen, (220, 80, 80),
                     (rect.right - 8, rect.top + 8), (rect.left + 8, rect.bottom - 8), 2,
                 )
+            elif tid == BRUSH_START:
+                pygame.draw.rect(self.screen, (28, 32, 48), rect.inflate(-6, -6))
+                pygame.draw.rect(
+                    self.screen, (80, 200, 255),
+                    rect.inflate(-14, -14), 2,
+                )
+            elif tid == BRUSH_PRINCESS:
+                thumb = self.assets.princess
+                max_s = min(rect.w - 4, rect.h - 4)
+                if thumb.get_width() > max_s or thumb.get_height() > max_s:
+                    scale = max_s / max(thumb.get_width(), thumb.get_height())
+                    thumb = pygame.transform.scale(
+                        thumb, (max(1, int(thumb.get_width() * scale)), max(1, int(thumb.get_height() * scale)))
+                    )
+                self.screen.blit(
+                    thumb,
+                    (rect.centerx - thumb.get_width() // 2, rect.centery - thumb.get_height() // 2),
+                )
             else:
                 img = self.assets.tiles.get(tid)
                 if img:
@@ -1395,7 +1468,12 @@ class Game:
                         thumb,
                         (rect.centerx - thumb.get_width() // 2, rect.centery - thumb.get_height() // 2),
                     )
-            if tid == self.brush:
+            selected = tid == self.brush or (
+                tid == BRUSH_START and self.edit_mode == "start"
+            ) or (
+                tid == BRUSH_PRINCESS and self.edit_mode == "goal"
+            )
+            if selected:
                 pygame.draw.rect(self.screen, (255, 220, 90), rect, 2)
             else:
                 pygame.draw.rect(self.screen, (70, 80, 110), rect, 1)
@@ -1436,6 +1514,34 @@ class Game:
         assert self.map_data
         return layer_grid(self.map_data, self.layer)
 
+    def _editor_focus_anchor(self) -> None:
+        """加载 DIY：有起点则镜头对准起点，否则对准地图中心。"""
+        assert self.map_data
+        mw, mh = map_size(self.map_data)
+        tx, ty = resolve_start(self.map_data)
+        self.camera.follow(tx * TILE + TILE // 2, ty * TILE + TILE // 2, mw, mh)
+
+    def _select_editor_brush(self, tid: int) -> None:
+        """底栏/快捷键选笔刷；虚拟笔刷进入起点/公主拖放模式。"""
+        self.editor_delete_pending = False
+        if tid == BRUSH_START:
+            self.brush = BRUSH_START
+            self.edit_mode = "start"
+            self.toast("拖放设置起点（地面）")
+            return
+        if tid == BRUSH_PRINCESS:
+            self.brush = BRUSH_PRINCESS
+            self.edit_mode = "goal"
+            self.toast("拖放放置公主（当前层；Tab 切地面/地下）")
+            return
+        self.brush = tid
+        self.edit_mode = "tile"
+        name = next((n for t, n in PALETTE if t == tid), "?")
+        if tid in LAYER_PORTALS:
+            self.toast(f"笔刷：{name} · 画一格即联通双层 · Tab 编辑另一层")
+        else:
+            self.toast(f"笔刷：{name}")
+
     def start_campaign(self) -> None:
         self.campaign = True
         self.level_idx = 0
@@ -1448,10 +1554,12 @@ class Game:
         data = generate_level(idx)
         self.map_data = data
         self.layer = "surface"
-        self.knight = Knight(self.assets, tuple(data["start"]))
+        self.knight = Knight(self.assets, resolve_start(data))
         self.treasures = 0
         self.stairs_cd = 0.0
         self.state = "play"
+        mw, mh = map_size(data)
+        self.camera.follow(self.knight.x, self.knight.y, mw, mh)
         tip = "寻找公主！" if data["princess"] else "找到地下金色关卡门进入下一关"
         self.toast(f"{data['name']} — {tip}")
 
@@ -1463,12 +1571,18 @@ class Game:
         data = normalize_map_tiles(data)
         self.map_data = data
         self.layer = "surface"
-        self.knight = Knight(self.assets, tuple(data["start"]))
+        spawn = resolve_start(data)
+        self.knight = Knight(self.assets, spawn)
         self.treasures = 0
         self.stairs_cd = 0.0
         self.state = "play"
         self._begin_adventure_bgm()
-        self.toast(data.get("name", "探险开始") + " · WASD移动 · 踩楼梯/洞窟切换地面地下")
+        mw, mh = map_size(data)
+        self.camera.follow(self.knight.x, self.knight.y, mw, mh)
+        tip = " · WASD移动 · 踩楼梯/洞窟切换地面地下"
+        if not has_start(data):
+            tip = " · 未设起点，从地图中心出发" + tip
+        self.toast(data.get("name", "探险开始") + tip)
 
     def _migrate_old_map(self, data: dict) -> dict:
         w, h = data["width"], data["height"]
@@ -1518,10 +1632,15 @@ class Game:
         self.editor_delete_pending = False
         self.layer = "surface"
         self.edit_layer = "surface"
+        self.edit_mode = "tile"
         self.state = "editor"
-        self.camera.x = self.camera.y = 0
+        self._editor_focus_anchor()
         hint = path.name if path else "新地图"
-        self.toast(f"{hint} | 保存/导出/删除点底栏 | Ctrl+S 保存 · Ctrl+Shift+S 导出")
+        focus = "起点" if has_start(data) else "地图中心"
+        self.toast(
+            f"{hint} · 镜头→{focus} | Tab切地面/地下 · 楼梯/洞窟联通双层 | "
+            f"底栏拖公主/起点 · Ctrl+S 保存"
+        )
 
     def draw_visible_map(self, surf: pygame.Surface, grid: list[list[int]], mw: int, mh: int, show_goal: bool) -> None:
         assert self.map_data
@@ -1557,29 +1676,33 @@ class Game:
                         # 高大物体：以格底为脚点，向上伸出多格
                         ox = sx + (TILE - prop.get_width()) // 2
                         oy = sy + TILE - prop.get_height()
+                    elif t == TREE:
+                        # 双树拼图已是 TILE×TILE：贴齐当前格
+                        ox, oy = sx, sy
                     else:
-                        # 树木等：严格贴合当前一格
                         ox = sx + (TILE - prop.get_width()) // 2
                         oy = sy + (TILE - prop.get_height()) // 2
                     surf.blit(prop, (ox, oy))
 
         if show_goal:
-            gx, gy = self.map_data["goal"]
-            if self.layer == self.map_data.get("goal_layer", "surface"):
-                if self.map_data.get("princess"):
-                    pr = self.assets.princess
-                    sx, sy = self.camera.apply(
-                        gx * TILE + (TILE - pr.get_width()) // 2,
-                        gy * TILE + TILE - pr.get_height(),
-                    )
-                    surf.blit(pr, (sx, sy))
-                else:
-                    # 非终关已用地图 GATE 绘制
-                    pass
+            goal = self.map_data.get("goal")
+            if isinstance(goal, (list, tuple)) and len(goal) >= 2:
+                gx, gy = int(goal[0]), int(goal[1])
+                if self.layer == self.map_data.get("goal_layer", "surface"):
+                    if self.map_data.get("princess"):
+                        pr = self.assets.princess
+                        sx, sy = self.camera.apply(
+                            gx * TILE + (TILE - pr.get_width()) // 2,
+                            gy * TILE + TILE - pr.get_height(),
+                        )
+                        surf.blit(pr, (sx, sy))
+                    else:
+                        # 非终关已用地图 GATE 绘制
+                        pass
 
-        # 起点标记（仅编辑器）
-        if self.state == "editor":
-            sx0, sy0 = self.map_data["start"]
+        # 起点标记（仅编辑器；未设起点不画框）
+        if self.state == "editor" and has_start(self.map_data):
+            sx0, sy0 = int(self.map_data["start"][0]), int(self.map_data["start"][1])
             sx, sy = self.camera.apply(sx0 * TILE + 4, sy0 * TILE + 4)
             pygame.draw.rect(surf, (80, 200, 255), (sx, sy, TILE - 8, TILE - 8), 2)
 
@@ -1649,7 +1772,10 @@ class Game:
         if not pygame.mixer.get_init():
             return
         try:
-            pygame.mixer.music.set_volume(max(0.0, min(1.0, self.music_volume)))
+            vol = float(self.music_volume)
+            if getattr(self, "_bgm_phase", None) == "start":
+                vol = min(1.0, vol * STARTMUSIC_VOLUME_MULT)
+            pygame.mixer.music.set_volume(max(0.0, min(1.0, vol)))
         except pygame.error:
             pass
 
@@ -2012,7 +2138,10 @@ class Game:
         assert self.map_data and self.knight
         if self.layer != self.map_data.get("goal_layer", "surface"):
             return
-        gx, gy = self.map_data["goal"]
+        goal = self.map_data.get("goal")
+        if not isinstance(goal, (list, tuple)) or len(goal) < 2:
+            return
+        gx, gy = int(goal[0]), int(goal[1])
         if abs(self.knight.x - (gx * TILE + TILE // 2)) > 24:
             return
         if abs(self.knight.y - (gy * TILE + TILE // 2)) > 24:
@@ -2223,7 +2352,8 @@ class Game:
                 if e.key == pygame.K_TAB:
                     self.edit_layer = "underground" if self.edit_layer == "surface" else "surface"
                     self.layer = self.edit_layer
-                    self.toast("编辑层：" + ("地下" if self.edit_layer == "underground" else "地面"))
+                    layer_cn = "地下" if self.edit_layer == "underground" else "地面"
+                    self.toast(f"编辑层：{layer_cn}（楼梯/洞窟联通另一层）")
                 if e.key == pygame.K_s and ctrl:
                     self.editor_delete_pending = False
                     self._save_map(export_copy=bool(shift))
@@ -2237,15 +2367,14 @@ class Game:
                     # Delete 或 Ctrl+D：删除当前已保存文件
                     self._editor_delete_current()
                 elif e.key == pygame.K_s and not ctrl:
-                    self.editor_delete_pending = False
-                    self.edit_mode = "start"
-                    self.toast("点击地图设置起点（地面）")
+                    self._select_editor_brush(BRUSH_START)
                 elif e.key == pygame.K_g:
-                    self.editor_delete_pending = False
-                    self.edit_mode = "goal"
-                    self.toast("点击设置公主 / 终点（当前层）")
+                    self._select_editor_brush(BRUSH_PRINCESS)
                 elif e.key == pygame.K_t:
                     self.edit_mode = "tile"
+                    if self.brush in (BRUSH_START, BRUSH_PRINCESS):
+                        self.brush = GRASS
+                    self.toast("地块绘制模式")
                 elif e.key == pygame.K_p:
                     self.editor_delete_pending = False
                     self.start_play(json.loads(json.dumps(self.map_data)), campaign=False)
@@ -2262,31 +2391,24 @@ class Game:
                 elif pygame.K_1 <= e.key <= pygame.K_9:
                     idx = e.key - pygame.K_1
                     if idx < len(PALETTE):
-                        self.brush = PALETTE[idx][0]
-                        self.edit_mode = "tile"
-                        self.toast(f"笔刷：{PALETTE[idx][1]}")
+                        self._select_editor_brush(PALETTE[idx][0])
                 elif e.key == pygame.K_0:
                     if len(PALETTE) > 9:
-                        self.brush = PALETTE[9][0]
-                        self.toast(f"笔刷：{PALETTE[9][1]}")
+                        self._select_editor_brush(PALETTE[9][0])
                 elif e.key == pygame.K_MINUS and len(PALETTE) > 10:
-                    self.brush = PALETTE[10][0]
-                    self.toast(f"笔刷：{PALETTE[10][1]}")
+                    self._select_editor_brush(PALETTE[10][0])
                 elif e.key == pygame.K_EQUALS and len(PALETTE) > 11:
-                    self.brush = PALETTE[11][0]
-                    self.toast(f"笔刷：{PALETTE[11][1]}")
+                    self._select_editor_brush(PALETTE[11][0])
                 elif e.key == pygame.K_LEFTBRACKET and len(PALETTE) > 12:
-                    self.brush = PALETTE[12][0]
-                    self.edit_mode = "tile"
-                    self.toast(f"笔刷：{PALETTE[12][1]}")
+                    self._select_editor_brush(PALETTE[12][0])
                 elif e.key == pygame.K_RIGHTBRACKET and len(PALETTE) > 13:
-                    self.brush = PALETTE[13][0]
-                    self.edit_mode = "tile"
-                    self.toast(f"笔刷：{PALETTE[13][1]}")
+                    self._select_editor_brush(PALETTE[13][0])
+                elif e.key == pygame.K_SEMICOLON and len(PALETTE) > 14:
+                    self._select_editor_brush(PALETTE[14][0])
+                elif e.key == pygame.K_QUOTE and len(PALETTE) > 15:
+                    self._select_editor_brush(PALETTE[15][0])
                 elif e.key == pygame.K_BACKSPACE:
-                    self.brush = EMPTY
-                    self.edit_mode = "tile"
-                    self.toast("笔刷：清除（左键擦除素材）")
+                    self._select_editor_brush(EMPTY)
             if e.type == pygame.MOUSEWHEEL:
                 self.camera.y -= e.y * TILE * 2
                 self.camera.clamp(mw, mh)
@@ -2303,18 +2425,15 @@ class Game:
                         continue
                     hit = self._hit_editor_palette(pos)
                     if hit is not None:
-                        self.brush = hit
-                        self.edit_mode = "tile"
-                        name = next((n for t, n in PALETTE if t == hit), "?")
-                        self.toast(f"笔刷：{name}")
+                        self._select_editor_brush(hit)
                         continue
-                    # 清除笔刷：左键等同擦除；其它笔刷左键绘制
-                    self.paint_drag = self.edit_mode == "tile"
-                    self._paint_at(pos, erase=(self.brush == EMPTY))
+                    # 清除笔刷：左键等同擦除；起点/公主可拖放；其它笔刷左键绘制
+                    self.paint_drag = self.edit_mode in ("tile", "start", "goal")
+                    self._paint_at(pos, erase=(self.brush == EMPTY and self.edit_mode == "tile"))
                 elif e.button == 3:
                     if pos[1] >= VIEW_H - PALETTE_H:
                         continue
-                    self.paint_drag = True
+                    self.paint_drag = self.edit_mode == "tile"
                     self._paint_at(pos, erase=True)
             if e.type == pygame.MOUSEBUTTONUP:
                 if e.button in (1, 2, 3):
@@ -2330,13 +2449,16 @@ class Game:
                     self.camera.x = cx - (e.pos[0] - ox)
                     self.camera.y = cy - (e.pos[1] - oy)
                     self.camera.clamp(mw, mh)
-                elif self.paint_drag and self.edit_mode == "tile":
+                elif self.paint_drag and self.edit_mode in ("tile", "start", "goal"):
                     pos = self._content_mouse(e.pos)
                     if self._hit_editor_palette(pos) is not None:
                         continue
                     if e.buttons[0]:
-                        self._paint_at(pos, erase=(self.brush == EMPTY))
-                    elif e.buttons[2]:
+                        self._paint_at(
+                            pos,
+                            erase=(self.brush == EMPTY and self.edit_mode == "tile"),
+                        )
+                    elif e.buttons[2] and self.edit_mode == "tile":
                         self._paint_at(pos, erase=True)
 
         world = pygame.Surface((VIEW_W, VIEW_H))
@@ -2356,11 +2478,21 @@ class Game:
         self.screen.blit(world, (0, 0))
         self.draw_editor_palette()
 
-        brush_name = next((n for t, n in PALETTE if t == self.brush), "?")
+        if self.edit_mode == "start":
+            brush_name = "起点(拖放)"
+        elif self.edit_mode == "goal":
+            brush_name = "公主(拖放)"
+        else:
+            brush_name = next((n for t, n in PALETTE if t == self.brush), "?")
         layer_cn = "地下" if self.edit_layer == "underground" else "地面"
         file_tag = self.edit_map_path.name if self.edit_map_path else "未保存"
-        erase_hint = " · 右键也可擦" if self.brush != EMPTY else " · 左键擦除"
-        self.draw_ui_bar(f"DIY[{layer_cn}] {brush_name}{erase_hint} · {file_tag}")
+        if self.edit_mode in ("start", "goal"):
+            erase_hint = " · 左键拖到目标格"
+        elif self.brush != EMPTY:
+            erase_hint = " · 右键也可擦"
+        else:
+            erase_hint = " · 左键擦除"
+        self.draw_ui_bar(f"DIY[{layer_cn}] {brush_name}{erase_hint} · Tab切层 · {file_tag}")
         self._draw_editor_file_buttons()
 
     def _erase_tile(self, tx: int, ty: int) -> None:
@@ -2393,25 +2525,37 @@ class Game:
         ty = int(self.camera.y + y) // TILE
         if not (0 <= tx < mw and 0 <= ty < mh):
             return
-        if self.edit_mode == "start":
+        if self.edit_mode == "start" or self.brush == BRUSH_START:
+            prev = self.map_data.get("start")
             self.map_data["start"] = [tx, ty]
             self.edit_layer = "surface"
-            self.edit_mode = "tile"
-            self.toast(f"起点 ({tx},{ty})")
+            self.layer = "surface"
+            # 拖放时保持起点笔刷，松手后再换笔刷
+            if self.brush != BRUSH_START:
+                self.edit_mode = "tile"
+            if prev != [tx, ty]:
+                self.toast(f"起点 ({tx},{ty})")
             return
-        if self.edit_mode == "goal":
+        if self.edit_mode == "goal" or self.brush == BRUSH_PRINCESS:
+            prev = self.map_data.get("goal")
+            prev_layer = self.map_data.get("goal_layer")
             self.map_data["goal"] = [tx, ty]
             self.map_data["goal_layer"] = self.edit_layer
             self.map_data["princess"] = True
             grid = self.current_grid()
             if grid[ty][tx] in SOLID:
                 grid[ty][tx] = BRICK if self.edit_layer == "underground" else GRASS
-            self.edit_mode = "tile"
-            self.toast(f"终点 ({tx},{ty}) @ {self.edit_layer}")
+            if self.brush != BRUSH_PRINCESS:
+                self.edit_mode = "tile"
+            if prev != [tx, ty] or prev_layer != self.edit_layer:
+                layer_cn = "地下" if self.edit_layer == "underground" else "地面"
+                self.toast(f"公主 ({tx},{ty}) @ {layer_cn}")
             return
 
         if erase or self.brush == EMPTY:
             self._erase_tile(tx, ty)
+            return
+        if self.brush in (BRUSH_START, BRUSH_PRINCESS):
             return
         grid = self.current_grid()
         grid[ty][tx] = self.brush

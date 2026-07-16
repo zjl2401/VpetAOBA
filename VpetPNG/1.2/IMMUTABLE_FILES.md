@@ -63,10 +63,10 @@
 
 | 路径 | 用途 |
 |------|------|
-| `assets/ui/border.png` | 面板九宫格边框素材 |
-| `assets/ui/border2.png` | 对话横条 / 语音字幕边框素材 |
+| `assets/ui/border.png` | 面板九宫格边框素材（面板当前可无边框） |
+| `assets/ui/border5.jpg` | **系统→对话**边框素材（`SPEECH_BORDER_STEM=border5`） |
 
-边框绘制逻辑（`_nine_slice_border_image`、`_layout_panel_border`、`_speech_border2_*`）**禁止**为语音功能而简化或移除。
+边框绘制逻辑（`_compose_speech_border2` 等九宫合成、`_layout_speech_dialog(use_border5=True)`）**禁止**为语音功能而简化或移除；对话内容区须**不透明**。
 
 ---
 
@@ -77,7 +77,7 @@
 在 `pet.py` 中接入语音时必须遵守：
 
 1. **语音台词框**走 `_show_voice_subtitle` → 独立 `voice_subtitle_win`（扁平像素底，**不用 border5**）；播完必须隐藏。ring 无框。与打字框互斥。
-2. **border5** 仅用于系统→对话（`_show_speech_dialog(..., use_border5=True)`）；动作/表情/打招呼等均为扁平框。
+2. **系统→对话**用 **border5 资源**（`_show_speech_dialog(..., use_border5=True)`，`SPEECH_BORDER_STEM=border5`）；内容区不透明；动作/表情/打招呼等均为扁平框。
 3. **开语音抽选**：有对应语音时，经 `_trigger_voice_or_dialog` 在「语音+标题框」与「动作/表情打字框」间随机；关语音只打字框。
 4. **游戏失败语音**走 `_play_game_fail_voice`，在**原结算/特效已显示之后**附加播放，不得提前 `return` 跳过 `_show_game_clear` 或暴露故障动画。
 5. **音效互斥**仅影响 `sfx` 声道；**不得**用 `voice_player.is_busy()` 阻止背景 FX、粒子、game_clear 动画。
@@ -96,6 +96,7 @@
 
 ## 六、自检清单（改代码前）
 
-**完整条目见 `PRE_VOICE_BASELINE.md` 第十二节**，每次发布前必须逐条打勾，不得跳过。
+**完整条目见 `PRE_VOICE_BASELINE.md` 第十二节（A～H）**，每次发布前必须逐条打勾，不得跳过。  
+未达标项（G08 / M01 / F07 / E05）在第十二节 F 仍为 `[ ]`，修完前不得当作已发布通过。
 
 - [ ] 已打开 `PRE_VOICE_BASELINE.md` 并完成第十二节全部核对项？

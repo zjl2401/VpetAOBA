@@ -8,5 +8,13 @@
   "tea": 42,
   "meat": 42,
   "berry": 37,
-  "donut": 37
+  "donut": 37,
+  "milk": 3,
+  "ramen": 3,
+  "sushi": 3,
+  "cookie": 3,
+  "juice": 3,
+  "taco": 3,
+  "icecream": 3,
+  "corn": 3
 }

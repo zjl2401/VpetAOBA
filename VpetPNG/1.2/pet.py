@@ -516,9 +516,9 @@ DEFAULT_MUSIC_TRACK = (
     else (MUSIC_TRACK_ORDER[0] if MUSIC_TRACK_ORDER else "radical_mat")
 )
 
-# 面板不再使用 border1；对话/语音文本框统一用 border2（去白边）
+# 面板不再使用 border1；系统→对话边框用 border5（九宫形变，去外圈白边；内容区不透明）
 PANEL_BORDER_STEM = ""
-SPEECH_BORDER_STEM = "border2"
+SPEECH_BORDER_STEM = "border5"
 SPEECH_BORDER_UI_SCALE = 1.18
 SPEECH_BORDER2_H = 78
 SPEECH_BORDER2_SRC_LEFT = 200
@@ -528,7 +528,7 @@ SPEECH_BORDER2_SRC_BOTTOM = 28
 SPEECH_BORDER2_MIN_H = 78
 SPEECH_BORDER2_MIN_W = 236
 SPEECH_BORDER2_MAX_W = 660
-# border5 对话区固定换行宽度（避免随高度增大而挤压横向空间）
+# 对话区固定换行宽度（避免随高度增大而挤压横向空间）
 SPEECH_BORDER2_TEXT_WRAP = 420
 # 对话/语音字幕内容区：不透明深色底；蓝粉像素主题
 SPEECH_TEXT_INNER_ALPHA = 1.0
@@ -953,7 +953,7 @@ def _ensure_data_dirs() -> None:
         AUDIO_ASSET_DIR,
     ):
         folder.mkdir(parents=True, exist_ok=True)
-    _seed_builtin_audio()
+    _seed_local_runtime_assets()
 
 
 def _seed_builtin_audio() -> None:
@@ -969,6 +969,35 @@ def _seed_builtin_audio() -> None:
             Path(__file__).resolve().parent / "data" / "audio" / name,
         ):
             if src.is_file():
+                try:
+                    shutil.copy2(src, dst)
+                except Exception:
+                    pass
+                break
+
+
+def _seed_local_runtime_assets() -> None:
+    """缺资源时优先落到本地目录，避免运行时再去别处找。"""
+    DATA_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    VOICE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    PROPS_DIR.mkdir(parents=True, exist_ok=True)
+    SPRITES_DIR.mkdir(parents=True, exist_ok=True)
+    MINIPET_DIR.mkdir(parents=True, exist_ok=True)
+    _seed_builtin_audio()
+    root = Path(__file__).resolve().parent
+    for name in ("box.jpg", "flag.jpg"):
+        dst = PROPS_DIR / name
+        if dst.is_file():
+            continue
+        for src in (
+            PROPS_DIR / name,
+            root / name,
+            root / "props" / name,
+            BUNDLE_DIR / name,
+            BUNDLE_DIR / "props" / name,
+            BUNDLE_DIR / "assets" / "props" / name,
+        ):
+            if src.is_file() and src.resolve() != dst.resolve():
                 try:
                     shutil.copy2(src, dst)
                 except Exception:
@@ -1672,6 +1701,9 @@ MINI_PET_WORK_FOLLOW_STEP = 12
 MINI_PET_BOUNCE_MS = 520
 MINI_PET_BOUNCE_PX = 4
 MINI_PET_MAX = 5
+# 跟随转向防抖：最短保持 + 轴向优势比，避免斜向/贴身时抽风切面
+MINI_PET_TURN_HOLD_MS = 380
+MINI_PET_TURN_AXIS_RATIO = 1.4
 SAD_SQUAT_MS = 1000
 SAD_SAD1_MS = 1000
 SAD_SAD2_MS = 3000
@@ -1799,6 +1831,8 @@ MUSIC_WAVE_PAD = 56
 MUSIC_WAVE_MINI_PAD = 36
 MUSIC_WAVE_MINI_MS = 120
 FOOD_INVENTORY_FILE = DATA_DIR / "food_inventory.json"
+FOOD_NEW_KIND_SEED = 3  # 新加食物种类首次入库赠送份数
+WEATHER_CACHE_FILE = DATA_DIR / "weather_cache.json"
 ADULT_CONTENT_TEXT = "我只是像素哦，更多精彩内容请在正版游戏《戏剧性谋杀》中解锁"
 RESERVED_TOAST = "敬请期待"
 
@@ -1985,12 +2019,12 @@ GUIDE_TOPICS: dict[str, dict] = {
             "· 睡眠：休息；体力过低自动入睡\n"
             "　　睡眠时双击可短暂睁眼；多次双击可能触发语音（不离开关模式）\n"
             "· 音乐：边走边听 BGM（设置内可切换顺序 / 随机）\n"
-            "· 工作：持续运送；终点旗可拖；送达后在旗脚周围堆箱（不挡旗）\n"
+            "· 工作：持续运送；起点搬走一箱再生成下一箱；终点旗可拖；送达后旗脚堆箱\n"
             "· 游戏：采集 / 打字 / 背单词 / 音乐 / RPG / 排名\n\n"
             "运送：\n"
-            "· 互动 → 自由运送：随机路线（终点旗可拖）\n"
-            "· 互动 → 自定义：可设箱数与终点旗\n"
-            "· 模式 → 工作：持续运送"
+            "· 互动 → 自由运送：随机箱数与路线（搬走再生，搬完结束）\n"
+            "· 互动 → 自定义：可设箱数与终点旗（同上）\n"
+            "· 模式 → 工作：持续运送（点「结束」停止）"
         ),
     },
     "games": {
@@ -2471,6 +2505,14 @@ FOODS: dict[str, dict] = {
     "meat": {"label": "烤肉", "stamina": 18, "mood": 5},
     "berry": {"label": "草莓", "stamina": 8, "mood": 10},
     "donut": {"label": "甜甜圈", "stamina": 7, "mood": 11},
+    "milk": {"label": "牛奶", "stamina": 9, "mood": 7},
+    "ramen": {"label": "拉面", "stamina": 16, "mood": 8},
+    "sushi": {"label": "寿司", "stamina": 14, "mood": 9},
+    "cookie": {"label": "曲奇", "stamina": 4, "mood": 10},
+    "juice": {"label": "果汁", "stamina": 7, "mood": 9},
+    "taco": {"label": "卷饼", "stamina": 13, "mood": 6},
+    "icecream": {"label": "冰淇淋", "stamina": 5, "mood": 13},
+    "corn": {"label": "玉米", "stamina": 11, "mood": 4},
 }
 
 AI_DEFAULT_CONFIG: dict = {
@@ -4437,7 +4479,11 @@ def _load_food_inventory() -> dict[str, int]:
         data = json.loads(FOOD_INVENTORY_FILE.read_text(encoding="utf-8"))
         if isinstance(data, dict):
             for fid in FOODS:
-                default[fid] = max(0, int(data.get(fid, 0)))
+                if fid not in data:
+                    # 新增种类：本地种子库存，避免背包「种类变少」
+                    default[fid] = max(0, int(FOOD_NEW_KIND_SEED))
+                else:
+                    default[fid] = max(0, int(data.get(fid, 0)))
     except Exception:
         pass
     return default
@@ -4446,6 +4492,35 @@ def _load_food_inventory() -> dict[str, int]:
 def _save_food_inventory(inventory: dict[str, int]) -> None:
     payload = {fid: max(0, int(inventory.get(fid, 0))) for fid in FOODS}
     FOOD_INVENTORY_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _save_weather_cache(city_label: str, payload: dict) -> None:
+    try:
+        WEATHER_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        blob = {
+            "city": str(city_label or ""),
+            "saved_at": datetime.now().isoformat(timespec="seconds"),
+            "payload": payload,
+        }
+        WEATHER_CACHE_FILE.write_text(json.dumps(blob, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _load_weather_cache(prefer_city: str = "") -> tuple[str, dict] | None:
+    if not WEATHER_CACHE_FILE.exists():
+        return None
+    try:
+        data = json.loads(WEATHER_CACHE_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+        payload = data.get("payload")
+        if not isinstance(payload, dict):
+            return None
+        label = str(data.get("city") or prefer_city or "缓存")
+        return label, payload
+    except Exception:
+        return None
 
 
 def _angle_in_arc(angle: float, start: float, span: float) -> bool:
@@ -6217,6 +6292,106 @@ def _draw_pixel_food(canvas: tk.Canvas, food_id: str, x: int, y: int, px: int = 
         canvas.create_oval(x, y + px, x + px * 4, y + px * 4, fill="#d4a056", outline="")
         canvas.create_oval(x + px, y + px * 2, x + px * 3, y + px * 3, fill="#111122", outline="")
         canvas.create_arc(x, y + px, x + px * 4, y + px * 3, start=0, extent=180, fill="#ff88cc", outline="")
+    elif food_id == "milk":
+        canvas.create_rectangle(x + px, y + px, x + px * 3, y + px * 4, fill="#f5f8ff", outline="#ccccdd")
+        canvas.create_rectangle(x + px * 2, y, x + px * 3, y + px, fill="#88aacc", outline="")
+    elif food_id == "ramen":
+        canvas.create_oval(x, y + px * 2, x + px * 4, y + px * 4, fill="#cc8844", outline="")
+        canvas.create_rectangle(x + px, y + px, x + px * 3, y + px * 2, fill="#ffdd88", outline="")
+        canvas.create_line(x + px, y + px * 2, x + px * 3, y + px * 2, fill="#dd6633")
+    elif food_id == "sushi":
+        canvas.create_rectangle(x, y + px * 2, x + px * 4, y + px * 3, fill="#ffffff", outline="")
+        canvas.create_oval(x + px, y + px, x + px * 3, y + px * 2, fill="#ee5566", outline="")
+        canvas.create_rectangle(x + px, y + px * 3, x + px * 3, y + px * 4, fill="#224422", outline="")
+    elif food_id == "cookie":
+        canvas.create_oval(x + px, y + px, x + px * 3, y + px * 3, fill="#c98a4a", outline="")
+        canvas.create_oval(x + px * 2, y + px * 2, x + px * 2 + px // 2, y + px * 2 + px // 2, fill="#6b3f22", outline="")
+    elif food_id == "juice":
+        canvas.create_rectangle(x + px, y + px, x + px * 3, y + px * 4, fill="#ffaa44", outline="")
+        canvas.create_rectangle(x + px * 2, y, x + px * 3, y + px, fill="#88cc66", outline="")
+        canvas.create_rectangle(x + px, y + px * 3, x + px * 3, y + px * 4, fill="#ff8844", outline="")
+    elif food_id == "taco":
+        canvas.create_polygon(
+            x + px,
+            y + px * 3,
+            x + px * 4,
+            y + px * 3,
+            x + px * 3,
+            y + px,
+            fill="#e8c060",
+            outline="",
+        )
+        canvas.create_rectangle(x + px, y + px * 2, x + px * 3, y + px * 3, fill="#66aa44", outline="")
+    elif food_id == "icecream":
+        canvas.create_polygon(
+            x + px * 2,
+            y + px * 3,
+            x + px,
+            y + px * 4,
+            x + px * 3,
+            y + px * 4,
+            fill="#e8c878",
+            outline="",
+        )
+        canvas.create_oval(x + px, y + px, x + px * 3, y + px * 3, fill="#ffccdd", outline="")
+    elif food_id == "corn":
+        canvas.create_rectangle(x + px * 2, y, x + px * 3, y + px * 4, fill="#88aa44", outline="")
+        canvas.create_oval(x + px, y + px, x + px * 3, y + px * 4, fill="#ffdd66", outline="")
+        for i in range(3):
+            canvas.create_line(x + px, y + px * (1 + i), x + px * 3, y + px * (1 + i), fill="#ddaa33")
+    elif food_id == "milk":
+        canvas.create_rectangle(x + px, y, x + px * 3, y + px * 4, fill="#f5f5f5", outline="")
+        canvas.create_rectangle(x + px, y, x + px * 3, y + px, fill="#88ccff", outline="")
+        canvas.create_rectangle(x + px, y + px * 2, x + px * 3, y + px * 3, fill="#ddeeff", outline="")
+    elif food_id == "ramen":
+        canvas.create_oval(x, y + px * 2, x + px * 4, y + px * 4, fill="#cc8844", outline="")
+        canvas.create_rectangle(x + px, y + px, x + px * 3, y + px * 2, fill="#ffcc66", outline="")
+        canvas.create_line(x + px, y + px, x + px * 3, y + px * 3, fill="#ffffff", width=max(1, px // 2))
+    elif food_id == "sushi":
+        canvas.create_rectangle(x, y + px, x + px * 4, y + px * 3, fill="#224422", outline="")
+        canvas.create_rectangle(x + px, y + px * 2, x + px * 3, y + px * 3, fill="#f5f5ee", outline="")
+        canvas.create_oval(x + px, y, x + px * 3, y + px * 2, fill="#ee5566", outline="")
+    elif food_id == "cookie":
+        canvas.create_oval(x, y + px, x + px * 4, y + px * 4, fill="#c8965a", outline="")
+        canvas.create_oval(x + px, y + px * 2, x + px * 2, y + px * 3, fill="#6b4226", outline="")
+        canvas.create_oval(x + px * 2, y + px, x + px * 3, y + px * 2, fill="#6b4226", outline="")
+    elif food_id == "juice":
+        canvas.create_rectangle(x + px, y + px, x + px * 3, y + px * 4, fill="#ff8844", outline="")
+        canvas.create_rectangle(x + px, y, x + px * 3, y + px, fill="#ffffff", outline="")
+        canvas.create_rectangle(x + px * 2, y, x + px * 3, y + px * 2, fill="#cccccc", outline="")
+    elif food_id == "taco":
+        canvas.create_polygon(
+            x,
+            y + px * 3,
+            x + px * 2,
+            y,
+            x + px * 4,
+            y + px * 3,
+            fill="#e8b870",
+            outline="",
+        )
+        canvas.create_rectangle(x + px, y + px * 2, x + px * 3, y + px * 3, fill="#66aa33", outline="")
+        canvas.create_rectangle(x + px, y + px, x + px * 2, y + px * 2, fill="#ee4444", outline="")
+    elif food_id == "icecream":
+        canvas.create_polygon(
+            x + px,
+            y + px * 2,
+            x + px * 3,
+            y + px * 2,
+            x + px * 2,
+            y + px * 4,
+            fill="#d4a056",
+            outline="",
+        )
+        canvas.create_oval(x, y, x + px * 4, y + px * 3, fill="#ff99cc", outline="")
+        canvas.create_oval(x + px, y + px, x + px * 2, y + px * 2, fill="#ffffff", outline="")
+    elif food_id == "corn":
+        canvas.create_oval(x + px, y, x + px * 3, y + px * 4, fill="#ffdd44", outline="")
+        canvas.create_rectangle(x + px, y + px, x + px * 2, y + px * 2, fill="#66aa33", outline="")
+        canvas.create_rectangle(x + px * 2, y + px * 2, x + px * 3, y + px * 3, fill="#66aa33", outline="")
+    else:
+        # 未知 id：占位色块，避免空白格
+        canvas.create_rectangle(x, y + px, x + px * 4, y + px * 3, fill="#6688aa", outline="")
 
 
 def _draw_pixel_backpack(canvas: tk.Canvas, x: int, y: int, px: int = 2, *, open_bag: bool = False) -> None:
@@ -11245,6 +11420,19 @@ class DesktopPet:
         self.game_overlay = None
         self.game_canvas = None
 
+    def _ensure_mode_exclusive_cleanup(self, target: str) -> None:
+        """工作/采集互斥：进入一方前硬停另一方并清残留窗口。"""
+        self._cancel_game_countdown()
+        if target in ("work", "game"):
+            if self.mode == "game" or self.game_boxes or self.game_spawn_job or self.game_tick_job:
+                self._stop_game_mode()
+            if target == "game" and (self.mode == "work" or self.state == "work"):
+                self._stop_work_mode()
+            if target == "work" and self.mode == "game":
+                self._stop_game_mode()
+        if target == "work" and self.state == "work" and self.mode != "work":
+            self._stop_work_mode()
+
     def _stop_work_mode(self) -> None:
         self.work_animating = False
         self.work_continuous = False
@@ -11350,12 +11538,16 @@ class DesktopPet:
         self.follow_last_dir = ""
         self._reset_walk_turn_tracker()
         self._hide_shy_fx()
-        if self.mode == "game":
+        self._cancel_game_countdown()
+        if self.mode == "game" or self.game_boxes or self.game_spawn_job or self.game_tick_job:
             self._stop_game_mode()
+        if self.mode == "work" or self.state == "work":
+            self._stop_work_mode()
         if self.rhythm_active:
             self._close_rhythm_game(resume=False)
 
     def _apply_work_mode(self) -> None:
+        self._ensure_mode_exclusive_cleanup("work")
         self._interrupt_for_mode_switch()
         self._leave_quiet_mode()
         self.mode = "work"
@@ -11515,8 +11707,13 @@ class DesktopPet:
             return
 
         def begin() -> None:
+            if self.mode in ("work",) or self.state == "work":
+                return
+            self._ensure_mode_exclusive_cleanup("game")
             self._interrupt_for_mode_switch()
             self._leave_quiet_mode()
+            if self.mode in ("work",) or self.state == "work":
+                return
             self.mode = "game"
             self.state = "game"
             self.game_score = 0
@@ -12565,7 +12762,8 @@ class DesktopPet:
                 if isinstance(p, (int, float)):
                     canvas.create_text(x, y0 + 128, text=f"雨{p:.0f}%", fill="#66ccff", font=("Courier New", 8, "bold"))
             updated = datetime.now().strftime("%H:%M:%S")
-            status.config(text=f"已更新 {updated} · 数据来源 Open-Meteo", fg="#88ffaa")
+            src = getattr(render, "_src_tag", "Open-Meteo")
+            status.config(text=f"已更新 {updated} · 数据来源 {src}", fg="#88ffaa")
 
         def load_weather() -> None:
             name = city_var.get().strip() or "北京"
@@ -12581,14 +12779,20 @@ class DesktopPet:
                 err = ""
                 payload = None
                 label = name
+                from_cache = False
                 try:
                     geo = _geocode_city_name(name)
                     if not geo:
                         raise ValueError(f"找不到城市「{name}」")
                     label, lat, lon = geo
                     payload = _fetch_open_meteo_weather(lat, lon)
+                    _save_weather_cache(label, payload)
                 except Exception as e:
                     err = str(e) or "获取失败"
+                    cached = _load_weather_cache(name)
+                    if cached:
+                        label, payload = cached
+                        from_cache = True
 
                 def apply() -> None:
                     if token != getattr(self, "_weather_fetch_token", 0):
@@ -12607,6 +12811,7 @@ class DesktopPet:
                         )
                         status.config(text="请检查网络后重试", fg="#ff8866")
                         return
+                    render._src_tag = "本地缓存" if from_cache else "Open-Meteo"
                     render(payload, label)
 
                 self.root.after(0, apply)
@@ -15955,16 +16160,16 @@ class DesktopPet:
         )
         pad = max(2, (PANEL_FOOD_CANVAS - PANEL_FOOD_ICON_PX * 5) // 2)
         for food_id, info in food_items:
-            count = self.food_inventory.get(food_id, 0)
-            if count <= 0:
-                continue
+            count = max(0, int(self.food_inventory.get(food_id, 0)))
+            # 全部种类都显示（含 ×0），避免「种类变少」观感
             cell = tk.Frame(self.backpack_grid, bg=PANEL_ITEM_BG, padx=4, pady=3)
             cell.grid(row=col // PANEL_FOOD_COLS, column=col % PANEL_FOOD_COLS, sticky=tk.NW, padx=4, pady=3)
             icon = tk.Canvas(cell, width=PANEL_FOOD_CANVAS, height=PANEL_FOOD_CANVAS, bg="#1e2640", highlightthickness=0)
             icon.pack()
             icon.create_rectangle(0, 0, PANEL_FOOD_CANVAS, PANEL_FOOD_CANVAS, fill="#1e2640", outline=THEME_BLUE_DEEP)
             _draw_pixel_food(icon, food_id, pad, pad, px=PANEL_FOOD_ICON_PX)
-            tk.Label(cell, text=f"{info['label']} ×{count}", font=PIXEL_FONT, fg=THEME_PINK, bg=PANEL_ITEM_BG).pack()
+            name_fg = THEME_PINK if count > 0 else "#666688"
+            tk.Label(cell, text=f"{info['label']} ×{count}", font=PIXEL_FONT, fg=name_fg, bg=PANEL_ITEM_BG).pack()
             tk.Label(
                 cell,
                 text=f"体+{info['stamina']} 心+{info['mood']}",
@@ -16044,6 +16249,8 @@ class DesktopPet:
             if i >= len(steps):
                 self._countdown_active = False
                 self._hide_countdown_overlay()
+                if self.mode in ("work",) or self.state == "work":
+                    return
                 on_ready()
                 return
             if i == 0 and on_show:
@@ -16521,6 +16728,7 @@ class DesktopPet:
             "index": idx,
             "side": side,
             "move_dir": "front",
+            "move_dir_ms": 0,
             "follow_job": None,
             "bounce_offset": 0,
             "last_pet_x": self.x,
@@ -16624,10 +16832,39 @@ class DesktopPet:
             return True
         return self.state == "walk" or self.follow_animating or self.work_animating
 
-    def _mini_pet_move_dir(self, dx: float, dy: float) -> str:
-        if abs(dx) >= abs(dy):
+    def _mini_pet_move_dir(self, dx: float, dy: float, *, current: str = "front") -> str:
+        """按位移取朝向；对当前轴向加迟滞，避免 45° 附近左右/前后狂切。"""
+        ax, ay = abs(dx), abs(dy)
+        if ax < 0.35 and ay < 0.35:
+            return current or "front"
+        horiz = (current or "front") in ("left", "right")
+        ratio = MINI_PET_TURN_AXIS_RATIO
+        if horiz:
+            # 保持左右，除非纵向明显更强
+            if ay > ax * ratio:
+                return "front" if dy > 0 else "back"
+            if ax < 0.35:
+                return current or "front"
             return "left" if dx < 0 else "right"
+        # 保持前后，除非横向明显更强
+        if ax > ay * ratio:
+            return "left" if dx < 0 else "right"
+        if ay < 0.35:
+            return current or "front"
         return "front" if dy > 0 else "back"
+
+    def _mini_pet_apply_move_dir(self, entry: dict, proposed: str) -> str:
+        """最短转向间隔：未满 hold 则维持原朝向。"""
+        cur = str(entry.get("move_dir") or "front")
+        if not proposed or proposed == cur:
+            return cur
+        now = int(time.time() * 1000)
+        last = int(entry.get("move_dir_ms", 0) or 0)
+        if last and (now - last) < MINI_PET_TURN_HOLD_MS:
+            return cur
+        entry["move_dir"] = proposed
+        entry["move_dir_ms"] = now
+        return proposed
 
     def _set_mini_pet_sprite(self, entry: dict, photo: ImageTk.PhotoImage) -> None:
         lbl = entry.get("label")
@@ -16700,10 +16937,17 @@ class DesktopPet:
             walk_frames = sprites.get("back", sprites["front"])
             self._set_mini_pet_sprite(entry, walk_frames[frame_idx])
         elif use_walk:
-            move_dir = self._mini_pet_move_dir(dx if dist > 0.5 else 0, dy if dist > 0.5 else 0)
+            cur_dir = str(entry.get("move_dir") or "front")
             if dist <= 0.5 and main_moving:
-                move_dir = self.direction
-            entry["move_dir"] = move_dir
+                # 贴身时跟桌宠朝向，但仍走防抖，避免桌宠微抖带动狂切
+                proposed = self.direction or cur_dir
+            else:
+                proposed = self._mini_pet_move_dir(
+                    dx if dist > 0.5 else 0.0,
+                    dy if dist > 0.5 else 0.0,
+                    current=cur_dir,
+                )
+            move_dir = self._mini_pet_apply_move_dir(entry, proposed)
             frame_idx = (int(time.time() * 1000) // WALK_FRAME_MS) % 2
             walk_frames = sprites.get(move_dir, sprites["front"])
             self._set_mini_pet_sprite(entry, walk_frames[frame_idx])
@@ -20323,7 +20567,7 @@ class DesktopPet:
             self._start_game_dizzy_stun()
 
     def _game_spawn_box(self) -> None:
-        if self.mode != "game" or self._game_time_left_ms() <= 0:
+        if self.mode != "game" or self.state == "work" or self._game_time_left_ms() <= 0:
             return
         sw = self.root.winfo_screenwidth()
         margin = GAME_BOX_SIZE
@@ -20390,7 +20634,7 @@ class DesktopPet:
                 pass
 
     def _game_tick(self) -> None:
-        if self.mode != "game":
+        if self.mode != "game" or self.state == "work":
             return
 
         if self._game_time_left_ms() <= 0:
@@ -20537,6 +20781,7 @@ class DesktopPet:
     ) -> None:
         if self.dragging or self.state in ("work", "sleep"):
             return
+        self._ensure_mode_exclusive_cleanup("work")
         self._interrupt_current_interaction()
         if self.mode == "game":
             self._stop_game_mode()
@@ -20596,17 +20841,17 @@ class DesktopPet:
         self._place_window()
         self._sync_work_overlay()
         if continuous or kind == "continuous":
-            tip = "工作模式：持续运送，可拖动终点旗子；点「结束」停止"
+            tip = "工作模式：搬走再生，持续运送；可拖终点旗；点「结束」停止"
             self._show_toast(tip, PIXEL_COLOR, duration_ms=2800)
         elif kind == "custom":
             self._show_toast(
-                f"自定义运送：{self.work_total} 批（可拖动终点旗子）",
+                f"自定义运送：{self.work_total} 箱（搬走再生，搬完结束）",
                 PIXEL_COLOR,
                 duration_ms=2400,
             )
         else:
             self._show_toast(
-                f"自由运送：{self.work_total} 批（可拖动终点旗子）",
+                f"自由运送：{self.work_total} 箱（搬走再生，搬完结束）",
                 PIXEL_COLOR,
                 duration_ms=2400,
             )
@@ -20992,14 +21237,22 @@ class DesktopPet:
         else:
             self._win32_set_click_through(self.work_overlay, True)
 
+    def _work_should_keep_start_box(self) -> bool:
+        """搬走当前箱后是否还要在起点再生成一箱。"""
+        if self.work_continuous:
+            return True
+        # 手上这箱送达后仍未达总量 → 起点应留下一箱
+        carrying = 1 if self.work_carrying else 0
+        return (self.work_delivered + carrying) < self.work_total
+
     def _update_work_start_box(self) -> None:
         pad = 40
         size = WORK_PROP_SIZE + pad * 2
         half = WORK_PROP_SIZE // 2
-        # 显示运送货物：起点待运箱子（与终点堆箱同一开关）
+        # 显示运送货物：起点待运箱（搬走后可立即再生成；与终点堆箱同一开关）
         show_cargo = bool(self._work_mode_config().get("show_stack", True))
 
-        if show_cargo and self.work_has_start_box and not self.work_carrying:
+        if show_cargo and self.work_has_start_box:
             sx = self.work_start_x + self.display_size // 2 - half
             sy = self.work_start_y - pad
             sx, sy = self._smart_popup_pos(sx, sy, size, size)
@@ -21025,7 +21278,7 @@ class DesktopPet:
             self.work_start_box_win = None
 
     def _work_animate(self) -> None:
-        if self.state != "work":
+        if self.state != "work" or self.mode == "game":
             self.work_animating = False
             return
         if self.dragging:
@@ -21038,7 +21291,7 @@ class DesktopPet:
         self.root.after(WALK_FRAME_MS, self._work_animate)
 
     def _work_move_step(self) -> None:
-        if self.state != "work":
+        if self.state != "work" or self.mode == "game":
             return
         if self.dragging:
             self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
@@ -21088,8 +21341,9 @@ class DesktopPet:
                 self._work_move_step()
                 return
             if not self.work_carrying:
+                # 搬走起点箱；若未结束/未达箱数，立刻再生成下一箱
                 self.work_carrying = True
-                self.work_has_start_box = False
+                self.work_has_start_box = self._work_should_keep_start_box()
                 self._sync_work_overlay()
             self.work_phase = "to_end"
         elif self.work_phase == "to_end":
@@ -21101,15 +21355,16 @@ class DesktopPet:
                 self.stamina = min(100, self.stamina + 2)
                 self.mood = min(100, self.mood + 1)
                 self._refresh_panel()
+            # 起点箱已在搬走时再生；此处只校正状态并决定是否继续
+            self.work_has_start_box = self._work_should_keep_start_box()
             if self.work_continuous:
-                self.work_has_start_box = True
                 self.work_phase = "to_start"
                 self._sync_work_overlay()
             elif self.work_delivered >= self.work_total:
+                self.work_has_start_box = False
                 self.work_phase = "finish"
                 self._sync_work_overlay()
             else:
-                self.work_has_start_box = True
                 self.work_phase = "to_start"
                 self._sync_work_overlay()
         self._work_move_step()
