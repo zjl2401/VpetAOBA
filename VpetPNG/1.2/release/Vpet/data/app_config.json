@@ -1,0 +1,22 @@
+{
+  "font_size": 12,
+  "display_size": 128,
+  "display_preset": "中",
+  "difficulty": "中",
+  "rhythm_speed": "中",
+  "rhythm_chart_diff": "中",
+  "rhythm_auto": false,
+  "weather_city": "北京",
+  "seen_hints": {
+    "operation_guide": true
+  },
+  "work_mode": {
+    "show_props": true,
+    "show_stack": true
+  },
+  "voice_mode": false,
+  "display_layer": "top",
+  "persona": "default",
+  "pet_id_api_url": "",
+  "pet_id_activation_code": ""
+}

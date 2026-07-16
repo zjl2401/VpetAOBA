@@ -1593,7 +1593,8 @@ WORK_BOX_TOTAL_DEFAULT = 5
 WORK_TOTAL_SETTING_MIN = 1
 WORK_TOTAL_SETTING_MAX = 30
 WORK_PROP_SIZE = 104
-WORK_STACK_OFFSET = 22
+# 堆箱相对旗脚的步进：须明显大于旗/箱重叠带，避免盖住旗面
+WORK_STACK_OFFSET = 72
 WORK_MODE_BANTER_COOLDOWN_MS = 30_000
 WORK_MODE_BANTER_INTERVAL_MS = (30_000, 90_000)
 WORK_MODE_BANTER: tuple[str, ...] = (
@@ -1984,11 +1985,11 @@ GUIDE_TOPICS: dict[str, dict] = {
             "· 睡眠：休息；体力过低自动入睡\n"
             "　　睡眠时双击可短暂睁眼；多次双击可能触发语音（不离开关模式）\n"
             "· 音乐：边走边听 BGM（设置内可切换顺序 / 随机）\n"
-            "· 工作：持续运送；设置中可分别显示旗帜与货物\n"
+            "· 工作：持续运送；终点旗可拖；送达后在旗脚周围堆箱（不挡旗）\n"
             "· 游戏：采集 / 打字 / 背单词 / 音乐 / RPG / 排名\n\n"
             "运送：\n"
-            "· 互动 → 自由运送：随机路线\n"
-            "· 互动 → 自定义：可设箱数与终点\n"
+            "· 互动 → 自由运送：随机路线（终点旗可拖）\n"
+            "· 互动 → 自定义：可设箱数与终点旗\n"
             "· 模式 → 工作：持续运送"
         ),
     },
@@ -8440,7 +8441,11 @@ class DesktopPet:
             pass
 
     def _win32_set_click_through(self, win: tk.Misc | None, enabled: bool = True) -> None:
-        """装饰性透明窗：穿透点击，避免挡住拖桌宠。"""
+        """装饰性透明窗：穿透点击，避免挡住拖桌宠。
+
+        注意：改 WS_EX_* 后必须重设 Tk 的 transparentcolor，否则色键丢失会整窗变透明，
+        采集下落物 / 工作箱等会「看不见」。
+        """
         if sys.platform != "win32" or win is None:
             return
         try:
@@ -8449,23 +8454,39 @@ class DesktopPet:
             hwnd = int(win.winfo_id())
             if not hwnd:
                 return
+            user32 = ctypes.windll.user32
             targets = [hwnd]
             try:
-                parent = int(ctypes.windll.user32.GetParent(hwnd) or 0)
+                parent = int(user32.GetParent(hwnd) or 0)
                 if parent and parent not in targets:
                     targets.append(parent)
+            except Exception:
+                pass
+            try:
+                # 顶层 HWND（避免只改到子控件导致色键/穿透错位）
+                root_hwnd = int(user32.GetAncestor(hwnd, 2) or 0)  # GA_ROOT=2
+                if root_hwnd and root_hwnd not in targets:
+                    targets.append(root_hwnd)
             except Exception:
                 pass
             GWL_EXSTYLE = -20
             WS_EX_LAYERED = 0x00080000
             WS_EX_TRANSPARENT = 0x00000020
-            user32 = ctypes.windll.user32
             for h in targets:
                 style = int(user32.GetWindowLongW(h, GWL_EXSTYLE))
                 if enabled:
                     user32.SetWindowLongW(h, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
                 else:
                     user32.SetWindowLongW(h, GWL_EXSTYLE, (style | WS_EX_LAYERED) & ~WS_EX_TRANSPARENT)
+            # SetWindowLong 可能清掉 LWA_COLORKEY → 整窗透明；重打色键
+            try:
+                key = str(win.wm_attributes("-transparentcolor") or "")
+                if key:
+                    win.wm_attributes("-transparentcolor", "")
+                    win.update_idletasks()
+                    win.wm_attributes("-transparentcolor", key)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -20276,7 +20297,13 @@ class DesktopPet:
             _draw_pixel_food(canvas, food_id, draw_x, draw_y, px=px)
         else:
             _draw_game_special_item(canvas, kind, size)
-        win.geometry(f"+{bx}+{-GAME_BOX_SIZE}")
+        win.geometry(f"{size}x{size}+{bx}+{-GAME_BOX_SIZE}")
+        try:
+            win.update_idletasks()
+            win.deiconify()
+            win.lift()
+        except Exception:
+            pass
         self._win32_set_click_through(win, True)
         base = max(2, float(self._game_box_speed))
         speed = base * random.uniform(GAME_BOX_SPEED_MIN_MULT, GAME_BOX_SPEED_MAX_MULT)
@@ -20291,7 +20318,29 @@ class DesktopPet:
             }
         )
         self.game_spawn_job = self.root.after(self._game_spawn_ms, self._game_spawn_box)
-        self._lift_pet_above_bg_fx()
+        self._stack_game_drops_visible()
+
+    def _stack_game_drops_visible(self) -> None:
+        """保证下落物同 layer 且可见，再抬桌宠（勿只 lift 桌宠把食物埋没）。"""
+        for box in list(getattr(self, "game_boxes", []) or []):
+            win = box.get("win") if isinstance(box, dict) else None
+            try:
+                if win is None or not win.winfo_exists():
+                    continue
+                self._apply_window_layer(win)
+                win.lift()
+            except Exception:
+                pass
+        try:
+            self.root.lift()
+            self._apply_window_layer(self.root)
+        except Exception:
+            pass
+        if self.game_hud_win and self.game_hud_win.winfo_exists():
+            try:
+                self.game_hud_win.lift()
+            except Exception:
+                pass
 
     def _game_tick(self) -> None:
         if self.mode != "game":
@@ -20307,8 +20356,9 @@ class DesktopPet:
             self.x = mx - self.display_size // 2
             self.y = my - self.display_size // 2
             self._clamp_position()
-            self._place_window()
-        self.root.lift()
+            # light：避免每帧整套特效重排；下落物单独保可见
+            self._place_window(light=True)
+        self._stack_game_drops_visible()
         self._update_game_hud()
 
         sh = self.root.winfo_screenheight()
@@ -20417,7 +20467,7 @@ class DesktopPet:
                 return
             total = max(WORK_TOTAL_SETTING_MIN, min(WORK_TOTAL_SETTING_MAX, total))
             self._close_work_custom_dialog()
-            self._start_work_impl(total, flag_movable=True)
+            self._start_work_impl(total, flag_movable=True, kind="custom")
 
         tk.Button(frame, text="开始", command=confirm, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(anchor=tk.E)
         entry.bind("<Return>", lambda _e: confirm())
@@ -20427,10 +20477,17 @@ class DesktopPet:
     def _start_work_free(self) -> None:
         self._hide_main_menu()
         total = random.randint(WORK_TOTAL_MIN, WORK_TOTAL_MAX)
-        # 自由：数量/起点/终点均随机，终点固定不可拖
-        self._start_work_impl(total, flag_movable=False)
+        # 自由：数量/起点/终点均随机；终点旗可拖，便于调整堆积
+        self._start_work_impl(total, flag_movable=True, kind="free")
 
-    def _start_work_impl(self, total: int, *, flag_movable: bool, continuous: bool = False) -> None:
+    def _start_work_impl(
+        self,
+        total: int,
+        *,
+        flag_movable: bool,
+        continuous: bool = False,
+        kind: str = "free",
+    ) -> None:
         if self.dragging or self.state in ("work", "sleep"):
             return
         self._interrupt_current_interaction()
@@ -20491,18 +20548,21 @@ class DesktopPet:
         self._set_image(self.sprites.work_stand)
         self._place_window()
         self._sync_work_overlay()
-        if continuous:
-            # 模式与动作共用走动抽检语音；不再另开 30–90s 强制鼓励链（避免比自由密、还拖卡）
+        if continuous or kind == "continuous":
             tip = "工作模式：持续运送，可拖动终点旗子；点「结束」停止"
             self._show_toast(tip, PIXEL_COLOR, duration_ms=2800)
-        elif flag_movable:
+        elif kind == "custom":
             self._show_toast(
                 f"自定义运送：{self.work_total} 批（可拖动终点旗子）",
                 PIXEL_COLOR,
                 duration_ms=2400,
             )
         else:
-            self._show_toast(f"自由运送：{self.work_total} 批", PIXEL_COLOR, duration_ms=2400)
+            self._show_toast(
+                f"自由运送：{self.work_total} 批（可拖动终点旗子）",
+                PIXEL_COLOR,
+                duration_ms=2400,
+            )
         self._work_move_step()
         if not self.work_animating:
             self.work_animating = True
@@ -20546,24 +20606,17 @@ class DesktopPet:
 
     @staticmethod
     def _work_stack_ring_positions(ring: int) -> list[tuple[int, int]]:
+        """旗脚周围一环：只取左右与下方（dy≥0），避免箱子盖住旗面。"""
         positions: list[tuple[int, int]] = []
         for dx in range(-ring, ring + 1):
-            for dy in range(-ring, ring + 1):
+            for dy in range(0, ring + 1):
                 if dx == 0 and dy == 0:
                     continue
-                if max(abs(dx), abs(dy)) != ring:
+                if max(abs(dx), dy) != ring:
                     continue
                 positions.append((dx, dy))
-
-        def sort_key(p: tuple[int, int]) -> tuple[int, int]:
-            dx, dy = p
-            if dy == 0:
-                return 0, abs(dx)
-            if dx == 0 and dy < 0:
-                return 1, abs(dy)
-            return 2, abs(dx) + abs(dy)
-
-        positions.sort(key=sort_key)
+        # 先两侧，再往下铺，堆积更自然
+        positions.sort(key=lambda p: (p[1], abs(p[0])))
         return positions
 
     def _work_stack_offsets(self, count: int) -> list[tuple[int, int]]:
@@ -20584,10 +20637,9 @@ class DesktopPet:
         step = WORK_STACK_OFFSET
         offsets = self._work_stack_offsets(stack_count)
         max_dx = max((abs(dx) for dx, _ in offsets), default=0)
-        max_dy_up = max((-dy for _, dy in offsets if dy < 0), default=0)
         max_dy_down = max((dy for _, dy in offsets if dy > 0), default=0)
         width = pad * 2 + WORK_PROP_SIZE + max_dx * step * 2
-        height = pad * 2 + WORK_PROP_SIZE + max_dy_up * step + max_dy_down * step
+        height = pad * 2 + WORK_PROP_SIZE + max_dy_down * step
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         width = min(width, max(WORK_PROP_SIZE + pad * 2, sw - 16))
@@ -20604,8 +20656,36 @@ class DesktopPet:
         return flag_x + dx * step, flag_y + dy * step
 
     def _stack_work_props_under_pet(self) -> None:
-        """旗/箱叠在桌宠后仍可见（与采集下落物同一套层序，见 `_lift_pet_above_bg_fx`）。"""
-        self._lift_pet_above_bg_fx()
+        """箱在旗下、旗在箱上、桌宠最上：旗面始终不被堆箱挡住。"""
+        # 1) 货物箱（起点 + 终点堆）
+        box_wins: list[tk.Misc] = []
+        for attr in ("work_start_box_win",):
+            win = getattr(self, attr, None)
+            if win is not None:
+                box_wins.append(win)
+        box_wins.extend(list(getattr(self, "work_anchored_box_wins", []) or []))
+        for win in box_wins:
+            try:
+                if not win.winfo_exists():
+                    continue
+                self._apply_window_layer(win)
+                win.lift()
+            except Exception:
+                pass
+        # 2) 终点旗：必须在堆箱之上，才能拖旗且不被挡住
+        if self.work_overlay and self.work_overlay.winfo_exists():
+            try:
+                self._apply_window_layer(self.work_overlay)
+                self.work_overlay.lift()
+            except Exception:
+                pass
+        # 3) 桌宠立绘优先可拖
+        try:
+            self.root.lift()
+            self._apply_window_layer(self.root)
+        except Exception:
+            pass
+        self._reassert_display_layer_after_lift()
         # 「结束」按钮需可点，保持在前
         if self.work_end_btn_win and self.work_end_btn_win.winfo_exists():
             try:
@@ -20783,7 +20863,7 @@ class DesktopPet:
         self.work_local_stack = 0
 
     def _spawn_work_anchored_box(self) -> None:
-        """在当前旗子位置钉住一箱；之后拖旗不会带走。"""
+        """送到终点后在旗脚周围钉住一箱（不盖旗）；拖旗后新箱从新旗脚堆起。"""
         # 显示运送货物：终点堆箱
         if not self._work_mode_config().get("show_stack", True):
             return
@@ -20791,6 +20871,7 @@ class DesktopPet:
         offsets = self._work_stack_offsets(idx + 1)
         dx, dy = offsets[idx]
         step = WORK_STACK_OFFSET
+        # 旗脚屏幕坐标（与旗图 anchor=S 对齐）
         flag_sx = self.work_end_x + self.display_size // 2
         flag_sy = self.work_end_y
         box_sx = flag_sx + dx * step
@@ -20805,7 +20886,13 @@ class DesktopPet:
         c = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
         c.pack()
         c.create_image(size // 2, size - pad, image=self.sprites.box_img, anchor=tk.S)
-        win.geometry(f"{size}x{size}+{box_sx - size // 2}+{box_sy - size + pad}")
+        win.geometry(f"{size}x{size}+{int(box_sx - size // 2)}+{int(box_sy - size + pad)}")
+        try:
+            win.update_idletasks()
+            win.deiconify()
+            win.lift()
+        except Exception:
+            pass
         self._win32_set_click_through(win, True)
         self.work_anchored_box_wins.append(win)
         self.work_local_stack += 1
