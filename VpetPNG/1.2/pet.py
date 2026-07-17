@@ -20205,4 +20205,2390 @@ class DesktopPet:
                 pass
             self.bg_music_playing = False
 
-    def _show_call_dialog(self, *, call_sequence: list | None = None) ->
+    def _show_call_dialog(self, *, call_sequence: list | None = None) -> str:
+        """打电话：有 call 资源时一律先 ring，再播非 ring 台词+标题文本框；否则走旧 CALL_TEXT。"""
+
+        def dialog() -> None:
+            self._show_speech_dialog(
+                CALL_TEXT, typewriter_ms=TYPEWRITER_MS, use_border5=False
+            )
+            self._play_call_audio()
+
+        def voice() -> bool:
+            self._pause_bg_music_for_call()
+            self._hide_voice_subtitle()
+            self._ensure_call_catalog()
+            seq = list(call_sequence) if call_sequence else self.voice_player.catalog.pick_call_sequence()
+            if len(seq) < 2 or not seq[0].is_ring:
+                seq = self.voice_player.catalog.pick_call_sequence()
+            if len(seq) < 2 or not seq[0].is_ring:
+                return False
+            # 不在主线程 ffmpeg；ring 失败由播放队列整段终止，不会跳过铃响
+            self._last_call_seq = seq
+            return self._try_voice_call(sequence=seq, ignore_cooldown=True)
+
+        # 打电话不随机：能播语音就固定 ring → 台词音频 + 标题字幕
+        if self._call_voice_ready():
+            if voice():
+                return "voice"
+        dialog()
+        return "dialog"
+
+    def _play_call_audio(self) -> None:
+        self._pause_bg_music_for_call()
+        wav = _ensure_audio_wav(CALL_AUDIO_SRC, CALL_AUDIO_WAV)
+        if wav is None:
+            self.call_audio_ms = 0
+            return
+        self.call_audio_ms = _get_wav_duration_ms(wav)
+        try:
+            import pygame
+
+            if not pygame.mixer.get_init():
+                _init_pygame_mixer()
+            pygame.mixer.music.load(str(wav))
+            pygame.mixer.music.set_volume(self._sound_scale("voice"))
+            pygame.mixer.music.play()
+        except Exception:
+            self.call_audio_ms = 0
+
+    def _stop_call_audio(self) -> None:
+        self._stop_voice_audio()
+        try:
+            import pygame
+
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+        except Exception:
+            pass
+        if self.bg_music_paused_for_call and self.music_sprite_mode:
+            self.bg_music_paused_for_call = False
+            self._start_bg_music()
+        else:
+            self.bg_music_paused_for_call = False
+
+    def _hide_call_dialog(self) -> None:
+        self._stop_call_audio()
+        self._hide_speech_dialog()
+        self._hide_voice_subtitle()
+
+    def _finish_call_action(self) -> None:
+        """打电话动作结束：仅收尾动作；语音路径不截断 ring/台词，也不提前关标题文本框。"""
+        if getattr(self, "_call_content_mode", "dialog") != "voice":
+            self._hide_speech_dialog()
+            self._hide_voice_subtitle()
+        # voice 路径：字幕由 voice_player 按当前 clip 时长自行隐藏
+        try:
+            import pygame
+
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+        except Exception:
+            pass
+        if self.bg_music_paused_for_call and self.music_sprite_mode:
+            self.bg_music_paused_for_call = False
+            self._start_bg_music()
+        else:
+            self.bg_music_paused_for_call = False
+
+    def _play_action(self, name: str) -> None:
+        if self.dragging or self.state == "work":
+            return
+        if self.music_sprite_mode:
+            return
+        if name == "happy":
+            self._play_happy()
+            return
+        if name not in SELECT_ACTIONS:
+            return
+        self._interrupt_current_interaction()
+
+        self.state = "action"
+        self.action_name = name
+        self.action_frame = 0
+        frames = self.sprites.actions[name]
+        self._set_image(frames[0])
+        if len(frames) > 1:
+            self._action_animate()
+
+        # interrupt 同帧禁止立刻播：旧异步 worker / 冷却标记易踩掉专用语音
+        tok = self.interaction_token
+
+        def after_interrupt_voice(expected: int = tok, act: str = name) -> None:
+            if expected != self.interaction_token or self.action_name != act:
+                return
+            if act == "call":
+                self._last_call_seq = None
+                call_seq = self.voice_player.catalog.pick_call_sequence() if self._call_voice_ready() else None
+                self._call_content_mode = self._show_call_dialog(call_sequence=call_seq)
+                call_seq = getattr(self, "_last_call_seq", call_seq)
+                if getattr(self, "_call_content_mode", "dialog") == "voice" and call_seq and len(call_seq) >= 2:
+                    total_ms = self.voice_player.estimate_sequence_ms(call_seq) + 1200
+                else:
+                    typing_ms = _typing_duration_ms(CALL_TEXT)
+                    audio_ms = self.call_audio_ms or typing_ms
+                    total_ms = max(typing_ms, audio_ms)
+                self._schedule_action_end(duration_ms=total_ms)
+            elif act == "hi":
+                self._hi_content_mode = self._show_hi_dialog()
+                if getattr(self, "_hi_content_mode", "dialog") == "voice":
+                    clip = self.voice_player.catalog.pick_hi_clip()
+                    if clip:
+                        total_ms = self.voice_player.estimate_sequence_ms([clip]) + 800
+                    else:
+                        total_ms = _typing_duration_ms(HI_TEXT, char_ms=HI_TYPEWRITER_MS)
+                else:
+                    total_ms = _typing_duration_ms(HI_TEXT, char_ms=HI_TYPEWRITER_MS)
+                self._schedule_action_end(duration_ms=total_ms)
+            else:
+                self._interact_flair(act, banter=act not in ("squat",))
+                self._schedule_action_end(action=act)
+
+        self.root.after(60, after_interrupt_voice)
+
+    def _play_happy(self) -> None:
+        if self.dragging or self.state == "work" or self.music_sprite_mode:
+            return
+        self._interrupt_current_interaction()
+        self._interact_flair("happy", banter=False, show_fx=False)
+        self.state = "action"
+        self.action_name = "happy"
+        self.happy_step_idx = 0
+        self.happy_base_y = self.y
+        self._show_happy_fx()
+        self._happy_step()
+        self._schedule_action_end(action="happy", callback=self._finish_happy)
+
+    def _finish_happy(self) -> None:
+        if self.dragging or self.state != "action" or self.action_name != "happy":
+            return
+        self.y = self.happy_base_y
+        self._hide_happy_fx()
+        self._place_window()
+        self._add_interact_mood()
+        if self.mode == "quiet":
+            self.state = "rest"
+            self._set_image(self.sprites.sleep[1])
+            self._show_sleep_zzz()
+            self._schedule_rest_bobble()
+        else:
+            self.state = "stand"
+            self._set_image(self.sprites.stand)
+        if not self._check_mood_happy():
+            self._resume_idle()
+
+    def _happy_step(self) -> None:
+        if self.dragging or self.state != "action" or self.action_name != "happy":
+            return
+
+        total_steps = HAPPY_CYCLES * 2
+        if self.happy_step_idx >= total_steps:
+            return
+
+        if self.happy_step_idx % 2 == 0:
+            self._set_image(self.sprites.happy)
+            self.y = self.happy_base_y - HAPPY_JUMP_PX
+        else:
+            self._set_image(self.sprites.stand)
+            self.y = self.happy_base_y
+
+        self.happy_step_idx += 1
+        self._place_window()
+        self._place_happy_fx()
+        tok = self.interaction_token
+        self.happy_job = self.root.after(
+            HAPPY_FRAME_MS, lambda t=tok: self._happy_step_guarded(t)
+        )
+
+    def _happy_step_guarded(self, tok: int) -> None:
+        if tok != self.interaction_token:
+            return
+        self.happy_job = None
+        self._happy_step()
+
+    def _action_animate(self) -> None:
+        if self.state != "action" or self.dragging:
+            return
+
+        if self.action_name not in self.sprites.actions:
+            return
+        frames = self.sprites.actions[self.action_name]
+        if len(frames) < 2:
+            return
+
+        self.action_frame += 1
+        self._set_image(frames[self.action_frame % 2])
+        tok = self.interaction_token
+        self.action_anim_job = self.root.after(
+            ACTION_FRAME_MS, lambda t=tok: self._action_animate_guarded(t)
+        )
+
+    def _action_animate_guarded(self, tok: int) -> None:
+        if tok != self.interaction_token:
+            return
+        self.action_anim_job = None
+        self._action_animate()
+
+    def _after_action(self) -> None:
+        if self.dragging or self.state != "action":
+            return
+        call_voice_busy = False
+        if self.action_name == "call":
+            if getattr(self, "_call_content_mode", "dialog") == "voice" and self._voice_enabled():
+                call_voice_busy = bool(
+                    self.voice_player.is_busy() or getattr(self, "_voice_subtitle_active", False)
+                )
+                self._finish_call_action()
+            else:
+                self._hide_call_dialog()
+        elif self.action_name == "hi":
+            # 语音路径：标题框由语音时长+1s 自行关闭，动作结束绝不可提前关掉
+            if getattr(self, "_hi_content_mode", "dialog") != "voice":
+                self._hide_speech_dialog()
+        elif self.action_name == "eat":
+            self._hide_food_fx()
+        elif self.action_name == "sad":
+            self._hide_rain_fx()
+        elif self.action_name == "idea":
+            self._hide_bulb_fx()
+        elif self.action_name == "happy":
+            self._hide_happy_fx()
+        self._clear_all_action_fx()
+        self._cancel_action_end()
+        self._add_interact_mood()
+        if self.mode == "quiet":
+            self.state = "rest"
+            self._set_image(self.sprites.sleep[1])
+            self._show_sleep_zzz()
+            self._schedule_rest_bobble()
+        # 通电话台词未完：禁止开心打断，否则字幕会被 interrupt 清掉
+        if call_voice_busy:
+            if self.mode != "quiet":
+                self.state = "stand"
+                self._set_image(self.sprites.stand)
+            self._resume_idle()
+            return
+        if not self._check_mood_happy():
+            self._resume_idle()
+
+    def _resume_idle_after_activity(self) -> None:
+        """小游戏等活动结束后回到自由模式并恢复漫步。"""
+        if self.dragging or not self.root.winfo_exists():
+            return
+        self._cancel_pending_mode_switch()
+        self.mode_switch_token += 1
+        if self.mode != "free":
+            if self.mode in ("work", "game", "quiet"):
+                self._apply_free_transition()
+                return
+            self._interrupt_for_mode_switch()
+            self.mode = "free"
+            self.follow_animating = False
+            self.state = "stand"
+            self.action_name = ""
+            self._set_image(self._current_stand_sprite())
+            self._place_window()
+        self.root.after(150, self._resume_idle)
+
+    def _schedule_stand_idle(self, *, min_delay: int = 450, max_delay: int = 1400) -> None:
+        if self.idle_job:
+            try:
+                self.root.after_cancel(self.idle_job)
+            except Exception:
+                pass
+            self.idle_job = None
+        if self.dragging or not self._supports_walk_idle() or self.state == "work":
+            return
+        delay = random.randint(min_delay, max_delay)
+        tok = self.interaction_token
+        self.idle_job = self.root.after(delay, lambda t=tok: self._idle_to_walk(t))
+
+    def _start_idle_watchdog(self) -> None:
+        if self.idle_watchdog_job:
+            try:
+                self.root.after_cancel(self.idle_watchdog_job)
+            except Exception:
+                pass
+            self.idle_watchdog_job = None
+
+        def tick() -> None:
+            if not self.root.winfo_exists() or self._closing:
+                return
+            self._idle_watchdog_tick()
+            self.idle_watchdog_job = self.root.after(IDLE_WATCHDOG_MS, tick)
+
+        self.idle_watchdog_job = self.root.after(IDLE_WATCHDOG_MS, tick)
+
+    def _idle_watchdog_tick(self) -> None:
+        if not self._startup_ready or self._closing:
+            return
+        # 拖拽超时兜底：丢失松手事件时强制解除，避免永久卡死
+        if self.dragging:
+            pressed = False
+            try:
+                if sys.platform == "win32":
+                    pressed = bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)
+            except Exception:
+                pressed = False
+            if pressed:
+                return
+            self.dragging = False
+            try:
+                self._stop_drag_move()
+            except Exception:
+                pass
+            if self.state == "drag":
+                self.state = "stand"
+                try:
+                    self._set_image(self._current_stand_sprite())
+                    self._place_window()
+                except Exception:
+                    pass
+            # 继续往下做 idle 恢复
+        if self.mode not in ("free", "stroll"):
+            return
+        if self.state in ("work", "sleep", "game", "drag"):
+            return
+        # 暴露 / 倒计时 / 进行中的 QTE 会话：不可被看门狗清掉
+        if getattr(self, "expose_session_active", False) or self.action_name == "expose":
+            return
+        if getattr(self, "_countdown_active", False):
+            return
+        if self.state == "action":
+            # wink/like：超过约 3.5s 仍停住 → 强制结束（防定时器丢了）
+            if self.action_name in ("wink", "like"):
+                started = int(getattr(self, "_wink_started_ms", 0) or 0)
+                if started and int(time.time() * 1000) - started >= WINK_DURATION_MS + 500:
+                    self._force_end_wink_like()
+                    return
+            if self.action_end_job or self.action_defer_job:
+                return
+            if self.action_name in ("expose", "yesno"):
+                return
+            self.action_name = ""
+            self._clear_all_action_fx()
+            self.state = "stand"
+            self._set_image(self._current_stand_sprite())
+        if self.state == "walk":
+            # 半死 walk：没有有效定时器则回到站立并排程
+            if self.walk_move_job or self.walk_anim_job:
+                # 有残留 job 也不要傻等：若超过一轮仍静止，强制重置
+                last = getattr(self, "_watchdog_walk_xy", None)
+                cur = (self.x, self.y)
+                if last == cur:
+                    stuck_n = int(getattr(self, "_watchdog_walk_stuck", 0)) + 1
+                    self._watchdog_walk_stuck = stuck_n
+                    if stuck_n >= 2:
+                        self._cancel_idle_chain()
+                        self.state = "stand"
+                        self._set_image(self._current_stand_sprite())
+                        self._watchdog_walk_stuck = 0
+                        self._watchdog_walk_xy = None
+                    else:
+                        self._watchdog_walk_xy = cur
+                        return
+                else:
+                    self._watchdog_walk_xy = cur
+                    self._watchdog_walk_stuck = 0
+                    return
+            self.state = "stand"
+            self._set_image(self._current_stand_sprite())
+            self._watchdog_walk_xy = None
+            self._watchdog_walk_stuck = 0
+        if self.state == "stand" and not self.idle_job:
+            self._schedule_stand_idle(min_delay=400, max_delay=1200)
+
+    def _resume_idle(self) -> None:
+        if self.dragging:
+            return
+        if self._startup_busy() or self.mode == "loading":
+            self._show_startup_still()
+            return
+        if self.state == "sleep" or self.sleep_interact_active:
+            return
+        if self.mode == "game":
+            return
+        if getattr(self, "expose_session_active", False) or self.action_name == "expose":
+            return
+        if getattr(self, "_countdown_active", False):
+            return
+        if self.mode in ("free", "stroll") and self.state == "action":
+            self._cancel_action_end()
+            self._clear_all_action_fx()
+            self.action_name = ""
+            self.state = "stand"
+            self._set_image(self._current_stand_sprite())
+        if self.mode == "follow":
+            self._follow_tick()
+        elif self.mode == "quiet":
+            if self.state != "rest":
+                self.state = "rest"
+                self._set_image(self.sprites.sleep[1])
+                self._show_sleep_zzz()
+            self._schedule_rest_bobble()
+        else:
+            self._stand_tick()
+
+    def _stop_rest_bobble(self) -> None:
+        if self.rest_bobble_job:
+            self.root.after_cancel(self.rest_bobble_job)
+            self.rest_bobble_job = None
+
+    def _schedule_rest_bobble(self) -> None:
+        is_quiet_rest = self.mode == "quiet" and self.state == "rest"
+        is_sleep_action = self.sleep_interact_active and self.state == "rest"
+        if self.dragging or (not is_quiet_rest and not is_sleep_action):
+            return
+        self._stop_rest_bobble()
+        pause = random.randint(REST_BOBBLE_PAUSE_MIN_MS, REST_BOBBLE_PAUSE_MAX_MS)
+        tok = self.interaction_token
+        self.rest_bobble_job = self.root.after(
+            pause, lambda t=tok: self._rest_bobble_up_guarded(t)
+        )
+
+    def _rest_bobble_up_guarded(self, tok: int) -> None:
+        if tok != self.interaction_token:
+            return
+        self._rest_bobble_up()
+
+    def _rest_bobble_up(self) -> None:
+        is_quiet_rest = self.mode == "quiet" and self.state == "rest"
+        is_sleep_action = self.sleep_interact_active and self.state == "rest"
+        if self.dragging or (not is_quiet_rest and not is_sleep_action):
+            return
+        self.rest_base_y = self.y
+        self.y = self.rest_base_y - REST_BOBBLE_PX
+        self._place_window()
+        self._place_sleep_zzz()
+        tok = self.interaction_token
+        self.root.after(REST_BOBBLE_MS, lambda t=tok: self._rest_bobble_down_guarded(t))
+
+    def _rest_bobble_down_guarded(self, tok: int) -> None:
+        if tok != self.interaction_token:
+            return
+        self._rest_bobble_down()
+
+    def _rest_bobble_down(self) -> None:
+        is_quiet_rest = self.mode == "quiet" and self.state == "rest"
+        is_sleep_action = self.sleep_interact_active and self.state == "rest"
+        if self.dragging or (not is_quiet_rest and not is_sleep_action):
+            return
+        self.y = self.rest_base_y
+        self._place_window()
+        self._place_sleep_zzz()
+        self._schedule_rest_bobble()
+
+    def _play_sleep_interact(self) -> None:
+        if self.dragging:
+            return
+        self._interrupt_current_interaction()
+        self.sleep_interact_active = True
+        self.rest_base_y = self.y
+        self.state = "rest"
+        self._set_image(self.sprites.sleep[1])
+        self._show_sleep_zzz()
+        self._schedule_rest_bobble()
+        # 与模式睡眠一致：interrupt 后延迟再播 sleep 专用语音
+        tok = self.interaction_token
+
+        def play_sleep_voice(expected: int = tok) -> None:
+            if expected != self.interaction_token or not self.sleep_interact_active:
+                return
+            self._trigger_sleep_banter()
+
+        self.root.after(90, play_sleep_voice)
+        tok2 = self.interaction_token
+        self.sleep_interact_end_job = self.root.after(
+            SLEEP_INTERACT_MS, lambda t=tok2: self._finish_sleep_interact(t)
+        )
+
+    def _finish_sleep_interact(self, tok: int | None = None) -> None:
+        if tok is not None and tok != self.interaction_token:
+            return
+        if not self.sleep_interact_active:
+            return
+        self.sleep_interact_active = False
+        self.sleep_interact_end_job = None
+        self._stop_rest_bobble()
+        self._hide_sleep_zzz()
+        self.state = "stand"
+        self._set_image(self._current_stand_sprite())
+        self._place_window()
+        self._add_interact_mood()
+        if not self._check_mood_happy():
+            self._resume_idle()
+
+    def _start_sleep(self, forced: bool = False) -> None:
+        if self.dragging or self.state == "sleep" or self.mode == "quiet":
+            return
+        if not forced and self.state == "action":
+            return
+        self.sleep_from_interact = False
+        self.sleep_forced = forced
+        self._begin_sleep_sequence()
+        if forced:
+            self._show_toast("好累…先睡一会儿", "#8899cc", duration_ms=2000)
+
+    def _begin_sleep_sequence(self) -> None:
+        self.state = "sleep"
+        self.action_name = "sleep"
+        self.sleep_in_deep = False
+        self._hide_sleep_zzz()
+        self._set_image(self.sprites.sleep[0])
+        self._trigger_sleep_banter()
+        self.root.after(SLEEP_TRANSITION_MS, self._sleep_enter_deep)
+
+    def _sleep_enter_deep(self) -> None:
+        if self.state != "sleep":
+            return
+        self.sleep_in_deep = True
+        self.sleep_deep_end_ms = int(time.time() * 1000) + SLEEP_INTERACT_MS
+        self._set_image(self.sprites.sleep[1])
+        self._show_sleep_zzz()
+        self._sleep_deep_tick()
+
+    def _sleep_deep_tick(self) -> None:
+        if self.state != "sleep" or self.dragging:
+            return
+
+        if self.sleep_forced or self.sleep_from_interact:
+            self.stamina = min(100, self.stamina + SLEEP_STAMINA_RECOVER)
+            self._refresh_panel()
+
+        now_ms = int(time.time() * 1000)
+        interact_done = self.sleep_from_interact and now_ms >= self.sleep_deep_end_ms
+        forced_done = self.sleep_forced and self.stamina >= SLEEP_WAKE_STAMINA
+        if interact_done or forced_done:
+            self._sleep_exit_sequence()
+            return
+
+        self.root.after(SLEEP_RECOVER_MS, self._sleep_deep_tick)
+
+    def _sleep_exit_sequence(self) -> None:
+        if self.state != "sleep":
+            return
+        self._hide_sleep_zzz()
+        self.sleep_in_deep = False
+        self._set_image(self.sprites.sleep[0])
+        self.root.after(SLEEP_TRANSITION_MS, self._sleep_finish)
+
+    def _sleep_finish(self) -> None:
+        if self.state != "sleep":
+            return
+        self.state = "stand"
+        self._set_image(self.sprites.stand)
+        self._place_window()
+        if self.sleep_from_interact:
+            self._add_interact_mood()
+        self.sleep_from_interact = False
+        self.sleep_forced = False
+        if not self._check_mood_happy():
+            self._resume_idle()
+
+    def _wake_from_sleep(self) -> None:
+        if self.state != "sleep":
+            return
+        self._hide_sleep_zzz()
+        self._stop_call_audio()
+        self.sleep_in_deep = False
+        self.sleep_from_interact = False
+        self.sleep_forced = False
+        if self.mode == "quiet":
+            self.state = "rest"
+            self._set_image(self.sprites.sleep[1])
+            self._show_sleep_zzz()
+            self._schedule_rest_bobble()
+        else:
+            self.state = "stand"
+            self._set_image(self.sprites.stand)
+            self._place_window()
+            self._resume_idle()
+
+    def _hide_sleep_zzz(self) -> None:
+        if self.sleep_zzz_win and self.sleep_zzz_win.winfo_exists():
+            self.sleep_zzz_win.destroy()
+        self.sleep_zzz_win = None
+        self.sleep_zzz_canvas = None
+
+    def _draw_pixel_z(self, canvas: tk.Canvas, x: int, y: int, size: int, color: str) -> None:
+        s = size
+        canvas.create_rectangle(x, y, x + s * 2, y + s, fill=color, outline="")
+        canvas.create_rectangle(x + s, y + s, x + s * 2, y + s * 2, fill=color, outline="")
+        canvas.create_rectangle(x, y + s * 2, x + s * 2, y + s * 3, fill=color, outline="")
+
+    def _show_sleep_zzz(self) -> None:
+        self._hide_sleep_zzz()
+        pad = 20
+        size = self.display_size + pad * 2
+        self.sleep_zzz_win = tk.Toplevel(self.root)
+        self.sleep_zzz_win.overrideredirect(True)
+        self._apply_window_layer(self.sleep_zzz_win)
+        self.sleep_zzz_win.configure(bg="magenta")
+        self.sleep_zzz_win.wm_attributes("-transparentcolor", "magenta")
+        self.sleep_zzz_canvas = tk.Canvas(
+            self.sleep_zzz_win, width=size, height=size, bg="magenta", highlightthickness=0
+        )
+        self.sleep_zzz_canvas.pack()
+        self.zzz_phase = 0
+        self._place_sleep_zzz()
+        self._animate_sleep_zzz()
+
+    def _place_sleep_zzz(self) -> None:
+        if not self.sleep_zzz_win or not self.sleep_zzz_win.winfo_exists():
+            return
+        pad = 20
+        display_y = self.y + self.click_bounce_offset
+        self.sleep_zzz_win.geometry(f"+{self.x - pad}+{display_y - pad}")
+        self.root.lift()
+
+    def _should_show_zzz(self) -> bool:
+        photo = getattr(self.label, "image", None)
+        if not photo:
+            return False
+        return photo in (self.sprites.sleep[0], self.sprites.sleep[1])
+
+    def _animate_sleep_zzz(self) -> None:
+        if not self.sleep_zzz_canvas or not self._should_show_zzz():
+            self._hide_sleep_zzz()
+            return
+        canvas = self.sleep_zzz_canvas
+        canvas.delete("all")
+        size = self.display_size + 40
+        px = max(3, self.display_size // 28)
+        offset = (self.zzz_phase % 3) * max(3, px // 2)
+        colors = ("#aabbff", "#8899ee", "#6677dd")
+        self._draw_pixel_z(canvas, size - px * 9, px * 2 + offset, px, colors[0])
+        self._draw_pixel_z(canvas, size - px * 13, px * 5 + offset, max(2, px - 1), colors[1])
+        self._draw_pixel_z(canvas, size - px * 17, px * 8 + offset, max(2, px - 1), colors[2])
+        self.zzz_phase += 1
+        self._place_sleep_zzz()
+        self.root.after(SLEEP_ZZZ_MS, self._animate_sleep_zzz)
+
+    def _mood_tier_actions(self, mood: int) -> list[str]:
+        for threshold, actions in MOOD_EXPRESSION_TIERS:
+            if mood >= threshold:
+                return actions
+        return MOOD_EXPRESSION_TIERS[-1][1]
+
+    def _trigger_mood_action(self, action: str) -> None:
+        dispatch = {
+            "happy": self._play_happy,
+            "like": self._play_expression_like,
+            "wink": self._play_expression_wink,
+            "hi": lambda: self._play_action("hi"),
+            "squat": lambda: self._play_action("squat"),
+            "idea": self._play_expression_idea,
+            "question": lambda: self._play_expression("question"),
+            "sad": self._play_expression_sad,
+            "angry": self._play_expression_angry,
+        }
+        handler = dispatch.get(action)
+        if handler:
+            handler()
+
+    def _try_mood_random_expression(self) -> bool:
+        if self.mode != "free" or self.state != "stand" or self.dragging:
+            return False
+        if self.mood >= MOOD_LOW_THRESHOLD:
+            return False
+        if random.random() >= MOOD_RANDOM_CHANCE:
+            return False
+        actions = self._mood_tier_actions(self.mood)
+        before = self.action_name
+        self._trigger_mood_action(random.choice(actions))
+        return self.state == "action" and self.action_name != before
+
+    def _try_free_random_action(self) -> bool:
+        if self.mode != "free" or self.state != "stand" or self.dragging:
+            return False
+        if random.random() >= FREE_RANDOM_ACTION_CHANCE:
+            return False
+        # 自由模式不随机 wink；菜单手动 wink 仍可用
+        pool = [
+            lambda: self._play_action("hi"),
+            lambda: self._play_action("squat"),
+            self._play_expression_like,
+            lambda: self._play_expression("question"),
+        ]
+        before = self.action_name
+        random.choice(pool)()
+        return self.state == "action" and self.action_name != before
+
+    def _stand_tick(self) -> None:
+        if self.dragging or not self._supports_walk_idle() or self.state == "work":
+            return
+        if self._startup_busy() or self.mode == "loading":
+            self._show_startup_still()
+            return
+
+        self.state = "stand"
+        self._set_image(self._current_stand_sprite())
+        # 语音/表情可与闲逛并行：即使触发了随机内容，也要继续排程走路，避免站死
+        triggered = False
+        if self.mode == "free":
+            if self._try_mood_random_expression():
+                triggered = True
+            elif self._try_voice_free_random():
+                triggered = True
+            elif self._try_voice_error_random():
+                triggered = True
+            elif self._try_free_random_action():
+                triggered = True
+        if triggered and self.state != "stand":
+            # 已进入 action：结束回调会 _resume_idle；此处不再抢排程
+            return
+        # 漫步缩短站立；音乐漫步反而多停一会儿，边听边慢慢走
+        if getattr(self, "music_sprite_mode", False):
+            self._schedule_stand_idle(min_delay=700, max_delay=2000)
+        elif self.mode == "stroll":
+            self._schedule_stand_idle(min_delay=280, max_delay=900)
+        elif triggered:
+            self._schedule_stand_idle(min_delay=700, max_delay=2000)
+        else:
+            self._schedule_stand_idle(min_delay=450, max_delay=1400)
+
+    def _idle_to_walk(self, tok: int) -> None:
+        self.idle_job = None
+        if tok != self.interaction_token:
+            if self._supports_walk_idle() and self.state == "stand" and not self.dragging:
+                self._schedule_stand_idle(min_delay=300, max_delay=800)
+            return
+        self._start_walk()
+
+    def _start_walk(self) -> None:
+        if self.dragging or not self._supports_walk_idle() or self.state != "stand":
+            return
+
+        self.state = "walk"
+        self._reset_walk_turn_tracker()
+        self.direction = random.choice(self.DIRECTIONS)
+        self.walk_frame = 0
+        if getattr(self, "music_sprite_mode", False):
+            self.walk_steps_left = random.randint(40, 100)
+        else:
+            self.walk_steps_left = random.randint(70, 180)
+        self._walk_move_ts = time.perf_counter()
+        self._walk_move()
+        self._walk_animate()
+
+    def _walk_frame_ms(self) -> int:
+        if getattr(self, "music_sprite_mode", False):
+            return MUSIC_WALK_FRAME_MS
+        return WALK_FRAME_MS
+
+    def _walk_move_interval_ms(self) -> int:
+        if getattr(self, "music_sprite_mode", False):
+            return MUSIC_MOVE_INTERVAL_MS
+        return MOVE_INTERVAL_MS
+
+    def _walk_animate(self) -> None:
+        if self.state != "walk" or self.dragging or not self._supports_walk_idle():
+            return
+
+        frames = self._walk_sprites[self.direction]
+        self._set_image(frames[self.walk_frame % 2])
+        self.walk_frame += 1
+        tok = self.interaction_token
+        self.walk_anim_job = self.root.after(
+            self._walk_frame_ms(), lambda t=tok: self._walk_animate_guarded(t)
+        )
+
+    def _walk_animate_guarded(self, tok: int) -> None:
+        self.walk_anim_job = None
+        if tok != self.interaction_token:
+            if self.state == "walk" and self._supports_walk_idle() and not self.dragging:
+                self._stand_tick()
+            return
+        self._walk_animate()
+
+    def _walk_inbounds(self, x: int, y: int, screen_w: int, screen_h: int) -> bool:
+        return (
+            x >= 0
+            and y >= 0
+            and x + self.display_size <= screen_w
+            and y + self.display_size <= screen_h
+        )
+
+    def _walk_pick_inbound_direction(self, screen_w: int, screen_h: int) -> str | None:
+        """撞边时改向，优先非当前方向且仍在屏内。"""
+        candidates: list[str] = []
+        for d in self.DIRECTIONS:
+            dx, dy = self.DELTAS[d]
+            if self._walk_inbounds(self.x + dx, self.y + dy, screen_w, screen_h):
+                candidates.append(d)
+        if not candidates:
+            return None
+        others = [d for d in candidates if d != self.direction]
+        return random.choice(others or candidates)
+
+    def _walk_step_once(self, screen_w: int, screen_h: int) -> bool:
+        """走一步；成功 True，需结束本段走路 False。"""
+        if self.walk_steps_left <= 0:
+            return False
+        dx, dy = self.DELTAS[self.direction]
+        next_x = self.x + dx
+        next_y = self.y + dy
+        if not self._walk_inbounds(next_x, next_y, screen_w, screen_h):
+            new_dir = self._walk_pick_inbound_direction(screen_w, screen_h)
+            if not new_dir:
+                return False
+            allowed = self._apply_walk_direction(new_dir)
+            dx, dy = self.DELTAS[allowed]
+            next_x = self.x + dx
+            next_y = self.y + dy
+            if not self._walk_inbounds(next_x, next_y, screen_w, screen_h):
+                # 连续转向被锁后仍会撞边：结束本段，避免原地抽搐改向
+                return False
+            # 改向后续走一段，避免贴边反复站死
+            if getattr(self, "music_sprite_mode", False):
+                self.walk_steps_left = max(self.walk_steps_left, random.randint(24, 60))
+            else:
+                self.walk_steps_left = max(self.walk_steps_left, random.randint(40, 100))
+        self.x = next_x
+        self.y = next_y
+        if self.walk_steps_left % 24 == 0:
+            self._try_voice_walk()
+        self.walk_steps_left -= 1
+        return True
+
+    def _walk_move(self) -> None:
+        if self.state != "walk" or self.dragging or not self._supports_walk_idle():
+            # 半途失效时清状态，交给看门狗/stand 恢复
+            if self.state == "walk" and (self.dragging or not self._supports_walk_idle()):
+                self.state = "stand"
+                try:
+                    self._set_image(self._current_stand_sprite())
+                except Exception:
+                    pass
+            return
+
+        if self.walk_steps_left <= 0:
+            self._stand_tick()
+            return
+
+        screen_w, screen_h = self._screen_wh()
+        now = time.perf_counter()
+        last = getattr(self, "_walk_move_ts", None)
+        self._walk_move_ts = now
+        interval = self._walk_move_interval_ms()
+        # after 迟到时一次补多步，减轻「定住再挪」
+        steps = 1
+        if last is not None:
+            elapsed_ms = (now - last) * 1000.0
+            if elapsed_ms > interval * 1.7:
+                # 半速步长下补步上限收紧；音乐模式更严，避免卡顿一次冲很远
+                cap = 2 if getattr(self, "music_sprite_mode", False) else 3
+                steps = min(cap, max(1, int(elapsed_ms / interval)))
+
+        for _ in range(steps):
+            if not self._walk_step_once(screen_w, screen_h):
+                self._stand_tick()
+                return
+
+        self._place_window(light=True)
+        tok = self.interaction_token
+        self.walk_move_job = self.root.after(
+            interval, lambda t=tok: self._walk_move_guarded(t)
+        )
+
+    def _walk_move_guarded(self, tok: int) -> None:
+        self.walk_move_job = None
+        if tok != self.interaction_token:
+            if self.state == "walk" and self._supports_walk_idle() and not self.dragging:
+                self._stand_tick()
+            return
+        self._walk_move()
+
+    def _setup_game_overlay(self) -> None:
+        pass
+
+    def _game_apply_time_delta(self, delta_ms: int) -> None:
+        self.game_start_ms += int(delta_ms)
+        left = self._game_time_left_ms()
+        if left <= 0:
+            self._finish_game()
+            return
+        sign = "+" if delta_ms > 0 else ""
+        sec = abs(delta_ms) // 1000
+        self._show_toast(f"时间 {sign}{sec}s", "#88ccff" if delta_ms > 0 else "#ff8844", duration_ms=900)
+        self._update_game_hud()
+
+    def _game_handle_special_catch(self, kind: str) -> None:
+        if kind == "time_plus":
+            self._game_apply_time_delta(GAME_TIME_ITEM_DELTA_MS)
+        elif kind == "time_minus":
+            self._game_apply_time_delta(-GAME_TIME_ITEM_DELTA_MS)
+        elif kind == "dizzy":
+            self._start_game_dizzy_stun()
+
+    def _get_game_drop_photo(self, kind: str, food_id: str | None, size: int) -> ImageTk.PhotoImage:
+        return _game_drop_photo(self.root, kind, food_id, size)
+
+    def _prewarm_game_drop_photos(self) -> None:
+        if getattr(self, "_game_drop_photos_ready", False):
+            return
+        size = GAME_BOX_SIZE
+        try:
+            for fid in FOODS:
+                _game_drop_photo(self.root, "food", fid, size)
+            for sk in ("time_plus", "time_minus", "dizzy"):
+                _game_drop_photo(self.root, sk, None, size)
+            self._game_drop_photos_ready = True
+        except Exception:
+            pass
+
+    def _game_spawn_box(self) -> None:
+        if self.mode != "game" or self.state == "work" or self._game_time_left_ms() <= 0:
+            return
+        sw = self.root.winfo_screenwidth()
+        margin = GAME_BOX_SIZE
+        bx = random.randint(margin, max(margin, sw - margin))
+        kind, food_id = _pick_game_drop_kind()
+        size = GAME_BOX_SIZE
+        photo = self._get_game_drop_photo(kind, food_id, size)
+        win = self._make_chroma_prop_window(photo, bx, -GAME_BOX_SIZE, click_through=True)
+        base = max(2, float(self._game_box_speed))
+        speed = base * random.uniform(GAME_BOX_SPEED_MIN_MULT, GAME_BOX_SPEED_MAX_MULT)
+        self.game_boxes.append(
+            {
+                "x": bx,
+                "y": -GAME_BOX_SIZE,
+                "win": win,
+                "kind": kind,
+                "food_id": food_id,
+                "speed": speed,
+            }
+        )
+        self.game_spawn_job = self.root.after(self._game_spawn_ms, self._game_spawn_box)
+        self._stack_game_drops_visible()
+
+    def _stack_game_drops_visible(self) -> None:
+        """下落物抬到桌宠后同层可见。热路径只 lift，禁止每帧重设色键/点透（会闪粉）。"""
+        for box in list(getattr(self, "game_boxes", []) or []):
+            win = box.get("win") if isinstance(box, dict) else None
+            try:
+                if win is None or not win.winfo_exists():
+                    continue
+                win.lift()
+            except Exception:
+                pass
+        try:
+            self.root.lift()
+        except Exception:
+            pass
+        if self.game_hud_win and self.game_hud_win.winfo_exists():
+            try:
+                self.game_hud_win.lift()
+            except Exception:
+                pass
+
+    def _game_tick(self) -> None:
+        if self.mode != "game" or self.state == "work":
+            return
+
+        if self._game_time_left_ms() <= 0:
+            self._finish_game()
+            return
+
+        if not self.game_dizzy and not self.dragging:
+            mx = self.root.winfo_pointerx()
+            my = self.root.winfo_pointery()
+            self.x = mx - self.display_size // 2
+            self.y = my - self.display_size // 2
+            self._clamp_position()
+            # light：避免每帧整套特效重排；下落物单独保可见
+            self._place_window(light=True)
+        self._stack_game_drops_visible()
+        self._update_game_hud()
+
+        sh = self.root.winfo_screenheight()
+        pet_cx = self.x + self.display_size // 2
+        pet_cy = self.y + self.display_size // 2
+        remaining: list[dict] = []
+        near_food = False
+
+        for box in self.game_boxes:
+            win = box.get("win")
+            kind = box.get("kind", "food")
+            if not win or not win.winfo_exists():
+                # 窗口异常消失：食物记错过，避免无结算/无失败语音
+                if kind == "food":
+                    self.game_misses += 1
+                    self.game_score = max(0, self.game_score - GAME_PENALTY_MISS)
+                continue
+            box["y"] += float(box.get("speed", self._game_box_speed))
+            win.geometry(f"+{int(box['x'])}+{int(box['y'])}")
+            box_cx = box["x"] + GAME_BOX_SIZE // 2
+            box_cy = box["y"] + GAME_BOX_SIZE // 2
+            dist = math.hypot(box_cx - pet_cx, box_cy - pet_cy)
+            if kind == "food" and dist < GAME_NEAR_DIST:
+                near_food = True
+            if dist < self._game_catch_dist:
+                if win.winfo_exists():
+                    win.destroy()
+                if kind == "food":
+                    food_id = box.get("food_id") or random.choice(list(FOODS.keys()))
+                    self._add_food_to_inventory(food_id)
+                    self.game_catches += 1
+                    self.game_score += GAME_SCORE_PER_CATCH
+                    if self.game_catches % 5 == 0:
+                        self.mood = min(100, self.mood + 1)
+                        self._refresh_panel()
+                else:
+                    self._game_handle_special_catch(kind)
+                continue
+            if box["y"] > sh + GAME_BOX_SIZE:
+                win.destroy()
+                if kind == "food":
+                    self.game_misses += 1
+                    self.game_score = max(0, self.game_score - GAME_PENALTY_MISS)
+                continue
+            remaining.append(box)
+
+        self.game_boxes = remaining
+        self.game_near_food = near_food
+        if self.game_dizzy:
+            self._set_image(self.sprites.stand)
+        else:
+            self._set_image(self.sprites.happy if near_food else self.sprites.stand)
+        self.game_tick_job = self.root.after(GAME_TICK_MS, self._game_tick)
+
+    def _open_work_menu(self) -> None:
+        self._show_sub_menu(
+            [
+                ("自由", self._start_work_free),
+                ("自定义", self._open_work_custom_dialog),
+            ],
+            offset_x=240,
+        )
+
+    def _close_work_custom_dialog(self) -> None:
+        if self.work_custom_win and self.work_custom_win.winfo_exists():
+            self.work_custom_win.destroy()
+        self.work_custom_win = None
+
+    def _open_work_custom_dialog(self) -> None:
+        self._hide_main_menu()
+        if self.dragging or self.state in ("work", "sleep"):
+            return
+        self._close_work_custom_dialog()
+        win = tk.Toplevel(self.root)
+        self.work_custom_win = win
+        win.title("自定义工作")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        win.protocol("WM_DELETE_WINDOW", self._close_work_custom_dialog)
+
+        frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
+        frame.pack()
+        tk.Label(frame, text="自定义运送货物", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+        tk.Label(
+            frame,
+            text=f"货物数 {WORK_TOTAL_SETTING_MIN}–{WORK_TOTAL_SETTING_MAX}；起点随机，终点可拖动（中途也能改）",
+            font=PIXEL_FONT,
+            fg="#aaaaaa",
+            bg=MENU_BG,
+            wraplength=260,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(4, 6))
+        entry_row = tk.Frame(frame, bg=MENU_BG)
+        entry_row.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(entry_row, text="货物数", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        entry = tk.Entry(entry_row, width=8, font=PIXEL_FONT)
+        entry.pack(side=tk.LEFT, padx=(8, 0))
+        entry.insert(0, str(WORK_BOX_TOTAL_DEFAULT))
+
+        def confirm() -> None:
+            raw = entry.get().strip()
+            try:
+                total = int(raw)
+            except ValueError:
+                self._show_toast("请输入有效货物数", "#ff4444")
+                return
+            total = max(WORK_TOTAL_SETTING_MIN, min(WORK_TOTAL_SETTING_MAX, total))
+            self._close_work_custom_dialog()
+            self._start_work_impl(total, flag_movable=True, kind="custom")
+
+        tk.Button(frame, text="开始", command=confirm, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(anchor=tk.E)
+        entry.bind("<Return>", lambda _e: confirm())
+        entry.focus_set()
+        self._place_panel_popup(win)
+
+    def _start_work_free(self) -> None:
+        self._hide_main_menu()
+        total = random.randint(WORK_TOTAL_MIN, WORK_TOTAL_MAX)
+        # 自由：数量/起点/终点均随机；终点旗可拖，便于调整堆积
+        self._start_work_impl(total, flag_movable=True, kind="free")
+
+    def _start_work_impl(
+        self,
+        total: int,
+        *,
+        flag_movable: bool,
+        continuous: bool = False,
+        kind: str = "free",
+    ) -> None:
+        if self.dragging or self.state in ("work", "sleep"):
+            return
+        self._ensure_mode_exclusive_cleanup("work")
+        self._interrupt_current_interaction()
+        if self.mode == "game":
+            self._stop_game_mode()
+            self.mode = "free"
+
+        self._hide_main_menu()
+        if not continuous:
+            self._interact_flair("work", banter=True)
+
+        margin = 80
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        max_x = max(margin, sw - self.display_size - margin)
+        max_y = max(margin, sh - self.display_size - margin)
+
+        self.work_start_x = random.randint(margin, max_x)
+        self.work_start_y = random.randint(margin, max_y)
+        start_cx = self.work_start_x + self.display_size // 2
+        start_cy = self.work_start_y + self.display_size // 2
+        best_end: tuple[float, int, int] | None = None
+        for _ in range(50):
+            end_x = random.randint(margin, max_x)
+            end_y = random.randint(margin, max_y)
+            dist = math.hypot(
+                end_x + self.display_size // 2 - start_cx,
+                end_y + self.display_size // 2 - start_cy,
+            )
+            if dist >= WORK_MIN_SPAN_DIST and (best_end is None or dist > best_end[0]):
+                best_end = (dist, end_x, end_y)
+        if best_end is not None:
+            self.work_end_x, self.work_end_y = best_end[1], best_end[2]
+        else:
+            self.work_end_x = margin if self.work_start_x > (margin + max_x) // 2 else max_x
+            self.work_end_y = margin if self.work_start_y > (margin + max_y) // 2 else max_y
+
+        self.work_continuous = continuous
+        self.work_total = max(WORK_TOTAL_SETTING_MIN, min(WORK_TOTAL_SETTING_MAX, int(total)))
+        self.work_flag_movable = bool(flag_movable)
+        self.work_delivered = 0
+        self.work_stack = 0
+        self.work_local_stack = 0
+        self._clear_work_anchored_boxes()
+        self.work_boxes_since_banter = 0
+        self.work_banter_last_ms = 0
+        self.work_voice_steps = 0
+        self.work_has_start_box = True
+        self.work_carrying = False
+        self.work_phase = "to_start"
+        self.work_use_work_sprites = False
+        self.work_flag_dragging = False
+
+        self.state = "work"
+        self.walk_frame = 0
+        self.x = self.work_start_x
+        self.y = self.work_start_y
+        self._set_image(self.sprites.work_stand)
+        self._place_window()
+        self._sync_work_overlay()
+        if continuous or kind == "continuous":
+            tip = "工作模式：搬走再生，持续运送；可拖终点旗；点「结束」停止"
+            self._show_toast(tip, PIXEL_COLOR, duration_ms=2800)
+        elif kind == "custom":
+            self._show_toast(
+                f"自定义运送：{self.work_total} 箱（搬走再生，搬完结束）",
+                PIXEL_COLOR,
+                duration_ms=2400,
+            )
+        else:
+            self._show_toast(
+                f"自由运送：{self.work_total} 箱（搬走再生，搬完结束）",
+                PIXEL_COLOR,
+                duration_ms=2400,
+            )
+        self._work_move_step()
+        if not self.work_animating:
+            self.work_animating = True
+            self._work_animate()
+
+    def _maybe_work_mode_banter(self, *, force: bool = False) -> None:
+        if not self.work_continuous and not force:
+            return
+        if self.state != "work":
+            return
+        now_ms = int(time.time() * 1000)
+        if self.work_banter_last_ms and now_ms - self.work_banter_last_ms < WORK_MODE_BANTER_COOLDOWN_MS:
+            return
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            return
+        self.work_banter_last_ms = int(time.time() * 1000)
+        self._trigger_work_banter()
+
+    def _schedule_work_mode_banter(self) -> None:
+        if self.work_encourage_job:
+            try:
+                self.root.after_cancel(self.work_encourage_job)
+            except Exception:
+                pass
+            self.work_encourage_job = None
+        if not self.work_continuous:
+            return
+        lo, hi = WORK_MODE_BANTER_INTERVAL_MS
+        delay = max(WORK_MODE_BANTER_COOLDOWN_MS, random.randint(lo, hi))
+
+        def tick() -> None:
+            self.work_encourage_job = None
+            if self.mode == "work" and self.state == "work":
+                self._maybe_work_mode_banter(force=True)
+                self._schedule_work_mode_banter()
+
+        self.work_encourage_job = self.root.after(delay, tick)
+
+    def _work_overlay_should_show(self) -> bool:
+        return self.state == "work"
+
+    @staticmethod
+    def _work_stack_ring_positions(ring: int) -> list[tuple[int, int]]:
+        """旗脚周围一环：只取左右与下方（dy≥0），避免箱子盖住旗面。"""
+        positions: list[tuple[int, int]] = []
+        for dx in range(-ring, ring + 1):
+            for dy in range(0, ring + 1):
+                if dx == 0 and dy == 0:
+                    continue
+                if max(abs(dx), dy) != ring:
+                    continue
+                positions.append((dx, dy))
+        # 先两侧，再往下铺，堆积更自然
+        positions.sort(key=lambda p: (p[1], abs(p[0])))
+        return positions
+
+    def _work_stack_offsets(self, count: int) -> list[tuple[int, int]]:
+        if count <= 0:
+            return []
+        positions: list[tuple[int, int]] = []
+        ring = 1
+        while len(positions) < count:
+            for pos in self._work_stack_ring_positions(ring):
+                positions.append(pos)
+                if len(positions) >= count:
+                    return positions
+            ring += 1
+        return positions
+
+    def _work_stack_canvas_size(self, stack_count: int) -> tuple[int, int]:
+        pad = 40
+        step = WORK_STACK_OFFSET
+        offsets = self._work_stack_offsets(stack_count)
+        max_dx = max((abs(dx) for dx, _ in offsets), default=0)
+        max_dy_down = max((dy for _, dy in offsets if dy > 0), default=0)
+        width = pad * 2 + WORK_PROP_SIZE + max_dx * step * 2
+        height = pad * 2 + WORK_PROP_SIZE + max_dy_down * step
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        width = min(width, max(WORK_PROP_SIZE + pad * 2, sw - 16))
+        height = min(height, max(WORK_PROP_SIZE + pad * 2, sh - 16))
+        return width, height
+
+    def _work_box_xy(
+        self, index: int, offsets: list[tuple[int, int]], pad: int, canvas_w: int, canvas_h: int
+    ) -> tuple[int, int]:
+        flag_x = canvas_w // 2
+        flag_y = canvas_h - pad
+        dx, dy = offsets[index]
+        step = WORK_STACK_OFFSET
+        return flag_x + dx * step, flag_y + dy * step
+
+    def _stack_work_props_under_pet(self) -> None:
+        """箱在旗下、旗在箱上、桌宠最上。热路径只 lift + 必要时点透，禁止折腾色键。"""
+        # 拖旗中：旗必须保持最前，否则 Motion 被桌宠抢走
+        if self.work_flag_dragging:
+            if self.work_overlay and self.work_overlay.winfo_exists():
+                try:
+                    self.work_overlay.lift()
+                    self._win32_set_click_through(self.work_overlay, False)
+                except Exception:
+                    pass
+            if self.work_end_btn_win and self.work_end_btn_win.winfo_exists():
+                try:
+                    self.work_end_btn_win.lift()
+                except Exception:
+                    pass
+            return
+        # 1) 货物箱（起点 + 终点堆）
+        box_wins: list[tk.Misc] = []
+        for attr in ("work_start_box_win",):
+            win = getattr(self, attr, None)
+            if win is not None:
+                box_wins.append(win)
+        box_wins.extend(list(getattr(self, "work_anchored_box_wins", []) or []))
+        for win in box_wins:
+            try:
+                if not win.winfo_exists():
+                    continue
+                win.lift()
+                self._win32_set_click_through(win, True)
+            except Exception:
+                pass
+        # 2) 终点旗：必须在堆箱之上，才能拖旗且不被挡住
+        if self.work_overlay and self.work_overlay.winfo_exists():
+            try:
+                self.work_overlay.lift()
+                self._win32_set_click_through(
+                    self.work_overlay, not bool(self.work_flag_movable)
+                )
+            except Exception:
+                pass
+        # 3) 桌宠立绘优先可拖
+        try:
+            self.root.lift()
+        except Exception:
+            pass
+        # 「结束」按钮需可点，保持在前
+        if self.work_end_btn_win and self.work_end_btn_win.winfo_exists():
+            try:
+                self.work_end_btn_win.lift()
+            except Exception:
+                pass
+
+    def _hide_work_end_button(self) -> None:
+        if self.work_end_btn_win and self.work_end_btn_win.winfo_exists():
+            self.work_end_btn_win.destroy()
+        self.work_end_btn_win = None
+
+    def _end_continuous_work(self) -> None:
+        self._enable_free()
+
+    def _sync_work_end_button(self, overlay_x: int, overlay_y: int, flag_x: int, flag_y: int) -> None:
+        if not (self.work_continuous and self.state == "work"):
+            self._hide_work_end_button()
+            return
+        if not self.work_end_btn_win or not self.work_end_btn_win.winfo_exists():
+            self.work_end_btn_win = tk.Toplevel(self.root)
+            self.work_end_btn_win.overrideredirect(True)
+            self._apply_window_layer(self.work_end_btn_win)
+            self.work_end_btn_win.configure(bg=MENU_BG)
+            tk.Button(
+                self.work_end_btn_win,
+                text="结束",
+                command=self._end_continuous_work,
+                font=PIXEL_FONT,
+                bg="#664444",
+                fg=MENU_FG,
+                relief=tk.FLAT,
+                padx=6,
+                pady=2,
+                cursor="hand2",
+            ).pack()
+        btn_x = overlay_x + flag_x + WORK_PROP_SIZE // 2 + 8
+        btn_y = overlay_y + flag_y - 28
+        self.work_end_btn_win.geometry(f"+{btn_x}+{btn_y}")
+
+    def _bind_work_flag_drag(self) -> None:
+        """旗图是 Label，事件不会冒泡到 Frame——必须绑到 overlay/canvas/子控件。"""
+        targets: list[tk.Misc] = []
+        for w in (self.work_overlay, self.work_canvas):
+            if w is not None:
+                try:
+                    if w.winfo_exists():
+                        targets.append(w)
+                except Exception:
+                    pass
+        if self.work_canvas is not None:
+            try:
+                targets.extend(list(self.work_canvas.winfo_children()))
+            except Exception:
+                pass
+        for w in targets:
+            try:
+                w.bind("<ButtonPress-1>", self._work_flag_press)
+                w.bind("<B1-Motion>", self._work_flag_motion)
+                w.bind("<ButtonRelease-1>", self._work_flag_release)
+            except Exception:
+                pass
+
+    def _unbind_work_flag_drag(self) -> None:
+        targets: list[tk.Misc] = []
+        for w in (self.work_overlay, self.work_canvas):
+            if w is not None:
+                targets.append(w)
+        if self.work_canvas is not None:
+            try:
+                targets.extend(list(self.work_canvas.winfo_children()))
+            except Exception:
+                pass
+        for w in targets:
+            try:
+                w.unbind("<ButtonPress-1>")
+                w.unbind("<B1-Motion>")
+                w.unbind("<ButtonRelease-1>")
+            except Exception:
+                pass
+        self.work_flag_dragging = False
+
+    def _work_flag_press(self, event: tk.Event) -> None:
+        if self.state != "work" or not self.work_flag_movable:
+            return
+        self.work_flag_dragging = True
+        self.work_flag_drag_origin = (event.x_root, event.y_root, self.work_end_x, self.work_end_y)
+        # 拖旗时抬到桌宠前，否则点不到 / Motion 被吃掉
+        try:
+            if self.work_overlay and self.work_overlay.winfo_exists():
+                self.work_overlay.lift()
+                self._win32_set_click_through(self.work_overlay, False)
+        except Exception:
+            pass
+
+    def _work_flag_motion(self, event: tk.Event) -> None:
+        if not self.work_flag_dragging or self.state != "work" or not self.work_flag_movable:
+            return
+        ox, oy, ex, ey = self.work_flag_drag_origin
+        dx = event.x_root - ox
+        dy = event.y_root - oy
+        margin = 80
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        max_x = max(margin, sw - self.display_size - margin)
+        max_y = max(margin, sh - self.display_size - margin)
+        self.work_end_x = max(margin, min(max_x, ex + dx))
+        self.work_end_y = max(margin, min(max_y, ey + dy))
+        # 拖动中只改 geometry，禁止重建子控件（否则会丢 B1-Motion）
+        self._move_work_overlay_only()
+
+    def _work_flag_release(self, _event: tk.Event | None = None) -> None:
+        was_dragging = self.work_flag_dragging
+        self.work_flag_dragging = False
+        if was_dragging and self.state == "work":
+            # 旗子挪走后，新送达的箱子从新位置重新堆起；已送达的留在原位
+            self.work_local_stack = 0
+            self._refresh_work_overlay()
+            self._stack_work_props_under_pet()
+
+    def _move_work_overlay_only(self) -> None:
+        if not self.work_overlay or not self.work_overlay.winfo_exists():
+            return
+        flag_x = int(getattr(self, "_work_flag_local_x", 0) or 0)
+        height = int(getattr(self, "_work_flag_overlay_h", 0) or 0)
+        pad = int(getattr(self, "_work_flag_pad", 8) or 8)
+        if height <= 0:
+            try:
+                height = max(1, int(self.work_overlay.winfo_height()))
+            except Exception:
+                return
+        if flag_x <= 0:
+            try:
+                flag_x = max(1, int(self.work_overlay.winfo_width()) // 2)
+            except Exception:
+                flag_x = 32
+        overlay_x = self.work_end_x + self.display_size // 2 - flag_x
+        overlay_y = self.work_end_y - height + pad
+        flag_y = height - pad
+        try:
+            self.work_overlay.geometry(f"+{overlay_x}+{overlay_y}")
+            self._sync_work_end_button(overlay_x, overlay_y, flag_x, flag_y)
+        except Exception:
+            pass
+
+    def _work_flag_button_down(self) -> bool:
+        if sys.platform != "win32":
+            return self.work_flag_dragging
+        try:
+            return bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)
+        except Exception:
+            return self.work_flag_dragging
+
+    def _sync_work_overlay(self) -> None:
+        if not self._work_overlay_should_show():
+            self._hide_work_overlay()
+            self._update_work_start_box()
+            return
+        show_flag = bool(self._work_mode_config().get("show_props", True))
+        if not show_flag:
+            # 关「显示目的地」：隐藏旗，但仍刷新起点货物与状态
+            if self.work_overlay and self.work_overlay.winfo_exists():
+                self._unbind_work_flag_drag()
+                try:
+                    self.work_overlay.withdraw()
+                except Exception:
+                    pass
+            self._update_work_start_box()
+            if self.work_continuous and self.state == "work":
+                # 结束按钮仍钉在终点附近
+                fx = self.work_end_x + self.display_size // 2
+                fy = self.work_end_y
+                self._sync_work_end_button(fx - 40, fy - 80, 40, 80)
+            else:
+                self._hide_work_end_button()
+            return
+        if not self.work_overlay or not self.work_overlay.winfo_exists():
+            self._show_work_overlay()
+            return
+        try:
+            self.work_overlay.deiconify()
+        except Exception:
+            pass
+        self._refresh_work_overlay()
+
+    def _hide_work_overlay(self) -> None:
+        self._unbind_work_flag_drag()
+        self._hide_work_end_button()
+        if self.work_overlay and self.work_overlay.winfo_exists():
+            self.work_overlay.destroy()
+        self.work_overlay = None
+        self.work_canvas = None
+        self.work_flag_dragging = False
+
+    def _show_work_overlay(self) -> None:
+        if not bool(self._work_mode_config().get("show_props", True)):
+            self._update_work_start_box()
+            return
+        movable = self.work_flag_movable
+        self._hide_work_overlay()
+        self.work_flag_movable = movable
+        width, height = self._work_stack_canvas_size(0)
+        self.work_overlay = tk.Toplevel(self.root)
+        self.work_overlay.withdraw()
+        self.work_overlay.overrideredirect(True)
+        self.work_overlay.configure(bg=WORK_CHROMA_NAME)
+        self.work_overlay.wm_attributes("-transparentcolor", WORK_CHROMA_NAME)
+        self.work_overlay.geometry(f"{width}x{height}+0+0")
+        self.work_canvas = tk.Frame(
+            self.work_overlay,
+            bg=WORK_CHROMA_NAME,
+            width=width,
+            height=height,
+            highlightthickness=0,
+        )
+        self.work_canvas.pack_propagate(False)
+        self.work_canvas.place(x=0, y=0, width=width, height=height)
+        self._apply_window_layer(self.work_overlay)
+        if self.work_flag_movable:
+            self._bind_work_flag_drag()
+            self._win32_set_click_through(self.work_overlay, False)
+        else:
+            self._unbind_work_flag_drag()
+            self._win32_set_click_through(self.work_overlay, True)
+        self._refresh_work_overlay()
+        try:
+            self.work_overlay.deiconify()
+        except Exception:
+            pass
+        self._stack_work_props_under_pet()
+
+    def _clear_work_anchored_boxes(self) -> None:
+        for win in self.work_anchored_box_wins:
+            try:
+                if win.winfo_exists():
+                    win.destroy()
+            except Exception:
+                pass
+        self.work_anchored_box_wins = []
+        self.work_local_stack = 0
+
+    def _spawn_work_anchored_box(self) -> None:
+        """送到终点后在旗脚周围钉住一箱（不盖旗）；拖旗后新箱从新旗脚堆起。"""
+        # 显示运送货物：终点堆箱
+        if not self._work_mode_config().get("show_stack", True):
+            return
+        idx = self.work_local_stack
+        offsets = self._work_stack_offsets(idx + 1)
+        dx, dy = offsets[idx]
+        step = WORK_STACK_OFFSET
+        # 旗脚屏幕坐标（与旗图 anchor=S 对齐）
+        flag_sx = self.work_end_x + self.display_size // 2
+        flag_sy = self.work_end_y
+        box_sx = flag_sx + dx * step
+        box_sy = flag_sy + dy * step
+        photo = self.sprites.box_img
+        win = self._make_chroma_prop_window(
+            photo, int(box_sx), int(box_sy), click_through=True, anchor_s=True
+        )
+        self.work_anchored_box_wins.append(win)
+        self.work_local_stack += 1
+        self._stack_work_props_under_pet()
+
+    def _refresh_work_overlay(self) -> None:
+        if not bool(self._work_mode_config().get("show_props", True)):
+            self._sync_work_overlay()
+            return
+        if not self.work_canvas or not self.work_overlay:
+            return
+        try:
+            self.work_overlay.deiconify()
+        except Exception:
+            pass
+        # 拖动中只平移，不重建（重建会丢掉 Label 上的 B1-Motion）
+        if self.work_flag_dragging:
+            self._move_work_overlay_only()
+            return
+        pad = 4
+        photo = self.sprites.flag_img
+        pw = max(1, int(photo.width()))
+        ph = max(1, int(photo.height()))
+        label_h = 18
+        width = max(pw + pad * 2, 72)
+        height = ph + label_h + pad * 2
+        flag_x = width // 2
+        flag_y = height - pad
+        self._work_flag_local_x = flag_x
+        self._work_flag_overlay_h = height
+        self._work_flag_pad = pad
+
+        for w in self.work_canvas.winfo_children():
+            w.destroy()
+        overlay_x = self.work_end_x + self.display_size // 2 - flag_x
+        overlay_y = self.work_end_y - height + pad
+        self.work_overlay.configure(bg=WORK_CHROMA_NAME)
+        try:
+            cur = str(self.work_overlay.wm_attributes("-transparentcolor") or "")
+            if cur != WORK_CHROMA_NAME:
+                self.work_overlay.wm_attributes("-transparentcolor", WORK_CHROMA_NAME)
+        except Exception:
+            pass
+        self.work_overlay.geometry(f"{width}x{height}+{overlay_x}+{overlay_y}")
+        self.work_canvas.pack_propagate(False)
+        self.work_canvas.configure(width=width, height=height, bg=WORK_CHROMA_NAME)
+        self.work_canvas.place(x=0, y=0, width=width, height=height)
+        lbl = tk.Label(self.work_canvas, image=photo, bg=WORK_CHROMA_NAME, bd=0)
+        lbl.image = photo
+        lbl.place(x=flag_x, y=flag_y, anchor=tk.S)
+        label = "终点（可拖）" if self.work_flag_movable else "终点"
+        tk.Label(
+            self.work_canvas,
+            text=label,
+            font=PIXEL_FONT,
+            fg="#ffee88",
+            bg=WORK_CHROMA_NAME,
+        ).place(x=flag_x, y=flag_y - ph - 2, anchor=tk.S)
+
+        self._sync_work_end_button(overlay_x, overlay_y, flag_x, flag_y)
+        self._update_work_start_box()
+        try:
+            self.work_overlay.update_idletasks()
+        except Exception:
+            pass
+        if self.work_flag_movable:
+            self._bind_work_flag_drag()
+            self._win32_set_click_through(self.work_overlay, False)
+        else:
+            self._unbind_work_flag_drag()
+            self._win32_set_click_through(self.work_overlay, True)
+        if not self.work_flag_dragging:
+            self._stack_work_props_under_pet()
+
+    def _work_should_keep_start_box(self) -> bool:
+        """搬走当前箱后是否还要在起点再生成一箱。"""
+        if self.work_continuous:
+            return True
+        # 手上这箱送达后仍未达总量 → 起点应留下一箱
+        carrying = 1 if self.work_carrying else 0
+        return (self.work_delivered + carrying) < self.work_total
+
+    def _update_work_start_box(self) -> None:
+        # 显示运送货物：起点待运箱（搬走后可立即再生成；与终点堆箱同一开关）
+        show_cargo = bool(self._work_mode_config().get("show_stack", True))
+
+        if show_cargo and self.work_has_start_box:
+            photo = self.sprites.box_img
+            pw = max(1, int(photo.width()))
+            ph = max(1, int(photo.height()))
+            sx = self.work_start_x + self.display_size // 2 - pw // 2
+            sy = self.work_start_y - ph
+            sx, sy = self._smart_popup_pos(sx, sy, pw, ph)
+            if not self.work_start_box_win or not self.work_start_box_win.winfo_exists():
+                self.work_start_box_win = self._make_chroma_prop_window(
+                    photo, sx, sy, click_through=True, anchor_s=False
+                )
+            else:
+                self.work_start_box_win.geometry(f"{pw}x{ph}+{sx}+{sy}")
+                self._win32_set_click_through(self.work_start_box_win, True)
+        elif self.work_start_box_win and self.work_start_box_win.winfo_exists():
+            self.work_start_box_win.destroy()
+            self.work_start_box_win = None
+
+    def _work_animate(self) -> None:
+        if self.state != "work" or self.mode == "game":
+            self.work_animating = False
+            return
+        if self.dragging:
+            self.root.after(WALK_FRAME_MS, self._work_animate)
+            return
+        sprite_map = self._work_sprites if self.work_use_work_sprites else self._walk_sprites
+        frames = sprite_map[self.direction]
+        self._set_image(frames[self.walk_frame % 2])
+        self.walk_frame += 1
+        self.root.after(WALK_FRAME_MS, self._work_animate)
+
+    def _work_move_step(self) -> None:
+        if self.state != "work" or self.mode == "game":
+            return
+        if self.dragging:
+            self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
+            return
+        if self.work_flag_dragging:
+            if not self._work_flag_button_down():
+                self._work_flag_release()
+            else:
+                self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
+                return
+
+        if self.work_phase == "to_end":
+            tx = self.work_end_x + self.display_size // 2
+            ty = self.work_end_y + self.display_size // 2
+            self.work_use_work_sprites = True
+        elif self.work_phase == "to_start":
+            tx = self.work_start_x + self.display_size // 2
+            ty = self.work_start_y + self.display_size // 2
+            self.work_use_work_sprites = False
+        elif self.work_phase == "finish":
+            self._finish_work()
+            return
+        else:
+            return
+
+        if self._dist_to(tx, ty) <= WORK_ARRIVE_DIST:
+            self._work_arrived()
+            return
+
+        self.direction = self._resolve_walk_direction(self._direction_to(tx, ty))
+        dx, dy = self.DELTAS[self.direction]
+        # DELTAS 已含 MOVE_STEP；不再 * (WORK_MOVE_STEP//MOVE_STEP) 放大
+        self.x += dx
+        self.y += dy
+        self._clamp_position()
+        # 轻量位移：勿每帧 _lift_pet_above_bg_fx（堆箱后会卡死）
+        self._place_window(light=True)
+        self.work_voice_steps = int(getattr(self, "work_voice_steps", 0)) + 1
+        if self.work_voice_steps % WORK_VOICE_STEP_INTERVAL == 0:
+            self._try_voice_work()
+        self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
+
+    def _work_arrived(self) -> None:
+        if self.work_phase == "to_start":
+            if not self.work_continuous and self.work_delivered >= self.work_total and not self.work_carrying:
+                self.work_phase = "finish"
+                self._work_move_step()
+                return
+            if not self.work_carrying:
+                # 搬走起点箱；若未结束/未达箱数，立刻再生成下一箱
+                self.work_carrying = True
+                self.work_has_start_box = self._work_should_keep_start_box()
+                self._sync_work_overlay()
+            self.work_phase = "to_end"
+        elif self.work_phase == "to_end":
+            if self.work_carrying:
+                self.work_carrying = False
+                self.work_delivered += 1
+                self.work_stack += 1
+                self._spawn_work_anchored_box()
+                self.stamina = min(100, self.stamina + 2)
+                self.mood = min(100, self.mood + 1)
+                self._refresh_panel()
+            # 起点箱已在搬走时再生；此处只校正状态并决定是否继续
+            self.work_has_start_box = self._work_should_keep_start_box()
+            if self.work_continuous:
+                self.work_phase = "to_start"
+                self._sync_work_overlay()
+            elif self.work_delivered >= self.work_total:
+                self.work_has_start_box = False
+                self.work_phase = "finish"
+                self._sync_work_overlay()
+            else:
+                self.work_phase = "to_start"
+                self._sync_work_overlay()
+        self._work_move_step()
+
+    def _finish_work(self) -> None:
+        if self.state != "work" or self.work_continuous:
+            return
+        if self.mode == "work":
+            self.mode = "free"
+        self._stop_work_mode()
+        self.state = "stand"
+        self._play_happy()
+
+    def _hide_rain_fx(self) -> None:
+        if self.rain_fx_win and self.rain_fx_win.winfo_exists():
+            self.rain_fx_win.destroy()
+        self.rain_fx_win = None
+        self.rain_fx_canvas = None
+        self.rain_drops.clear()
+
+    def _place_rain_fx(self) -> None:
+        if not self.rain_fx_win or not self.rain_fx_win.winfo_exists():
+            return
+        pad = 20
+        display_y = self.y + self.click_bounce_offset
+        self.rain_fx_win.geometry(f"+{self.x - pad}+{display_y - pad - 30}")
+        self._lift_pet_above_bg_fx()
+
+    def _show_rain_fx(self) -> None:
+        self._hide_rain_fx()
+        pad = 20
+        size = self.display_size + pad * 2
+        self.rain_fx_win = tk.Toplevel(self.root)
+        self.rain_fx_win.overrideredirect(True)
+        self._apply_window_layer(self.rain_fx_win)
+        self.rain_fx_win.configure(bg="magenta")
+        self.rain_fx_win.wm_attributes("-transparentcolor", "magenta")
+        self.rain_fx_canvas = tk.Canvas(
+            self.rain_fx_win, width=size, height=size, bg="magenta", highlightthickness=0
+        )
+        self.rain_fx_canvas.pack()
+        px = max(2, self.display_size // 40)
+        self.rain_drops = [
+            {"x": random.randint(0, size), "y": random.randint(-size, size // 2), "speed": random.randint(2, 5)}
+            for _ in range(18)
+        ]
+        self.rain_phase = 0
+        self._place_rain_fx()
+        self._animate_rain_fx()
+
+    def _animate_rain_fx(self) -> None:
+        if not self.rain_fx_canvas or self.action_name != "sad":
+            return
+        canvas = self.rain_fx_canvas
+        size = canvas.winfo_width() or self.display_size + 40
+        canvas.delete("all")
+        px = max(2, self.display_size // 40)
+        for drop in self.rain_drops:
+            drop["y"] += drop["speed"]
+            if drop["y"] > size:
+                drop["y"] = random.randint(-20, 0)
+                drop["x"] = random.randint(0, size)
+            canvas.create_rectangle(
+                drop["x"], drop["y"], drop["x"] + px, drop["y"] + px * 2, fill="#6699ff", outline=""
+            )
+        self._place_rain_fx()
+        self.root.after(80, self._animate_rain_fx)
+
+    def _hide_bulb_fx(self) -> None:
+        if self.bulb_glow_job:
+            self.root.after_cancel(self.bulb_glow_job)
+            self.bulb_glow_job = None
+        if self.bulb_fx_win and self.bulb_fx_win.winfo_exists():
+            self.bulb_fx_win.destroy()
+        self.bulb_fx_win = None
+        self.bulb_fx_canvas = None
+
+    def _bulb_draw_y(self, size: int, px: int) -> int:
+        return max(4, size - px * 5 - self.display_size // 8)
+
+    def _place_bulb_fx(self) -> None:
+        if not self.bulb_fx_win or not self.bulb_fx_win.winfo_exists():
+            return
+        pad = 8
+        display_y = self.y + self.click_bounce_offset
+        px = max(4, BULB_FX_SIZE // 16)
+        bulb_y = self._bulb_draw_y(BULB_FX_SIZE, px)
+        win_y = max(0, display_y - bulb_y - BULB_HEAD_GAP - BULB_OFFSET_DOWN)
+        self.bulb_fx_win.geometry(
+            f"+{max(0, self.x + self.display_size // 2 - BULB_FX_SIZE // 2 + pad)}+{win_y}"
+        )
+        self._lift_pet_above_bg_fx()
+
+    def _animate_bulb_glow(self) -> None:
+        if not self.bulb_fx_canvas or self.action_name != "idea":
+            return
+        size = BULB_FX_SIZE
+        px = max(4, size // 16)
+        bulb_x = max(4, (size - px * 4) // 2 - px)
+        bulb_y = self._bulb_draw_y(size, px)
+        glow = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(self.bulb_glow_phase * 0.22))
+        self.bulb_fx_canvas.delete("all")
+        _draw_pixel_bulb(self.bulb_fx_canvas, bulb_x, bulb_y, px=px, glow=glow)
+        self.bulb_glow_phase += 1
+        self._place_bulb_fx()
+        self.bulb_glow_job = self.root.after(BULB_GLOW_MS, self._animate_bulb_glow)
+
+    def _show_bulb_fx(self) -> None:
+        self._hide_bulb_fx()
+        size = BULB_FX_SIZE
+        self.bulb_fx_win = tk.Toplevel(self.root)
+        self.bulb_fx_win.overrideredirect(True)
+        self._apply_window_layer(self.bulb_fx_win)
+        self.bulb_fx_win.configure(bg="magenta")
+        self.bulb_fx_win.wm_attributes("-transparentcolor", "magenta")
+        self.bulb_fx_canvas = tk.Canvas(
+            self.bulb_fx_win, width=size, height=size, bg="magenta", highlightthickness=0
+        )
+        self.bulb_fx_canvas.pack()
+        px = max(6, size // 14)
+        bulb_x = max(4, (size - px * 4) // 2 - px)
+        bulb_y = self._bulb_draw_y(size, px)
+        _draw_pixel_bulb(self.bulb_fx_canvas, bulb_x, bulb_y, px=px)
+        self._place_bulb_fx()
+
+    def _play_reminder_sound(self) -> None:
+        sound = _get_reminder_sound()
+        self._play_sound_with_volume(sound, "sfx")
+
+    def _reminder_tick(self) -> None:
+        if not self._alive():
+            return
+        if not self._startup_ready:
+            self._safe_after(REMINDER_CHECK_MS, self._reminder_tick)
+            return
+        today = datetime.now().strftime("%Y-%m-%d")
+        if getattr(self, "_reminder_day", "") != today:
+            self._reminder_day = today
+            self.triggered_reminders_today.clear()
+        now_hm = datetime.now().strftime("%H:%M")
+        weekday = datetime.now().weekday()
+        for item in self.schedules:
+            rid = item.get("id", "")
+            if item.get("time") != now_hm or rid in self.triggered_reminders_today:
+                continue
+            if not _schedule_matches_today(item, weekday):
+                continue
+            self.triggered_reminders_today.add(rid)
+            text = item.get("text", "提醒")
+            day_label = _format_schedule_weekdays(item)
+            self._play_reminder_sound()
+            self._show_speech_dialog(
+                f"⏰ 日程提醒（{day_label}）\n{text}",
+                auto_hide_ms=10000,
+                color=REMINDER_COLOR,
+            )
+        self._safe_after(REMINDER_CHECK_MS, self._reminder_tick)
+
+    def _open_schedule_manager(self) -> None:
+        self._hide_main_menu()
+        if self.schedule_win and self.schedule_win.winfo_exists():
+            self.schedule_win.destroy()
+            self.schedule_win = None
+            return
+
+        self.schedule_win = tk.Toplevel(self.root)
+        self.schedule_win.title("日程提醒")
+        self._apply_window_layer(self.schedule_win)
+        self.schedule_win.configure(bg=MENU_BG)
+
+        _, frame = _pack_fixed_scroll_panel(self.schedule_win)
+
+        tk.Label(frame, text="日程提醒", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+        row = tk.Frame(frame, bg=MENU_BG)
+        row.pack(fill=tk.X, pady=(8, 4))
+        tk.Label(row, text="时间", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        time_entry = tk.Entry(row, width=8, font=PIXEL_FONT)
+        time_entry.pack(side=tk.LEFT, padx=4)
+        time_entry.insert(0, datetime.now().strftime("%H:%M"))
+        tk.Label(row, text="事项", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT, padx=(8, 0))
+        text_entry = tk.Entry(row, width=18, font=PIXEL_FONT)
+        text_entry.pack(side=tk.LEFT, padx=4)
+
+        weekday_row = tk.Frame(frame, bg=MENU_BG)
+        weekday_row.pack(fill=tk.X, pady=(0, 4))
+        tk.Label(weekday_row, text="星期", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        weekday_vars = [tk.BooleanVar(value=True) for _ in range(7)]
+        weekday_box = tk.Frame(weekday_row, bg=MENU_BG)
+        weekday_box.pack(side=tk.LEFT, padx=4)
+        for idx, label in enumerate(WEEKDAY_LABELS):
+            tk.Checkbutton(
+                weekday_box,
+                text=label[-1],
+                variable=weekday_vars[idx],
+                font=PIXEL_FONT,
+                fg=MENU_FG,
+                bg=MENU_BG,
+                activebackground=MENU_BG,
+                activeforeground=MENU_FG,
+                selectcolor=MENU_ACTIVE,
+            ).pack(side=tk.LEFT, padx=1)
+
+        def set_all_weekdays(checked: bool) -> None:
+            for var in weekday_vars:
+                var.set(checked)
+
+        def select_weekdays(indices: tuple[int, ...]) -> None:
+            set_all_weekdays(False)
+            for i in indices:
+                weekday_vars[i].set(True)
+
+        quick_row = tk.Frame(frame, bg=MENU_BG)
+        quick_row.pack(fill=tk.X, pady=(0, 4))
+        tk.Button(
+            quick_row, text="每天", command=lambda: set_all_weekdays(True), font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
+        ).pack(side=tk.LEFT, padx=(44, 4))
+        tk.Button(
+            quick_row, text="工作日", command=lambda: select_weekdays((0, 1, 2, 3, 4)), font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            quick_row, text="周末", command=lambda: select_weekdays((5, 6)), font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
+        ).pack(side=tk.LEFT, padx=4)
+
+        list_frame = tk.Frame(frame, bg=MENU_BG)
+        list_frame.pack(fill=tk.BOTH, pady=4)
+
+        def refresh_list() -> None:
+            for w in list_frame.winfo_children():
+                w.destroy()
+            for item in self.schedules:
+                line = tk.Frame(list_frame, bg=MENU_BG)
+                line.pack(fill=tk.X, pady=1)
+                tk.Label(
+                    line,
+                    text=f"{item.get('time', '??:??')} [{_format_schedule_weekdays(item)}]  {item.get('text', '')}",
+                    font=PIXEL_FONT,
+                    fg=MENU_FG,
+                    bg=MENU_BG,
+                ).pack(side=tk.LEFT)
+                rid = item.get("id")
+
+                def delete(r=rid) -> None:
+                    self.schedules = [s for s in self.schedules if s.get("id") != r]
+                    _save_schedules(self.schedules)
+                    refresh_list()
+
+                tk.Button(line, text="删", command=delete, font=PIXEL_FONT, bg=MENU_BG, fg="#ff6666").pack(
+                    side=tk.RIGHT
+                )
+
+        def add_item() -> None:
+            t = _normalize_schedule_time(time_entry.get())
+            txt = text_entry.get().strip()
+            if not t:
+                self._show_toast("请填写有效时间，如 09:30", "#ff8844")
+                return
+            if not txt:
+                self._show_toast("请填写提醒事项", "#ff8844")
+                return
+            selected_days = [i for i, var in enumerate(weekday_vars) if var.get()]
+            if not selected_days:
+                self._show_toast("请至少选择一个星期", "#ff8844")
+                return
+            weekdays = None if len(selected_days) >= 7 else selected_days
+            entry = {"id": str(uuid4()), "time": t, "text": txt}
+            if weekdays is not None:
+                entry["weekdays"] = weekdays
+            try:
+                self.schedules.append(entry)
+                _save_schedules(self.schedules)
+            except OSError as exc:
+                self._show_toast(f"保存失败：{exc}", "#ff6666")
+                self.schedules.pop()
+                return
+            text_entry.delete(0, tk.END)
+            refresh_list()
+            self._show_toast("日程已添加", PIXEL_COLOR)
+
+        tk.Button(frame, text="添加", command=add_item, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(pady=4)
+        time_entry.bind("<Return>", lambda _e: add_item())
+        text_entry.bind("<Return>", lambda _e: add_item())
+        refresh_list()
+        self._place_panel_popup(self.schedule_win)
+
+    def _place_ai_chat(self) -> None:
+        if not self.ai_chat_win or not self.ai_chat_win.winfo_exists():
+            return
+        self._place_panel_popup(self.ai_chat_win)
+
+    def _is_ai_chat_widget(self, widget: tk.Misc | None) -> bool:
+        if widget is None or not self.ai_chat_win:
+            return False
+        w: tk.Misc | None = widget
+        while w is not None:
+            if w == self.ai_chat_win:
+                return True
+            w = w.master
+        return False
+
+    def _cancel_ai_chat_close(self) -> None:
+        if self.ai_chat_close_job:
+            self.root.after_cancel(self.ai_chat_close_job)
+            self.ai_chat_close_job = None
+
+    def _close_ai_chat(self) -> None:
+        self._cancel_ai_chat_close()
+        if self.ai_reply_job:
+            self.root.after_cancel(self.ai_reply_job)
+            self.ai_reply_job = None
+        if self.ai_chat_win and self.ai_chat_win.winfo_exists():
+            self.ai_chat_win.destroy()
+        self.ai_chat_win = None
+        self.ai_input = None
+        self._hide_speech_dialog()
+
+    def _schedule_ai_chat_close(self) -> None:
+        if not self.ai_chat_win or not self.ai_chat_win.winfo_exists():
+            return
+        self._cancel_ai_chat_close()
+        self.ai_chat_close_job = self.root.after(AI_CHAT_IDLE_MS, self._close_ai_chat_idle)
+
+    def _close_ai_chat_idle(self) -> None:
+        self.ai_chat_close_job = None
+        if not self.ai_chat_win or not self.ai_chat_win.winfo_exists():
+            return
+        focus = self.root.focus_get()
+        if self._is_ai_chat_widget(focus):
+            return
+        self._close_ai_chat()
+
+    def _ai_chat_focus_out(self, _event=None) -> None:
+        self.root.after(80, self._check_ai_chat_focus)
+
+    def _check_ai_chat_focus(self) -> None:
+        if not self.ai_chat_win or not self.ai_chat_win.winfo_exists():
+            return
+        focus = self.root.focus_get()
+        if self._is_ai_chat_widget(focus):
+            self._cancel_ai_chat_close()
+            return
+        self._schedule_ai_chat_close()
+
+    def _ai_chat_focus_in(self, _event=None) -> None:
+        self._cancel_ai_chat_close()
+
+    def _toggle_ai_chat(self) -> None:
+        self._hide_main_menu()
+        if self.ai_chat_win and self.ai_chat_win.winfo_exists():
+            self._close_ai_chat()
+            return
+        if self._vpet_voice_category_ready("email") and random.random() < 0.5:
+            self._addon_voice_vpet("email")
+
+        self.ai_chat_win = tk.Toplevel(self.root)
+        self.ai_chat_win.overrideredirect(True)
+        self._apply_window_layer(self.ai_chat_win)
+        self.ai_chat_win.configure(bg="#111122")
+
+        border = tk.Frame(self.ai_chat_win, bg=PIXEL_COLOR, padx=1, pady=1)
+        border.pack()
+        inner = tk.Frame(border, bg="#111122", padx=6, pady=4)
+        inner.pack()
+
+        header = tk.Frame(inner, bg="#111122")
+        header.pack(fill=tk.X)
+        close_btn = tk.Label(
+            header,
+            text="×",
+            font=("Courier New", 14, "bold"),
+            fg=THEME_PINK,
+            bg="#111122",
+            cursor="hand2",
+            padx=4,
+        )
+        close_btn.pack(side=tk.RIGHT)
+        close_btn.bind("<Button-1>", lambda _e: self._close_ai_chat())
+        close_btn.bind("<FocusOut>", self._ai_chat_focus_out, add="+")
+        close_btn.bind("<FocusIn>", self._ai_chat_focus_in, add="+")
+
+        row = tk.Frame(inner, bg="#111122")
+        row.pack(fill=tk.X)
+
+        self.ai_input = tk.Entry(
+            row, width=22, font=PIXEL_FONT, bg="#222233", fg=PIXEL_COLOR, insertbackground=PIXEL_COLOR
+        )
+        self.ai_input.pack(side=tk.LEFT, padx=(0, 4))
+        self.ai_input.bind("<Return>", lambda _e: self._send_ai_message())
+        self.ai_input.bind("<FocusOut>", self._ai_chat_focus_out, add="+")
+        self.ai_input.bind("<FocusIn>", self._ai_chat_focus_in, add="+")
+
+        send_btn = tk.Button(
+            row,
+            text="发送",
+            command=self._send_ai_message,
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+            relief=tk.FLAT,
+            padx=6,
+        )
+        send_btn.pack(side=tk.LEFT)
+        send_btn.bind("<FocusOut>", self._ai_chat_focus_out, add="+")
+        send_btn.bind("<FocusIn>", self._ai_chat_focus_in, add="+")
+        self._place_ai_chat()
+        self.ai_input.focus_set()
+
+    def _show_ai_reply(self, reply: str) -> None:
+        self.ai_reply_job = None
+        # 输入窗关掉也仍须弹出回答文本框（V-BORDER5 / 系统→对话）
+        text = (reply or "").strip() or "……"
+        self._show_speech_dialog(
+            text,
+            auto_hide_ms=AI_DIALOG_HIDE_MS,
+            typewriter_ms=TYPEWRITER_MS,
+            use_border5=True,
+        )
+
+    def _send_ai_message(self) -> None:
+        if not self.ai_input:
+            return
+        text = self.ai_input.get().strip()
+        if not text:
+            return
+        self.ai_input.delete(0, tk.END)
+        self._cancel_ai_chat_close()
+        self._show_speech_dialog(f"你：{text}", auto_hide_ms=AI_DIALOG_HIDE_MS, use_border5=True)
+        if self.ai_reply_job:
+            try:
+                self.root.after_cancel(self.ai_reply_job)
+            except Exception:
+                pass
+            self.ai_reply_job = None
+
+        def work() -> None:
+            try:
+                reply = self._ai_reply(text)
+            except Exception as exc:
+                err = str(exc).strip() or "未知错误"
+                if len(err) > 60:
+                    err = err[:57] + "..."
+                reply = f"诶…AI 连接失败了：{err}\n请检查 ai_config.json（推荐千问 DashScope）或网络~"
+
+            def show() -> None:
+                if not self._alive():
+                    return
+                self._show_ai_reply(reply)
+
+            if self._alive():
+                try:
+                    self.root.after(0, show)
+                except tk.TclError:
+                    pass
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _ai_reply(self, user_text: str) -> str:
+        config = _load_ai_config()
+        api_key = config.get("api_key", "")
+        if api_key:
+            try:
+                reply = self._ai_request(user_text, config, api_key)
+                self.ai_history.append({"role": "user", "content": user_text})
+                self.ai_history.append({"role": "assistant", "content": reply})
+                self.ai_history = self.ai_history[-AI_HISTORY_MAX * 2 :]
+                return reply
+            except Exception as exc:
+                err = str(exc).strip() or "未知错误"
+                if len(err) > 60:
+                    err = err[:57] + "..."
+                return f"诶…AI 连接失败了：{err}\n请检查 ai_config.json（推荐千问 DashScope）或网络~"
+        return self._ai_fallback(user_text)
+
+    def _ai_request(self, user_text: str, config: dict, api_key: str) -> str:
+        base_url = config.get("base_url", AI_DEFAULT_CONFIG["base_url"]).rstrip("/")
+        model = config.get("model", AI_DEFAULT_CONFIG["model"])
+        temperature = float(config.get("temperature", AI_DEFAULT_CONFIG["temperature"]))
+        messages: list[dict[str, str]] = [{"role": "system", "content": AI_SYSTEM_PROMPT}]
+        messages.extend(self.ai_history[-AI_HISTORY_MAX * 2 :])
+        messages.append({"role": "user", "content": user_text})
+        payload = json.dumps(
+            {
+                "model": model,
+                "messages": messages,
+                "max_tokens": 220,
+                "temperature": temperature,
+            }
+        ).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if api_key and api_key.lower() != "ollama":
+            headers["Authorization"] = f"Bearer {api_key}"
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=payload,
+            headers=headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return data["choices"][0]["message"]["content"].strip()
+
+    def _ai_fallback(self, user_text: str) -> str:
+        preset = self._match_preset_dialog(user_text)
+        if preset:
+            return preset
+        if any(k in user_text for k in ("你好", "嗨", "hello")):
+            return random.choice(
+                [
+                    "诶，你好呀！今天也要一起加油哦~",
+                    "哇，你来啦！有什么想聊的吗？",
+                    "嗨嗨~我在呢，随时都可以找我哦！",
+                ]
+            )
+        if any(k in user_text for k in ("累", "困", "睡")):
+            return random.choice(
+                [
+                    "嗯…累了就歇一歇吧，别硬撑哦。",
+                    "诶？辛苦啦…要不要睡一会儿？我在这边守着你。",
+                    "困了就休息嘛，身体最重要啦！",
+                ]
+            )
+        if any(k in user_text for k in ("吃", "饿", "食物")):
+            return random.choice(
+                [
+                    "饿了呀？先去模式→游戏接食物，再来互动里喂我！",
+                    "诶——想吃东西的话，玩游戏能接到各种食物哦！",
+                    "哇，说到吃的我就来劲了…不过得先玩游戏接到才行~",
+                ]
+            )
+        if any(k in user_text for k in ("工作", "上班", "任务")):
+            return random.choice(
+                [
+                    "工作啊…互动里的「工作」可以陪我运送货物，一起加油吧！",
+                    "诶，要干活了吗？记得也给自己留点休息时间哦。",
+                    "嗯嗯，旧货店这边也要忙起来了呢~",
+                ]
+            )
+        if any(k in user_text for k in ("开心", "高兴", "棒")):
+            return random.choice(
+                [
+                    "哇——太好了！看到你开心我也超开心的！",
+                    "诶嘿嘿，这种时候最棒啦~",
+                    "耶！今天也是好日子呢！",
+                ]
+            )
+        if any(k in user_text for k in ("伤心", "难过", "哭")):
+            return random.choice(
+                [
+                    "诶…别难过啦，我会一直在这陪你的。",
+                    "嗯…没关系的，慢慢说，我听着呢。",
+                    "呜…看到你难过我也心里揪揪的…抱抱！",
+                ]
+            )
+        if "?" in user_text or "？" in user_text or any(k in user_text for k in ("什么", "怎么", "为什么")):
+            return random.choice(
+                [
+                    "诶？这个问题…让我想想哦！",
+                    "嗯——有意思！值得好好琢磨一下呢。",
+                    "哇，问到点上了…我也很好奇答案！",
+                ]
+            )
+        if any(k in user_text for k in ("游戏", "玩")):
+            return random.choice(
+                [
+                    "玩游戏接食物超好玩的！Esc 可以随时退出哦~",
+                    "诶，要一起玩吗？模式里选游戏就行啦！",
+                    "面板→小游戏里还有打字和背单词哦~",
+                ]
+            )
+        if any(k in user_text for k in ("打字", "练习", "键盘")):
+            return random.choice(
+                [
+                    "打字练习在面板→小游戏里！看释义敲单词~",
+                    "诶，来练练单词吧！模式→游戏→背单词就行~",
+                ]
+            )
+        if any(k in user_text for k in ("单词", "背词", "词库", "学习")):
+            item = self._pick_vocab_word()
+            if item:
+                return random.choice(
+                    [
+                        f"来背这个：{item['word']} — {item.get('meaning', '')}",
+                        "面板→小游戏→背单词，选对了心情会变好哦~",
+                    ]
+                )
+            return "词库还没准备好，请把 JSON   词库放进 word_banks 文件夹~"
+        return random.choice(
+            [
+                "嗯嗯，我在听呢~",
+                "诶，原来如此！",
+                "哇——知道了知道了！",
+                "好的好的，随时叫我哦~",
+                "诶嘿嘿，有意思~",
+            ]
+        )
+
+    def run(self) -> None:
+        self.root.mainloop()
+
+
+if __name__ == "__main__":
+    DesktopPet().run()

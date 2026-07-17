@@ -1,0 +1,85 @@
+{
+  "city": "北京",
+  "saved_at": "2026-07-17T17:02:06",
+  "payload": {
+    "latitude": 39.89455,
+    "longitude": 116.35983,
+    "generationtime_ms": 0.30803680419921875,
+    "utc_offset_seconds": 28800,
+    "timezone": "Asia/Shanghai",
+    "timezone_abbreviation": "GMT+8",
+    "elevation": 47.0,
+    "current_units": {
+      "time": "iso8601",
+      "interval": "seconds",
+      "temperature_2m": "°C",
+      "relative_humidity_2m": "%",
+      "weather_code": "wmo code",
+      "wind_speed_10m": "km/h",
+      "apparent_temperature": "°C"
+    },
+    "current": {
+      "time": "2026-07-17T17:00",
+      "interval": 900,
+      "temperature_2m": 29.6,
+      "relative_humidity_2m": 46,
+      "weather_code": 0,
+      "wind_speed_10m": 12.4,
+      "apparent_temperature": 30.2
+    },
+    "daily_units": {
+      "time": "iso8601",
+      "weather_code": "wmo code",
+      "temperature_2m_max": "°C",
+      "temperature_2m_min": "°C",
+      "precipitation_probability_max": "%"
+    },
+    "daily": {
+      "time": [
+        "2026-07-17",
+        "2026-07-18",
+        "2026-07-19",
+        "2026-07-20",
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-23"
+      ],
+      "weather_code": [
+        3,
+        51,
+        95,
+        96,
+        51,
+        51,
+        96
+      ],
+      "temperature_2m_max": [
+        30.3,
+        31.6,
+        30.5,
+        28.1,
+        28.8,
+        30.3,
+        29.4
+      ],
+      "temperature_2m_min": [
+        24.0,
+        21.9,
+        21.5,
+        22.5,
+        22.1,
+        23.8,
+        22.2
+      ],
+      "precipitation_probability_max": [
+        23,
+        41,
+        31,
+        78,
+        69,
+        63,
+        49
+      ]
+    }
+  }
+}

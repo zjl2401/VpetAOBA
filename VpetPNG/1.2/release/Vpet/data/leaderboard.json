@@ -1,0 +1,45 @@
+{
+  "gather": [
+    {
+      "pet_id": 0,
+      "best_score": 280,
+      "best_catches": 28,
+      "attempts": 2,
+      "ts": "2026-07-17 15:49:07"
+    }
+  ],
+  "typing:日语": [
+    {
+      "pet_id": 0,
+      "best_score": 10,
+      "best_grade": "B",
+      "attempts": 2,
+      "ts": "2026-07-17 15:50:21"
+    }
+  ],
+  "vocab:日语": [
+    {
+      "pet_id": 0,
+      "total_correct": 20,
+      "best_streak": 5,
+      "ts": "2026-07-17 15:50:49"
+    }
+  ],
+  "music": [
+    {
+      "pet_id": 0,
+      "best_score": 102750,
+      "best_combo": 330,
+      "best_grade": "S",
+      "attempts": 4,
+      "ts": "2026-07-17 15:53:14"
+    }
+  ],
+  "rhyme": [
+    {
+      "pet_id": 0,
+      "wins": 2,
+      "ts": "2026-07-17 16:56:54"
+    }
+  ]
+}

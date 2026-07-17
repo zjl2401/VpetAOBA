@@ -60,6 +60,10 @@ def _run_rpg() -> None:
 
 
 def main() -> None:
+    # 顶层侧显式引用，避免 PyInstaller 漏打进 pet / 启动器（二者原先在分支内 import）
+    import pet  # noqa: F401
+    import vpet_launcher  # noqa: F401
+
     if "--rpg" in sys.argv:
         try:
             _run_rpg()

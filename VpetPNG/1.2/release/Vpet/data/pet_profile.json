@@ -1,0 +1,368 @@
+{
+  "pet_id": 0,
+  "pet_id_source": "local",
+  "pet_id_pending": false,
+  "created": "2026-07-17 15:39",
+  "records": {
+    "gather": [
+      {
+        "ts": "2026-07-17 15:49:07",
+        "pet_id": 0,
+        "catches": 28,
+        "misses": 0,
+        "score": 280,
+        "difficulty": "中",
+        "food": {
+          "onigiri": 1,
+          "candy": 1,
+          "apple": 4,
+          "cake": 1,
+          "taco": 5,
+          "ramen": 2,
+          "tea": 3,
+          "juice": 1,
+          "corn": 1,
+          "berry": 3,
+          "icecream": 1,
+          "cookie": 2,
+          "meat": 1,
+          "sushi": 1,
+          "bread": 1
+        }
+      },
+      {
+        "ts": "2026-07-17 16:53:26",
+        "pet_id": 0,
+        "catches": 22,
+        "misses": 0,
+        "score": 220,
+        "difficulty": "中",
+        "food": {
+          "sushi": 1,
+          "cake": 2,
+          "taco": 2,
+          "milk": 2,
+          "meat": 1,
+          "bread": 2,
+          "ramen": 2,
+          "icecream": 2,
+          "juice": 2,
+          "donut": 1,
+          "apple": 2,
+          "fish": 1,
+          "tea": 1,
+          "candy": 1
+        }
+      }
+    ],
+    "typing": [
+      {
+        "ts": "2026-07-17 15:50:21",
+        "pet_id": 0,
+        "lang": "日语",
+        "jp_mode": "romaji",
+        "score": 10,
+        "grade": "B",
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:54:12",
+        "pet_id": 0,
+        "lang": "日语",
+        "jp_mode": "romaji",
+        "score": 7,
+        "grade": "C",
+        "difficulty": "中"
+      }
+    ],
+    "vocab": [
+      {
+        "ts": "2026-07-17 15:50:37",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "問い",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 15:50:38",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "十",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 15:50:40",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "作家",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 15:50:42",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "悲しむ",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 15:50:49",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "どちら",
+        "correct": true,
+        "streak_clear": 5,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 15:50:55",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "状態",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 15:50:57",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "同時",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 15:51:01",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "コピーする",
+        "correct": false,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:54:29",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "製品",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:54:33",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "いけない",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:54:35",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "割る",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:54:41",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "さっぱり",
+        "correct": false,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:54:45",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "回",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:54:49",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "僕",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:54:53",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "段",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:54:56",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "暮らす",
+        "correct": false,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:54:59",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "平均",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:55:01",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "影",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:55:07",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "トップ",
+        "correct": false,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:55:13",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "疑う",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:55:16",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "文明",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:55:17",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "粉",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:55:21",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "なにも",
+        "correct": true,
+        "streak_clear": 0,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:55:24",
+        "pet_id": 0,
+        "lang": "日语",
+        "word": "電灯",
+        "correct": true,
+        "streak_clear": 5,
+        "difficulty": "中"
+      }
+    ],
+    "music": [
+      {
+        "ts": "2026-07-17 15:53:14",
+        "pet_id": 0,
+        "score": 102750,
+        "max_combo": 330,
+        "perfect": 330,
+        "great": 0,
+        "good": 0,
+        "miss": 0,
+        "grade": "S",
+        "accuracy": 100.0,
+        "track": "your_reply",
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:23:34",
+        "pet_id": 0,
+        "score": 65570,
+        "max_combo": 197,
+        "perfect": 215,
+        "great": 2,
+        "good": 0,
+        "miss": 13,
+        "grade": "A",
+        "accuracy": 94.2,
+        "track": "by_my_side",
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:35:21",
+        "pet_id": 0,
+        "score": 91200,
+        "max_combo": 292,
+        "perfect": 292,
+        "great": 1,
+        "good": 4,
+        "miss": 30,
+        "grade": "A",
+        "accuracy": 90.2,
+        "track": "your_reply",
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:51:11",
+        "pet_id": 0,
+        "score": 97305,
+        "max_combo": 309,
+        "perfect": 312,
+        "great": 0,
+        "good": 1,
+        "miss": 14,
+        "grade": "S",
+        "accuracy": 95.6,
+        "track": "your_reply",
+        "difficulty": "中"
+      }
+    ],
+    "rhyme": [
+      {
+        "ts": "2026-07-17 15:57:46",
+        "pet_id": 0,
+        "won": true,
+        "jinmu": true,
+        "difficulty": "中"
+      },
+      {
+        "ts": "2026-07-17 16:56:54",
+        "pet_id": 0,
+        "won": true,
+        "jinmu": true,
+        "difficulty": "中"
+      }
+    ]
+  },
+  "machine_id": "87fa0bba6567eb17bd98791fab85e1e76ae4895ec2c344b544c9570bd8739fb3"
+}

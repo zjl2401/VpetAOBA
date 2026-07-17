@@ -1,0 +1,25 @@
+{
+  "font_size": 16,
+  "display_size": 176,
+  "display_preset": "大",
+  "difficulty": "中",
+  "rhythm_speed": "中",
+  "rhythm_chart_diff": "中",
+  "rhythm_auto": true,
+  "weather_city": "北京",
+  "seen_hints": {
+    "companion_bar": true,
+    "game_mode": true,
+    "rhythm_game": true,
+    "music_mode": true
+  },
+  "work_mode": {
+    "show_props": true,
+    "show_stack": true
+  },
+  "voice_mode": true,
+  "display_layer": "top",
+  "persona": "default",
+  "pet_id_api_url": "",
+  "pet_id_activation_code": ""
+}
