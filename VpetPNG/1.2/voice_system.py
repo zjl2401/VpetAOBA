@@ -118,7 +118,9 @@ class VoiceCatalog:
                     else:
                         category = "misc"
                 else:
-                    category = rel.parts[0].lower()
+                    # ASCII 目录名统一小写；中文目录名（如「你好」）保持原样
+                    raw_cat = rel.parts[0]
+                    category = raw_cat.lower() if raw_cat.isascii() else raw_cat
                 prefix, title, is_ring, is_startup = _parse_stem(item.stem)
                 clip = VoiceClip(
                     source="vpet",
@@ -597,6 +599,7 @@ class VoicePlayer:
             "eat",
             "kick",
             "hurt",
+            "hungry",
             "end",
             "sleep",
             "work",
@@ -612,6 +615,7 @@ class VoicePlayer:
                 "eat",
                 "kick",
                 "hurt",
+                "hungry",
                 "sleep",
                 "work",
                 "walk",

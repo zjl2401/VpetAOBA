@@ -41,7 +41,7 @@
 
 | # | 功能 | 预期行为 | 代码锚点 |
 |---|------|----------|----------|
-| M01 | 跟随 | 跟鼠标；频繁变向晕眩 3s +「我晕了……」 | `_follow_tick` / `_trigger_follow_dizzy` |
+| M01 | 跟随 | 跟鼠标；频繁变向晕眩 **3s** +「我晕了……」/dizzy 语音 | `_follow_tick` / `_start_follow_dizzy` |
 | M02 | 自由 | 随机动作/表情/词库对话 | `_resume_idle` / 词库对话 |
 | M03 | 漫步 | 仅 stand/walk | `mode == "stroll"` |
 | M04 | 睡眠模式 | 深度睡眠与唤醒 | `_enter_quiet_mode` |
@@ -62,7 +62,7 @@
 | D04 | 无台词动作 | wink、脸红、有主意、下蹲无 banter | `_interact_flair` banter 配置 |
 | D05 | ×生活文案 | 固定 ADULT 文案（扁平框） | `_play_adult_msg` |
 | D06 | 打电话 | 关语音：CALL_TEXT 扁平打字+铃声；开语音：**必先 ring→非 ring 台词+语音框**（专项，不参与二选一） | `_show_call_dialog` / `play_call` |
-| D07 | 打招呼 | 关语音：HI_TEXT 扁平打字；开语音：语音标题框 **与** HI_TEXT **随机二选一** | `_show_hi_dialog` / `_trigger_voice_or_dialog` |
+| D07 | 打招呼 | 关语音：HI_TEXT 扁平打字；开语音且有「你好」：**强制播**（失败回落打字框） | `_show_hi_dialog` / `_try_voice_hi` |
 | D08 | 语音台词框 | 抽中语音时：`voice_subtitle_win` 扁平标题框；与打字框互斥 | `_show_voice_subtitle` |
 | D09 | 开/关语音抽选 | **关语音**：只有动作/表情打字框；**开语音**：有对应语音时「语音框」与「动作/表情打字框」随机一条 | `_trigger_voice_or_dialog` / `_interact_flair` |
 
@@ -84,7 +84,7 @@
 | F04 | 有主意 | 左上角灯泡亮 → eat2 | 无 | `_play_expression_idea` / `_show_bulb_fx` |
 | F05 | 侧踢 | 粒子 3s | 有 banter | `_show_interact_fx` / `_interact_flair("kick")` |
 | F06 | 点赞 | 背景像素发光 | 无 | `_show_like_fx` |
-| F07 | wink | 爱心声波像素 | 无 | `_show_wink_fx` |
+| F07 | wink | 爱心声波；仅停约 3s；自由不随机；点一下可恢复 | 无 | `_show_wink_fx` + `H-WINK-FREE-NO` |
 | F08 | 脸红 | 爱心像素 | 可选 | `_show_shy_fx` |
 | F09 | 音乐模式 | 脚下像素声波**自主律动**（与曲目节奏无关） | 有 | `_start_music_wave_fx` / `_draw_music_wave` |
 | F10 | 喂食 | 食物粒子 FX | 有 | `_show_food_fx` |
@@ -215,7 +215,7 @@
 - [x] **V-CALL-01** 开语音：**必须先** `Vpet/call/ring`（无框）→ 紧跟非 ring（框+声）；专项强制，不参与二选一
 - [x] **V-CALL-02** 关语音：CALL_TEXT 扁平打字 + 原铃声
 - [x] **V-HI-01** 关语音：HI_TEXT 扁平打字框
-- [x] **V-HI-02** 开语音：语音标题框 与 HI_TEXT 打字框**随机二选一**；动作结束不杀仍在播的语音框
+- [x] **V-HI-02** 开语音且有「你好」资源：**强制播**；失败回落 HI_TEXT；动作结束不杀仍在播的语音框
 
 ### E. 语音规则与场景触发
 - [x] **V-MODE** 设置里可开关；关=去掉电话语音轨，保留音效/音乐
@@ -226,19 +226,21 @@
 - [x] **V-SCENE** eat/sleep/kick/call/hi/end 等专项优先于自由随机；有专用资源时**强制播**（不被 50/50 打字框整段盖掉）；interrupt 后延后补播；stop 作废旧异步回调防抢声道
 - [x] **V-FREE** 自由：normal/forget/dizzy/jinmu；（有伴侣）+ren；error 长间隔
 - [x] **V-WALK/WORK** walk / work 随机
-- [x] **V-HUNGRY** 体力低 hungry
+- [x] **V-HUNGRY** 体力低 hungry（开语音且有资源时**强制播**）
 - [x] **V-EMAIL** 点对话 email
 - [x] **V-GAME** 关于 game；莱姆开始前 laimu open
 - [x] **V-HURT** 游戏失败 hurt（**只附加**，原结算画面保留）— 采集（错过≥接住或 0 接）/打字 D·C / 音游 D·C / 背词错 / 暴露失败；延迟补播+可重试；`ignore_cooldown` **不得**误掐 hurt；**对战失败受 G08 牵连**
+- [x] **V-DIZZY** 采集晕眩物 / 跟随急转晕眩：开语音播 `dizzy`（保留晕眩特效）
 - [x] **V-END** 退出：`end` 与出场同步，时长由语音决定；结束后彻底退出（可超时强制退）
 - [x] **V-ADDON** 语音附加层不得 `return` 跳过原动画/结算/特效
 
 ### F. 基线动画 / 特效 / 暴露 / 出场
 - [x] B01–B11 / M02–M08 / G01–G07 与基线表大体一致（2026-07-16 代码抽检）
-- [ ] **G08** 练习对战失败：保留对战界面 ~1.6s 后关闭（**仍** `_show_game_clear(title="对战失败")` → 未过）
-- [ ] **M01** 跟随晕眩 **3s**（**仍** `FOLLOW_DIZZY_STAND_MS=1500` → 未过）
-- [ ] **F07** wink 专用特效 `_show_wink_fx`（**仍** `_play_like_or_wink` → `_show_like_fx` → 未过）
-- [ ] **E05** 暴露失败：故障界面保留约 **900ms** + 打字「暴露失败…」（**仍** toast 2.2s + 无打字框 → 未过；hurt 无字幕见 H-EXPOSE-NOSUB 已过）
+- [x] **G08** 练习对战失败：保留对战界面 ~1.6s 后关闭（非全屏 clear）；hurt 附加
+- [x] **M01** 跟随晕眩 **3s**（`FOLLOW_DIZZY_STAND_MS=3000`）
+- [x] **F07** wink 专用特效 `_show_wink_fx`（爱心声波；点赞仍 `_show_like_fx`）；**仅停约 3s**（`WINK_DURATION_MS=3000`）；**自由模式不随机触发**；卡住时**点一下**强制恢复；结束后恢复站立/走动
+- [x] **H-WINK-3S** wink：无 banter；声波特效点击穿透；自由随机/心情池**排除 wink**；菜单可手动 wink；点一下/`_force_end_wink_like`/看门狗恢复
+- [x] **E05** 暴露失败：故障界面保留约 **900ms** + 打字「暴露失败…」；hurt 无字幕（H-EXPOSE-NOSUB）
 - [x] 暴露成功 game_clear；失败不用全屏 clear（见 H-EXPOSE-NOSUB）
 - [x] 进出场像素动画保留；语音开启不吃掉特效；风格固定见 H-LOAD-FIXED
 
@@ -258,13 +260,13 @@
 - [x] **H-WALK** 走动顺畅；连续转向锁定 **≤3s**；自由/漫游/音乐/工作同半速步长（`MOVE_STEP=2`，工作用 `light` 位移）
 - [x] **H-WORK-VOICE-PACE** 工作（模式/动作）：语音抽检与自由同频（每 24 步、`VOICE_FREE_RANDOM_CHANCE`）；禁止每帧抽音与 30–90s 强制鼓励链
 - [x] **H-DRAG-YUQI** 拖动 move 超过 **5s** 强制随机播 `yuqi` 一条（长拖可再触发）；无资源退回台词框
-- [x] **H-VOICE-PRELOAD** 特定触发（`yuqi`/eat/kick/sleep/hurt/work/walk/dizzy/call/你好/end）与 **normal 整组**一并 `preload_priority_clips` 提前缓存
+- [x] **H-VOICE-PRELOAD** 特定触发（`yuqi`/eat/kick/sleep/hurt/hungry/work/walk/dizzy/call/你好/end）与 **normal 整组**一并 `preload_priority_clips` 提前缓存
 - [x] **H-KEYOUT** 精灵抠图**只扣与外圈连通**的键色（边缘泛洪，不伤内色）
 - [x] **H-LOAD-FIXED** 入场/出场/加载像素动画**固定风格**（溶解 `radial`、加载 `pulse`），禁止随机换场
 - [x] **H-EXPOSE-NOSUB** 暴露失败：hurt 语音**无字幕**；故障反馈不得被全屏 clear 替代
 - [x] **H-INTERJECT** 点击脸/躯干/腿触发 `interjection` 部位语音（开语音模式）
 - [x] **H-CALL** = V-CALL-01（先 ring 无框 → 非 ring 有框）
-- [x] **H-HI** = V-HI-01/02（关：HI_TEXT；开：你好语音与打字框二选一）
+- [x] **H-HI** = V-HI-01/02（关：HI_TEXT；开且有「你好」资源时**强制播**，失败回落打字框）
 - [x] **H-MUSIC-WAVE** 音乐模式脚下光圈：**自主 phase 律动**，不跟曲目 BPM/响度；恢复像素环+底部条（走动 lite 可用）
 - [x] **H-PERSONA-JINMU** 面板「人格切换」↔ 金目（`nc*` / `ncstand`）；金目自由随机语音走 `Vpet/jinmu`；默认不抽 jinmu
 - [x] **H-STARTUP-SLEEP1** 开场立绘/像素入场**全部用 sleep1**（不占位 stand）；`mode=loading` **禁止走动**；资源与入场结束后再 `_begin_free_after_startup` 进入自由模式
@@ -273,27 +275,41 @@
 - [x] **H-SLEEP-PEEK-ONLY** 睡眠模式连点：仅 `_rest_peek_sleep1` 短暂睁眼，**不离开关模式**（仍回 rest）
 - [x] **H-QUIET-SLEEP-VOICE** 模式→睡眠与互动→动作→睡眠同源播 `sleep` 语音；切入 quiet 后延迟补播，避免模式切换 interrupt 掐声；已在睡眠时再点仍可补播
 - [x] **H-MATE-TURN** 智能伴侣跟随朝向防抖：`MINI_PET_TURN_HOLD_MS` + 轴向迟滞，避免斜向/贴身狂切面
-- [x] **H-WORK-FLAG-BOX** 工作：终点 **flag** 可拖；起点搬走一箱立刻再生成（持续到结束/箱数搬完）；送达后旗脚堆 **box**；层级：箱 < 旗 < 桌宠；箱点击穿透；旗/箱铺满画布并以 magenta 烘焙透明
-- [x] **H-GAME-FALL-VIS** 采集：下落食物 / +3s / -3s / 晕眩物**必须可见**；点透不挡拖；叠在桌宠后但同 display_layer（禁止 `lower` 埋没）
+- [x] **H-WORK-FLAG-BOX** 工作：旗/箱 **Tk magenta 色键抠外围**（禁止露玫红/深蓝底）；先设色键再分层；点透只拨 `WS_EX_TRANSPARENT`
+- [x] **H-GAME-FALL-VIS** 采集：Pillow 食物放大（~size/5）；特殊物裁边；`_force_chroma_key_rgb` 去粉边；色键同旗箱
+- [x] **H-WIN32-MAGENTA-KEY** 色键建窗设一次即可；**禁止**每帧 clear→重设 `-transparentcolor`（会闪玫红）；采集热路径只 `lift`
 - [x] **H-RPG-DIY-FILE** RPG DIY 底栏：保存 / 导出 / 删除 / 打开；`Ctrl+S` 覆盖保存，导出另存；删文件二次确认
 - [x] **H-RPG-DIY-ERASE** DIY 可删除已放素材：底栏「清除」+ 左键擦、任意笔刷右键擦；楼梯/洞窟双层同步清
 - [x] **H-RPG-TREE1** RPG 树木：两张 `tree` **横向并排**拼成一图，整体宽高**严格占一格**草地（逻辑仍一格）
 - [x] **H-RPG-PORTAL** 地图有洞窟时楼梯仍可用：门户并存；加载修复双层对齐；穿越时同格类型强制一致
 - [x] **H-RPG-INTRO-SLOW** RPG Start 页动画变慢（`intro_dur≈6.2`、`logo2_delay≈1.15`、`menu_fade_speed≈0.55`）
-- [x] **H-RPG-STARTMUSIC** 点 START 先播 `startmusic`（相对循环 BGM 更响，`STARTMUSIC_VOLUME_MULT≈1.75`），再循环 `music`；可用音量键调节
-- [x] **H-RPG-DIY-LAYER** DIY 双层：楼梯/洞窟画一格同步另一层；`Tab` 切地面/地下编辑与试玩穿越
-- [x] **H-RPG-DIY-PRINCESS** DIY 底栏「公主」素材可拖放；落点写入 `goal`/`goal_layer`/`princess`
+- [x] **H-RPG-STARTMUSIC** 点 START（战役）先播 `startmusic`（相对循环 BGM 更响，`STARTMUSIC_VOLUME_MULT≈3.20`），再循环 `music`；默认循环音量约 **0.05**；可用音量键调节
+- [x] **H-RPG-DIY-LAYER** DIY 双层：楼梯/洞窟画一格同步另一层；**首次放置后新增左侧「地下」层页面**；`Tab`/点页签切地面/地下
+- [x] **H-RPG-KIND-SELECT** 加载 DIY / 试玩前选角页三选一：**knight** / **Vpet(下方文字 aoba)** / **Allmate(下方文字 ren)**；立绘**抠除外圈背景**；游玩中 **C** 切换；Vpet 用 `assets/vpet` 行走图，Allmate 用 `assets/allmate` 行走图
+- [x] **H-RPG-CHEST-SFX** 打开宝箱：本关宝箱数 +1，并播放获得奖励音效（`sfx_reward.wav`，缺则合成）
+- [x] **H-RPG-DIY-PRINCESS** DIY 底栏「公主」可拖放；落点写入 `goal`/`goal_layer`/`princess=True`（到公主通关）；右键/清除擦公主格 → `princess=False` 自由探索、不通关；新 DIY 默认无公主
 - [x] **H-RPG-DIY-START-CENTER** DIY 加载：未设合法 `start` 时镜头与出生点用地图中心；有起点则对准起点
+- [x] **H-RPG-DIY-START-BLUE** DIY 起点用**蓝框**标记操控小人出生格（底栏「起点」笔刷同色；编辑器地图上半透明蓝填充+蓝描边）
+- [x] **H-RPG-ALLMATE-SHEET** Allmate(ren) 操控小人：`assets/allmate` 的 petstand/petfront/petback/petleft（抠绿底）
 - [x] **H-WORK-GAME-MUTEX** 工作模式与采集互斥：进入工作硬停采集（清 spawn/tick/HUD/下落窗）；进入采集硬停工作；倒计时结束若已在工作则不再开局
 - [x] **H-FOOD-MORE** 背包展示 **全部 18 种**食物（含 ×0）；新增种类首次入库种子 `FOOD_NEW_KIND_SEED=3`；采集随机池同步扩展
 - [x] **H-LOCAL-CACHE** 语音/音乐/打字音/工作道具优先本地+`data/` 缓存；天气联网失败回退 `weather_cache.json`；启动 `_seed_local_runtime_assets` 落盘缺文件
+- [x] **H-DEMO-GUIDES** 录实况：`DEMO_ALWAYS_SHOW_GUIDES=True` → **每次启动弹出操作说明**；进玩法仍 toast 要点。**正式发布前改 `False`**（仅首次弹操作说明）
+- [x] **H-HINT-TOAST** 玩法说明 / RPG 宝箱·小屋·关卡等**说明类**文案用 toast，不对白文本框打断操作；角色台词/系统对话仍可走文本框
+- [x] **H-VOICE-FORCE-SCENE** 开语音且有资源时强制播：`hurt`（游戏失败）/`dizzy`（采集晕眩·跟随晕眩）/`call`/`你好`/`eat`/`hungry`（不再 50/50 丢掉）
+- [x] **H-ABOUT-FREE** 操作说明 / 关于标明**免费**；开发者**翛然而往**以更小字贴在面板**下方角落**
+- [x] **H-RPG-DIY-NOMUSIC** 加载 DIY / 自建地图试玩（`campaign=False`）**不放**冒险 BGM；仅战役 START 播音乐
+- [x] **H-RPG-PLAYER-KIND** 游玩中 **C** 切换：**knight / aoba(Vpet·`assets/vpet`)** / **ren(Allmate·`assets/allmate`)**；WASD 可控移动
+- [x] **H-RPG-SPAWN-WALK** 出生/起点/读档落点若在湖/墙等不可走格，自动挪到最近可走格；DIY 放起点同规则
+- [x] **H-WINK-3S** wink 仅停约 **3s**；**自由模式不随机 wink**；卡住时点一下恢复；看门狗 `_force_end_wink_like` 兜底
+- [x] **H-WINK-FREE-NO** 自由：心情池与 `_try_free_random_action` **不抽 wink**；互动菜单「wink」仍可用
 
-### I. 核对结果摘要（代码核验 · 2026-07-16）
+### I. 核对结果摘要（代码核验 · 2026-07-17）
 
 | 结论 | 编号 |
 |------|------|
-| ✅ 已实现 | **A** UI-01～04；**B** P-UI / P-FEED / P-MATE；**C** V-BORDER5 + V-TEXT + V-PICK + D-TYPE；**D** V-CALL / V-HI；**E** V-MODE～V-ADDON；**G** 文档只读；**H** 全段（含 H-WORK-GAME-MUTEX、H-FOOD-MORE、H-LOCAL-CACHE、RPG DIY 双层/公主/起点、工作旗箱/采集可见） |
-| ❌ / ⚠️ 未达标 | **G08** 对战失败仍全屏 clear；**M01** 晕眩 1.5s≠3s；**F07** wink 未接 `_show_wink_fx`；**E05** 暴露失败 toast 2.2s≠900ms+打字框 |
+| ✅ 已实现 | **A～E**；**F** 含 G08/M01/F07/E05；**G** 文档只读；**H** 全段（含 **H-WINK-FREE-NO**、Allmate 行走图、RPG DIY 选角/层页/可选公主/蓝框起点/宝箱音效/音量、toast 说明；**录实况 `DEMO_ALWAYS_SHOW_GUIDES=True`**） |
+| ❌ / ⚠️ 未达标 | （无） |
 
 ---
 
@@ -310,4 +326,4 @@
 | `bundled/Vpetgame/game.py` | Silent Oath RPG |
 | `panel_decor.py` | 面板主题色（含不透明内色） |
 
-**最后更新**：2026-07-16（H-WORK-GAME-MUTEX / H-FOOD-MORE / H-LOCAL-CACHE + RPG DIY 双层/公主/起点）
+**最后更新**：2026-07-17（Allmate 行走图；自由模式不随机 wink + 点一下恢复；重新打包）

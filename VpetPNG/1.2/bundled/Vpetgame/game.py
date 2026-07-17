@@ -21,10 +21,10 @@ SAVES_DIR = ROOT / "saves"
 MUSIC_END_EVENT = pygame.USEREVENT + 21
 STARTMUSIC_NAMES = ("startmusic.mp3", "startmusic.ogg", "startmusic.wav")
 LOOPMUSIC_NAMES = ("music.mp3", "music.ogg", "music.wav")
-MUSIC_DEFAULT_VOLUME = 0.28  # 默认偏小，可用音量加减键调节
+MUSIC_DEFAULT_VOLUME = 0.05  # 循环 music 默认更轻，可用音量加减键调节
 MUSIC_VOLUME_STEP = 0.08
-# startmusic 相对循环 BGM 更响（仍受 music_volume / 音量键约束）
-STARTMUSIC_VOLUME_MULT = 1.75
+# startmusic 相对循环 BGM 明显更响（仍受 music_volume / 音量键约束）
+STARTMUSIC_VOLUME_MULT = 3.20
 
 TILE = 36
 # 屏幕可见格子（相机视口）
@@ -118,7 +118,7 @@ TREASURE_LOOT = (
 )
 
 INTERACT_HINTS = {
-    TREASURE: "按 E 打开宝箱",
+    TREASURE: "踩上开箱 · E 也可打开",
     HOUSE: "按 E 查看房屋",
     GATE: "靠近关卡门即可进入下一关",
     STAIRS: "踩上楼梯切换地面 / 地下",
@@ -242,6 +242,128 @@ def ensure_extra_tiles() -> None:
         im.save(ASSETS / "cave.png")
 
 
+PLAYER_KINDS = ("knight", "vpet", "allmate")
+PLAYER_KIND_LABELS = {
+    "knight": "knight",
+    "vpet": "aoba",
+    "allmate": "ren",
+}
+# 操控小人起始格：编辑器蓝框
+START_MARKER_COLOR = (40, 140, 255)
+START_MARKER_FILL = (40, 140, 255, 55)
+
+
+def _vpet_asset_candidates(filename: str) -> list[Path]:
+    """Vpet/aoba：优先 RPG/assets/vpet，其次桌宠 sprites。"""
+    out: list[Path] = [
+        ASSETS / "vpet" / filename,
+        ASSETS / filename,
+    ]
+    out.extend(_desktop_asset_candidates("sprites", filename))
+    out.extend(_desktop_asset_candidates("vpet", filename))
+    uniq: list[Path] = []
+    for p in out:
+        if p not in uniq:
+            uniq.append(p)
+    return uniq
+
+
+def _allmate_asset_candidates(filename: str) -> list[Path]:
+    """Allmate/ren：优先 RPG/assets/allmate，其次桌宠 minipet。"""
+    out: list[Path] = [
+        ASSETS / "allmate" / filename,
+        ASSETS / "vpet" / filename,  # 兼容旧路径里的 pet*
+        ASSETS / filename,
+    ]
+    out.extend(_desktop_asset_candidates("minipet", filename))
+    out.extend(_desktop_asset_candidates("allmate", filename))
+    uniq: list[Path] = []
+    for p in out:
+        if p not in uniq:
+            uniq.append(p)
+    return uniq
+
+
+def _desktop_asset_candidates(*parts: str) -> list[Path]:
+    """桌宠工程 assets（minipet / sprites）相对 RPG 包的候选路径。"""
+    bases = [
+        ROOT.parent.parent / "assets",  # VpetPNG/1.2/assets
+        ROOT.parent.parent.parent / "assets",
+        ROOT.parent / "assets",  # bundled/assets（若有）
+        Path.cwd() / "assets",
+    ]
+    # 打包后：exe 旁 / _MEIPASS 邻近
+    if getattr(sys, "frozen", False):
+        meipass = Path(getattr(sys, "_MEIPASS", ROOT))
+        bases.extend(
+            [
+                meipass / "assets",
+                Path(sys.executable).resolve().parent / "assets",
+                meipass.parent / "assets",
+            ]
+        )
+    out: list[Path] = []
+    for b in bases:
+        p = b.joinpath(*parts)
+        if p not in out:
+            out.append(p)
+    return out
+
+
+def _key_outer_bg_surface(surf: pygame.Surface) -> pygame.Surface:
+    """抠掉外圈连通背景（白/黑/绿幕），选角与小人显示用。"""
+    try:
+        from process_assets import flood_key
+        from PIL import Image
+        import numpy as np
+
+        w, h = surf.get_size()
+        raw = pygame.image.tostring(surf, "RGBA")
+        im = Image.frombytes("RGBA", (w, h), raw)
+        keyed = flood_key(im)
+        out = pygame.image.fromstring(keyed.tobytes("raw", "RGBA"), keyed.size, "RGBA")
+        return out.convert_alpha()
+    except Exception:
+        try:
+            return surf.convert_alpha()
+        except Exception:
+            return surf
+
+
+def _load_surface_any(
+    paths: list[Path],
+    size: tuple[int, int] | None = None,
+    *,
+    key_bg: bool = True,
+) -> pygame.Surface | None:
+    for p in paths:
+        if not p.is_file():
+            continue
+        try:
+            if key_bg:
+                from process_assets import flood_key
+                from PIL import Image
+
+                keyed = flood_key(Image.open(p))
+                img = pygame.image.fromstring(keyed.tobytes("raw", "RGBA"), keyed.size, "RGBA").convert_alpha()
+            else:
+                img = pygame.image.load(str(p)).convert_alpha()
+            if size is not None:
+                img = pygame.transform.scale(img, size)
+            return img
+        except Exception:
+            continue
+    return None
+
+
+def _tint_surface(src: pygame.Surface, rgba: tuple[int, int, int, int]) -> pygame.Surface:
+    out = src.copy()
+    tint = pygame.Surface(out.get_size(), pygame.SRCALPHA)
+    tint.fill(rgba)
+    out.blit(tint, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    return out
+
+
 class Assets:
     def __init__(self) -> None:
         ensure_extra_tiles()
@@ -313,10 +435,94 @@ class Assets:
         # 公主略小于骑士
         pw, ph = max(16, int(cw * 0.72)), max(20, int(ch * 0.72))
         self.princess = pygame.transform.scale(load_img("princess.png"), (pw, ph))
+        vpet_sheet = self._load_vpet_sheet((cw, ch))
+        allmate_sheet = self._load_allmate_sheet((cw, ch), fallback=vpet_sheet)
+        self.players: dict[str, dict[str, list[pygame.Surface]]] = {
+            "knight": self.knight,
+            "vpet": vpet_sheet,
+            "allmate": allmate_sheet,
+        }
         self.start_bg = self._load_start_bg()
         self.start_logo1, self.start_logo2 = self._load_start_logos()
         self.window_frame = self._load_window_frame()
         self.text_frame = self._load_text_frame()
+
+    @staticmethod
+    def _sheet_from_still(still: pygame.Surface) -> dict[str, list[pygame.Surface]]:
+        """单图角色：四向共用，轻微左右镜像区分朝向。"""
+        flip = pygame.transform.flip(still, True, False)
+        return {
+            "down": [still, still, still],
+            "up": [still, still],
+            "right": [still, still],
+            "left": [flip, flip],
+        }
+
+    def _load_vpet_sheet(self, size: tuple[int, int]) -> dict[str, list[pygame.Surface]]:
+        """Vpet = aoba：桌宠主角色 walk/stand。优先已抠底的 png，其次旧 jpg。"""
+
+        def pick(base: str) -> pygame.Surface | None:
+            # png 已在导入时抠掉外圈绿底，直接用无需二次抠
+            surf = _load_surface_any(
+                _vpet_asset_candidates(base + ".png"), size, key_bg=False
+            )
+            if surf is None:
+                surf = _load_surface_any(_vpet_asset_candidates(base + ".jpg"), size)
+            return surf
+
+        stand = pick("stand")
+        front1 = pick("walkfront1")
+        front2 = pick("walkfront2")
+        back1 = pick("walkback1")
+        back2 = pick("walkback2")
+        left1 = pick("walkleft1")
+        left2 = pick("walkleft2")
+        if not stand:
+            # 兼容旧 pet* 文件名
+            stand = _load_surface_any(_vpet_asset_candidates("petstand.jpg"), size)
+            front1 = _load_surface_any(_vpet_asset_candidates("petfront1.jpg"), size)
+            front2 = _load_surface_any(_vpet_asset_candidates("petfront2.jpg"), size)
+            back1 = _load_surface_any(_vpet_asset_candidates("petback1.jpg"), size)
+            back2 = _load_surface_any(_vpet_asset_candidates("petback2.jpg"), size)
+            left1 = _load_surface_any(_vpet_asset_candidates("petleft1.jpg"), size)
+            left2 = _load_surface_any(_vpet_asset_candidates("petleft2.jpg"), size)
+        if not stand:
+            return dict(self.knight)
+        down = [stand, front1 or stand, front2 or stand]
+        up = [back1 or stand, back2 or stand]
+        left = [left1 or stand, left2 or stand]
+        right = [pygame.transform.flip(s, True, False) for s in left]
+        return {"down": down, "up": up, "left": left, "right": right}
+
+    def _load_allmate_sheet(
+        self,
+        size: tuple[int, int],
+        fallback: dict[str, list[pygame.Surface]] | None = None,
+    ) -> dict[str, list[pygame.Surface]]:
+        """Allmate = ren：智能伴侣。优先已抠底 png，其次旧 jpg/minipet。"""
+
+        def pick(base: str) -> pygame.Surface | None:
+            surf = _load_surface_any(
+                _allmate_asset_candidates(base + ".png"), size, key_bg=False
+            )
+            if surf is None:
+                surf = _load_surface_any(_allmate_asset_candidates(base + ".jpg"), size)
+            return surf
+
+        stand = pick("petstand")
+        front1 = pick("petfront1")
+        front2 = pick("petfront2")
+        back1 = pick("petback1")
+        back2 = pick("petback2")
+        left1 = pick("petleft1")
+        left2 = pick("petleft2")
+        if not stand:
+            return dict(fallback or self.knight)
+        down = [stand, front1 or stand, front2 or stand]
+        up = [back1 or stand, back2 or stand]
+        left = [left1 or stand, left2 or stand]
+        right = [pygame.transform.flip(s, True, False) for s in left]
+        return {"down": down, "up": up, "left": left, "right": right}
 
     def _load_text_frame(self) -> pygame.Surface:
         path = ASSETS / "text.png"
@@ -455,6 +661,21 @@ def rock_ring_around_content(grid: list[list[int]], wall: int = ROCK) -> tuple[i
 def border_brick(grid: list[list[int]]) -> None:
     """兼容旧名：外圈改为岩石隔断。"""
     border_wall(grid, ROCK)
+
+
+def map_has_layer_portals(data: dict) -> bool:
+    """地图是否已有楼梯/洞窟（出现后编辑器才显示「地下」层页面）。"""
+    if data.get("stairs") or data.get("caves"):
+        return True
+    for key in ("surface", "underground", "tiles"):
+        grid = data.get(key)
+        if not isinstance(grid, list):
+            continue
+        for row in grid:
+            for t in row:
+                if t in LAYER_PORTALS:
+                    return True
+    return False
 
 
 def _map_has_portal_pairs(data: dict) -> bool:
@@ -855,11 +1076,55 @@ def has_start(data: dict) -> bool:
 
 
 def resolve_start(data: dict) -> tuple[int, int]:
-    """出生/镜头锚点：有起点用起点，否则用地图中心。"""
+    """出生/镜头锚点：有起点用起点，否则用地图中心；若落在水/墙等不可走格，自动找最近可走格。"""
     if has_start(data):
         raw = data["start"]
-        return int(raw[0]), int(raw[1])
-    return map_center_tile(data)
+        tx, ty = int(raw[0]), int(raw[1])
+    else:
+        tx, ty = map_center_tile(data)
+    return ensure_walkable_spawn(data, tx, ty)
+
+
+def _layer_grid(data: dict, layer: str = "surface") -> list[list[int]]:
+    if layer == "underground" and "underground" in data:
+        return data["underground"]
+    if "surface" in data:
+        return data["surface"]
+    return data.get("tiles") or []
+
+
+def tile_walkable(data: dict, tx: int, ty: int, *, layer: str = "surface") -> bool:
+    grid = _layer_grid(data, layer)
+    if not grid:
+        return True
+    h, w = len(grid), len(grid[0]) if grid else 0
+    if not (0 <= tx < w and 0 <= ty < h):
+        return False
+    return int(grid[ty][tx]) not in SOLID
+
+
+def ensure_walkable_spawn(data: dict, tx: int, ty: int, *, layer: str = "surface") -> tuple[int, int]:
+    """若 (tx,ty) 不可走，螺旋向外找最近可走格；找不到则退回原坐标。"""
+    if tile_walkable(data, tx, ty, layer=layer):
+        return tx, ty
+    grid = _layer_grid(data, layer)
+    if not grid:
+        return tx, ty
+    h, w = len(grid), len(grid[0])
+    for radius in range(1, max(w, h) + 1):
+        for dy in range(-radius, radius + 1):
+            for dx in range(-radius, radius + 1):
+                if max(abs(dx), abs(dy)) != radius:
+                    continue
+                nx, ny = tx + dx, ty + dy
+                if tile_walkable(data, nx, ny, layer=layer):
+                    return nx, ny
+    # 全图扫描兜底
+    for y in range(h):
+        for x in range(w):
+            if tile_walkable(data, x, y, layer=layer):
+                return x, y
+    return tx, ty
 
 
 class Camera:
@@ -885,8 +1150,9 @@ class Camera:
 class Knight:
     SPEED = 120
 
-    def __init__(self, assets: Assets, tile_xy: tuple[int, int]) -> None:
+    def __init__(self, assets: Assets, tile_xy: tuple[int, int], *, kind: str = "knight") -> None:
         self.assets = assets
+        self.kind = kind if kind in PLAYER_KINDS else "knight"
         self.x = tile_xy[0] * TILE + TILE // 2
         self.y = tile_xy[1] * TILE + TILE // 2
         self.dir = "down"
@@ -895,6 +1161,14 @@ class Knight:
         self.moving = False
         self.hw = max(8, TILE // 3)
         self.hh = max(6, TILE // 4)
+
+    def set_kind(self, kind: str) -> None:
+        if kind in PLAYER_KINDS:
+            self.kind = kind
+
+    def _sheet(self) -> dict[str, list[pygame.Surface]]:
+        players = getattr(self.assets, "players", None) or {}
+        return players.get(self.kind) or self.assets.knight
 
     def update(self, dt: float, keys, grid: list[list[int]], mw: int, mh: int) -> None:
         vx = vy = 0
@@ -944,9 +1218,9 @@ class Knight:
         return False
 
     def draw(self, surf: pygame.Surface, cam: Camera) -> None:
-        frames = self.assets.knight[self.dir]
+        frames = self._sheet()[self.dir]
         if self.dir == "down":
-            img = frames[0] if not self.moving else frames[1 + self.frame]
+            img = frames[0] if not self.moving else frames[1 + self.frame % max(1, len(frames) - 1)]
         else:
             img = frames[self.frame % len(frames)]
         sx, sy = cam.apply(self.x - img.get_width() // 2, self.y - img.get_height() + 8)
@@ -1088,6 +1362,11 @@ class Game:
         self.editor_panning = False
         self.editor_pan_origin = (0, 0, 0.0, 0.0)
         self.paint_drag = False
+        # 操控角色：knight / aoba(Vpet) / ren(Allmate)（加载后选角；游玩中也可按 C 切换）
+        self.player_kind = "knight"
+        self.pending_play: dict | None = None  # {data, campaign} 选角后再开局
+        self.kind_select_idx = 0
+        self.reward_sfx = self._make_reward_sfx()
         # BGM：点 START 播 startmusic，结束后循环 music
         self._bgm_phase: str | None = None  # None | "start" | "loop"
         self.music_volume = MUSIC_DEFAULT_VOLUME
@@ -1222,15 +1501,25 @@ class Game:
             sx, sy = resolve_start(map_data)
             px = sx * TILE + TILE // 2
             py = sy * TILE + TILE // 2
-        self.knight = Knight(self.assets, (0, 0))
+        self.knight = self._make_player((0, 0))
         self.knight.x, self.knight.y = px, py
         if pdir in self.assets.knight:
             self.knight.dir = pdir
+        # 存档落点若在湖/墙等不可走格，挪到最近可走格
+        stx, sty = ensure_walkable_spawn(
+            map_data, int(self.knight.x) // TILE, int(self.knight.y) // TILE, layer=self.layer
+        )
+        if (stx, sty) != (int(self.knight.x) // TILE, int(self.knight.y) // TILE):
+            self.knight.place_on_tile(stx, sty)
         self.state = "play"
         self.dialog = None
         self.picker_mode = ""
         mw, mh = map_size(map_data)
         self.camera.follow(self.knight.x, self.knight.y, mw, mh)
+        if self.campaign:
+            self._begin_adventure_bgm()
+        else:
+            self.stop_bgm()
         self.toast(f"已读取 {path.name}")
         return True
 
@@ -1350,6 +1639,32 @@ class Game:
         self.picker_mode = ""
         self.picker_delete_pending = None
 
+    def _open_treasure_at(self, tx: int, ty: int, *, announce: bool = True) -> bool:
+        """打开指定格宝箱；成功则本关计数 +1。"""
+        assert self.map_data
+        mw, mh = map_size(self.map_data)
+        if not (0 <= tx < mw and 0 <= ty < mh):
+            return False
+        grid = self.current_grid()
+        if grid[ty][tx] != TREASURE:
+            return False
+        loot_name, loot_desc = random.choice(TREASURE_LOOT)
+        grid[ty][tx] = TREASURE_OPEN
+        self.treasures += 1
+        self._play_reward_sfx()
+        if announce:
+            self.toast(
+                f"宝箱 +1：{loot_name}！{loot_desc}（本关 {self.treasures}）",
+                2.6,
+            )
+        return True
+
+    def _try_collect_treasure_here(self) -> None:
+        """踩上宝箱格时自动开箱（底栏计数同步增加）。"""
+        assert self.knight
+        tx, ty = self.knight.tile_pos()
+        self._open_treasure_at(tx, ty)
+
     def _interact_targets(self) -> list[tuple[int, int, int]]:
         """脚下与面前的可互动物。"""
         assert self.map_data and self.knight
@@ -1376,21 +1691,17 @@ class Game:
         # 优先宝箱
         targets.sort(key=lambda t: 0 if t[2] == TREASURE else 1)
         tx, ty, cell = targets[0]
-        grid = self.current_grid()
         if cell == TREASURE:
-            loot_name, loot_desc = random.choice(TREASURE_LOOT)
-            grid[ty][tx] = TREASURE_OPEN
-            self.treasures += 1
-            self.show_dialog("打开宝箱", f"找到了{loot_name}！{loot_desc}（本关 {self.treasures}）")
+            self._open_treasure_at(tx, ty)
             return
         if cell == TREASURE_OPEN:
-            self.show_dialog("空宝箱", "已经被翻过了，里面什么也没有。")
+            self.toast("空宝箱：已经被翻过了")
             return
         if cell == HOUSE:
-            self.show_dialog("小屋", "温暖的出发点小屋。整理好行装，踏上旅途吧。")
+            self.toast("小屋：出发点，整理好行装再上路")
             return
         if cell == GATE:
-            self.show_dialog("关卡门", "金色光芒流转的门扉——靠近即可前往下一关。")
+            self.toast("关卡门：靠近即可前往下一关")
             return
         if cell == STAIRS or cell == CAVE:
             self.try_use_layer_portal()
@@ -1439,7 +1750,7 @@ class Game:
             elif tid == BRUSH_START:
                 pygame.draw.rect(self.screen, (28, 32, 48), rect.inflate(-6, -6))
                 pygame.draw.rect(
-                    self.screen, (80, 200, 255),
+                    self.screen, START_MARKER_COLOR,
                     rect.inflate(-14, -14), 2,
                 )
             elif tid == BRUSH_PRINCESS:
@@ -1510,6 +1821,64 @@ class Game:
         except pygame.error:
             return None
 
+    @staticmethod
+    def _make_reward_sfx() -> pygame.mixer.Sound | None:
+        """开宝箱「获得奖励」短音效；优先读素材，否则合成上行琶音。"""
+        if not pygame.mixer.get_init():
+            return None
+        for name in ("sfx_reward.wav", "sfx_reward.ogg", "sfx_loot.wav"):
+            path = ASSETS / name
+            if path.exists():
+                try:
+                    return pygame.mixer.Sound(str(path))
+                except pygame.error:
+                    pass
+        path = ASSETS / "sfx_reward.wav"
+        try:
+            import math
+            import struct
+            import wave
+
+            ASSETS.mkdir(exist_ok=True)
+            fr = 22050
+            notes = (523.25, 659.25, 783.99, 1046.5)  # C5 E5 G5 C6
+            note_dur = 0.09
+            gap = 0.02
+            frames = bytearray()
+            for ni, freq in enumerate(notes):
+                n = int(fr * note_dur)
+                for i in range(n):
+                    t = i / fr
+                    env = math.sin(math.pi * min(1.0, t / note_dur)) ** 0.5
+                    env *= math.exp(-t * 6.5)
+                    sample = env * (
+                        0.55 * math.sin(2 * math.pi * freq * t)
+                        + 0.22 * math.sin(2 * math.pi * freq * 2 * t)
+                    )
+                    val = int(max(-1.0, min(1.0, sample)) * 20000)
+                    frames += struct.pack("<h", val)
+                if ni < len(notes) - 1:
+                    frames += b"\x00\x00" * int(fr * gap)
+            with wave.open(str(path), "w") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(fr)
+                wf.writeframes(frames)
+            return pygame.mixer.Sound(str(path))
+        except Exception:
+            return None
+
+    def _play_reward_sfx(self) -> None:
+        if self.reward_sfx is None:
+            self.reward_sfx = self._make_reward_sfx()
+        if self.reward_sfx is None:
+            return
+        try:
+            self.reward_sfx.set_volume(0.72)
+            self.reward_sfx.play()
+        except pygame.error:
+            pass
+
     def current_grid(self) -> list[list[int]]:
         assert self.map_data
         return layer_grid(self.map_data, self.layer)
@@ -1527,20 +1896,40 @@ class Game:
         if tid == BRUSH_START:
             self.brush = BRUSH_START
             self.edit_mode = "start"
-            self.toast("拖放设置起点（地面）")
+            self.toast("拖放设置起点（蓝框=操控小人出生格）")
             return
         if tid == BRUSH_PRINCESS:
             self.brush = BRUSH_PRINCESS
             self.edit_mode = "goal"
-            self.toast("拖放放置公主（当前层；Tab 切地面/地下）")
+            self.toast("拖放放置公主=通关目标 · 右键/清除可去掉公主（自由探索）")
             return
         self.brush = tid
         self.edit_mode = "tile"
         name = next((n for t, n in PALETTE if t == tid), "?")
-        if tid in LAYER_PORTALS:
-            self.toast(f"笔刷：{name} · 画一格即联通双层 · Tab 编辑另一层")
+        if tid == EMPTY:
+            self.toast("清除：擦地块；点公主格可去掉公主")
+        elif tid in LAYER_PORTALS:
+            self.toast(f"笔刷：{name} · 画一格联通双层，并新增地下层页面")
         else:
             self.toast(f"笔刷：{name}")
+
+    def _make_player(self, tile_xy: tuple[int, int]) -> Knight:
+        kind = self.player_kind if self.player_kind in PLAYER_KINDS else "knight"
+        self.player_kind = kind
+        return Knight(self.assets, tile_xy, kind=kind)
+
+    def cycle_player_kind(self) -> None:
+        """切换操控角色：knight ↔ aoba ↔ ren。"""
+        kinds = PLAYER_KINDS
+        try:
+            idx = kinds.index(self.player_kind)
+        except ValueError:
+            idx = 0
+        self.player_kind = kinds[(idx + 1) % len(kinds)]
+        if self.knight:
+            self.knight.set_kind(self.player_kind)
+        label = PLAYER_KIND_LABELS.get(self.player_kind, self.player_kind)
+        self.toast(f"操控角色：{label}（C 切换）")
 
     def start_campaign(self) -> None:
         self.campaign = True
@@ -1554,7 +1943,7 @@ class Game:
         data = generate_level(idx)
         self.map_data = data
         self.layer = "surface"
-        self.knight = Knight(self.assets, resolve_start(data))
+        self.knight = self._make_player(resolve_start(data))
         self.treasures = 0
         self.stairs_cd = 0.0
         self.state = "play"
@@ -1564,25 +1953,113 @@ class Game:
         self.toast(f"{data['name']} — {tip}")
 
     def start_play(self, data: dict, campaign: bool = False) -> None:
-        self.campaign = campaign
+        """加载地图后先选操控角色（knight/aoba/ren），再开局。"""
         # 兼容旧单层 DIY
         if "surface" not in data:
             data = self._migrate_old_map(data)
         data = normalize_map_tiles(data)
+        self.pending_play = {"data": data, "campaign": bool(campaign)}
+        try:
+            self.kind_select_idx = PLAYER_KINDS.index(self.player_kind)
+        except ValueError:
+            self.kind_select_idx = 0
+        self.state = "kind_select"
+        self.toast("选择操控角色：knight / aoba / ren")
+
+    def _begin_play_after_kind(self) -> None:
+        assert self.pending_play
+        data = self.pending_play["data"]
+        campaign = bool(self.pending_play["campaign"])
+        self.pending_play = None
+        self.player_kind = PLAYER_KINDS[self.kind_select_idx]
+        self.campaign = campaign
         self.map_data = data
         self.layer = "surface"
         spawn = resolve_start(data)
-        self.knight = Knight(self.assets, spawn)
+        self.knight = self._make_player(spawn)
         self.treasures = 0
         self.stairs_cd = 0.0
         self.state = "play"
-        self._begin_adventure_bgm()
+        # DIY / 自建地图试玩：不放冒险 BGM
+        if campaign:
+            self._begin_adventure_bgm()
+        else:
+            self.stop_bgm()
         mw, mh = map_size(data)
         self.camera.follow(self.knight.x, self.knight.y, mw, mh)
-        tip = " · WASD移动 · 踩楼梯/洞窟切换地面地下"
+        tip = " · WASD移动 · C切换 knight/aoba/ren · 踩楼梯/洞窟切层"
+        if data.get("princess"):
+            tip = " · 找到公主通关" + tip
+        else:
+            tip = " · 自由探索（无通关）" + tip
         if not has_start(data):
             tip = " · 未设起点，从地图中心出发" + tip
-        self.toast(data.get("name", "探险开始") + tip)
+        kind_cn = PLAYER_KIND_LABELS.get(self.player_kind, self.player_kind)
+        self.toast(f"{data.get('name', '探险开始')}（{kind_cn}）" + tip)
+
+    def _kind_select_rects(self) -> list[tuple[pygame.Rect, str]]:
+        """选角页：knight / aoba(Vpet) / ren(Allmate) 三卡片。"""
+        n = len(PLAYER_KINDS)
+        card_w, card_h, gap = 140, 180, 18
+        total = card_w * n + gap * (n - 1)
+        x0 = (SCREEN_W - total) // 2
+        y0 = VIEW_H // 2 - card_h // 2 - 10
+        return [
+            (pygame.Rect(x0 + i * (card_w + gap), y0, card_w, card_h), kind)
+            for i, kind in enumerate(PLAYER_KINDS)
+        ]
+
+    def run_kind_select(self, events: list) -> None:
+        """地图加载后：选择操控对象。"""
+        for e in events:
+            if e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_ESCAPE:
+                    self.pending_play = None
+                    self.enter_menu(play_intro=False)
+                    return
+                if e.key in (pygame.K_LEFT, pygame.K_a):
+                    self.kind_select_idx = (self.kind_select_idx - 1) % len(PLAYER_KINDS)
+                elif e.key in (pygame.K_RIGHT, pygame.K_d):
+                    self.kind_select_idx = (self.kind_select_idx + 1) % len(PLAYER_KINDS)
+                elif e.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_e):
+                    self._begin_play_after_kind()
+                    return
+            elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                pos = self._content_mouse(e.pos)
+                for i, (rect, _kind) in enumerate(self._kind_select_rects()):
+                    if rect.collidepoint(pos):
+                        self.kind_select_idx = i
+                        self._begin_play_after_kind()
+                        return
+
+        self.screen.fill((18, 22, 36))
+        title = self.font.render("选择操控角色", True, (255, 230, 140))
+        self.screen.blit(title, (SCREEN_W // 2 - title.get_width() // 2, 36))
+        sub = self.font_sm.render("← → 选择 · Enter 确认 · Esc 返回", True, (170, 180, 200))
+        self.screen.blit(sub, (SCREEN_W // 2 - sub.get_width() // 2, 64))
+
+        for i, (rect, kind) in enumerate(self._kind_select_rects()):
+            selected = i == self.kind_select_idx
+            bg = (48, 56, 82) if selected else (32, 38, 56)
+            border = (255, 220, 100) if selected else (90, 100, 130)
+            pygame.draw.rect(self.screen, bg, rect, border_radius=8)
+            pygame.draw.rect(self.screen, border, rect, 2 if selected else 1, border_radius=8)
+            sheet = self.assets.players.get(kind) or self.assets.knight
+            frames = sheet.get("down") or list(sheet.values())[0]
+            spr = frames[0]
+            # 选角预览：已抠外圈背景
+            scale = 2.0 if kind != "knight" else 2.2
+            big = pygame.transform.scale(
+                spr, (max(1, int(spr.get_width() * scale)), max(1, int(spr.get_height() * scale)))
+            )
+            self.screen.blit(
+                big,
+                (rect.centerx - big.get_width() // 2, rect.y + 22),
+            )
+            label = PLAYER_KIND_LABELS.get(kind, kind)
+            txt = self.font.render(label, True, (255, 240, 200) if selected else (210, 215, 230))
+            self.screen.blit(txt, (rect.centerx - txt.get_width() // 2, rect.bottom - 36))
+        self.draw_ui_bar("加载完成 · knight / aoba(Vpet) / ren(Allmate)")
 
     def _migrate_old_map(self, data: dict) -> dict:
         w, h = data["width"], data["height"]
@@ -1614,9 +2091,9 @@ class Game:
                 "surface": surface,
                 "underground": under,
                 "start": [sx, sy],
-                "goal": [sx + 4, sy],
+                "goal": None,
                 "goal_layer": "surface",
-                "princess": True,
+                "princess": False,
                 "stairs": [],
                 "caves": [],
                 "name": "DIY 地图",
@@ -1637,9 +2114,10 @@ class Game:
         self._editor_focus_anchor()
         hint = path.name if path else "新地图"
         focus = "起点" if has_start(data) else "地图中心"
+        mode = "有公主通关" if data.get("princess") else "自由探索"
         self.toast(
-            f"{hint} · 镜头→{focus} | Tab切地面/地下 · 楼梯/洞窟联通双层 | "
-            f"底栏拖公主/起点 · Ctrl+S 保存"
+            f"{hint} · {mode} · 镜头→{focus} | 蓝框=起点 · 公主可拖放/右键去掉 | "
+            f"Tab切层 · Ctrl+S 保存"
         )
 
     def draw_visible_map(self, surf: pygame.Surface, grid: list[list[int]], mw: int, mh: int, show_goal: bool) -> None:
@@ -1700,11 +2178,14 @@ class Game:
                         # 非终关已用地图 GATE 绘制
                         pass
 
-        # 起点标记（仅编辑器；未设起点不画框）
+        # 起点蓝框：表示操控小人出生格（编辑器；有合法起点时）
         if self.state == "editor" and has_start(self.map_data):
             sx0, sy0 = int(self.map_data["start"][0]), int(self.map_data["start"][1])
-            sx, sy = self.camera.apply(sx0 * TILE + 4, sy0 * TILE + 4)
-            pygame.draw.rect(surf, (80, 200, 255), (sx, sy, TILE - 8, TILE - 8), 2)
+            sx, sy = self.camera.apply(sx0 * TILE, sy0 * TILE)
+            fill = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+            fill.fill(START_MARKER_FILL)
+            surf.blit(fill, (sx, sy))
+            pygame.draw.rect(surf, START_MARKER_COLOR, (sx + 2, sy + 2, TILE - 4, TILE - 4), 3)
 
     def draw_ui_bar(self, text: str) -> None:
         bar = pygame.Rect(0, VIEW_H, SCREEN_W, UI_H)
@@ -2136,6 +2617,9 @@ class Game:
 
     def check_goal(self) -> None:
         assert self.map_data and self.knight
+        # DIY 无公主：自由探索，不通关
+        if not self.map_data.get("princess") and not self.campaign:
+            return
         if self.layer != self.map_data.get("goal_layer", "surface"):
             return
         goal = self.map_data.get("goal")
@@ -2154,6 +2638,7 @@ class Game:
             else:
                 self.state = "win"
         else:
+            # 有公主（或战役公主关）：到达公主通关
             self.state = "win"
 
     def run_play(self, events: list, dt: float) -> None:
@@ -2170,6 +2655,8 @@ class Game:
                 if e.key == pygame.K_ESCAPE:
                     self.enter_menu(play_intro=False)
                     return
+                if e.key == pygame.K_c:
+                    self.cycle_player_kind()
                 if e.key == pygame.K_r and self.campaign:
                     self._load_level(self.level_idx)
                     return
@@ -2212,7 +2699,9 @@ class Game:
         tx, ty = self.knight.tile_pos()
         if 0 <= tx < mw and 0 <= ty < mh:
             cell = grid[ty][tx]
-            if cell in LAYER_PORTALS:
+            if cell == TREASURE:
+                self._try_collect_treasure_here()
+            elif cell in LAYER_PORTALS:
                 self.try_use_layer_portal()
             else:
                 self.portal_stand_lock = None
@@ -2252,9 +2741,10 @@ class Game:
 
         layer_cn = "地下" if self.layer == "underground" else "地面"
         name = self.map_data.get("name", "")
-        tip = self.nearby_hint or "E互动 F5存档"
+        kind_cn = PLAYER_KIND_LABELS.get(self.player_kind, self.player_kind)
+        tip = self.nearby_hint or "踩宝箱开箱 · E互动 · F5存档 · C角色"
         self.draw_ui_bar(
-            f"{name} | {layer_cn} | 宝箱 {self.treasures} | {tip} | Esc"
+            f"{name} | {kind_cn} | {layer_cn} | 宝箱 {self.treasures} | {tip} | Esc"
             + (" | R重开" if self.campaign else "")
         )
 
@@ -2350,10 +2840,13 @@ class Game:
                     self.enter_menu(play_intro=False)
                     return
                 if e.key == pygame.K_TAB:
-                    self.edit_layer = "underground" if self.edit_layer == "surface" else "surface"
-                    self.layer = self.edit_layer
-                    layer_cn = "地下" if self.edit_layer == "underground" else "地面"
-                    self.toast(f"编辑层：{layer_cn}（楼梯/洞窟联通另一层）")
+                    if not map_has_layer_portals(self.map_data):
+                        self.toast("先放楼梯或洞窟，会新增地下层页面")
+                    else:
+                        self.edit_layer = "underground" if self.edit_layer == "surface" else "surface"
+                        self.layer = self.edit_layer
+                        layer_cn = "地下" if self.edit_layer == "underground" else "地面"
+                        self.toast(f"编辑层：{layer_cn}（点左侧页面也可切换）")
                 if e.key == pygame.K_s and ctrl:
                     self.editor_delete_pending = False
                     self._save_map(export_copy=bool(shift))
@@ -2423,6 +2916,10 @@ class Game:
                     if file_action is not None:
                         self._run_editor_file_action(file_action)
                         continue
+                    layer_hit = self._hit_editor_layer_page(pos)
+                    if layer_hit is not None:
+                        self._switch_edit_layer(layer_hit)
+                        continue
                     hit = self._hit_editor_palette(pos)
                     if hit is not None:
                         self._select_editor_brush(hit)
@@ -2433,7 +2930,8 @@ class Game:
                 elif e.button == 3:
                     if pos[1] >= VIEW_H - PALETTE_H:
                         continue
-                    self.paint_drag = self.edit_mode == "tile"
+                    # 右键：擦地块；公主模式下去掉公主
+                    self.paint_drag = self.edit_mode in ("tile", "goal")
                     self._paint_at(pos, erase=True)
             if e.type == pygame.MOUSEBUTTONUP:
                 if e.button in (1, 2, 3):
@@ -2458,7 +2956,7 @@ class Game:
                             pos,
                             erase=(self.brush == EMPTY and self.edit_mode == "tile"),
                         )
-                    elif e.buttons[2] and self.edit_mode == "tile":
+                    elif e.buttons[2] and self.edit_mode in ("tile", "goal"):
                         self._paint_at(pos, erase=True)
 
         world = pygame.Surface((VIEW_W, VIEW_H))
@@ -2477,27 +2975,100 @@ class Game:
                 pygame.draw.rect(world, (255, 255, 100), (sx, sy, TILE, TILE), 2)
         self.screen.blit(world, (0, 0))
         self.draw_editor_palette()
+        self._draw_editor_layer_pages()
 
         if self.edit_mode == "start":
-            brush_name = "起点(拖放)"
+            brush_name = "起点(蓝框)"
         elif self.edit_mode == "goal":
-            brush_name = "公主(拖放)"
+            brush_name = "公主(通关/右键去掉)"
         else:
             brush_name = next((n for t, n in PALETTE if t == self.brush), "?")
         layer_cn = "地下" if self.edit_layer == "underground" else "地面"
         file_tag = self.edit_map_path.name if self.edit_map_path else "未保存"
+        mode_tag = "通关" if self.map_data.get("princess") else "自由"
         if self.edit_mode in ("start", "goal"):
             erase_hint = " · 左键拖到目标格"
         elif self.brush != EMPTY:
             erase_hint = " · 右键也可擦"
         else:
             erase_hint = " · 左键擦除"
-        self.draw_ui_bar(f"DIY[{layer_cn}] {brush_name}{erase_hint} · Tab切层 · {file_tag}")
+        page_hint = " · 点左侧层页" if map_has_layer_portals(self.map_data) else " · 放楼梯/洞窟新增层页"
+        self.draw_ui_bar(
+            f"DIY[{layer_cn}/{mode_tag}] {brush_name}{erase_hint}{page_hint} · {file_tag}"
+        )
         self._draw_editor_file_buttons()
+
+    def _editor_layer_page_rects(self) -> list[tuple[pygame.Rect, str, str]]:
+        """左侧层页面：地面常驻；有楼梯/洞窟后新增地下页。"""
+        assert self.map_data
+        pages = [("surface", "地面")]
+        if map_has_layer_portals(self.map_data):
+            pages.append(("underground", "地下"))
+        out: list[tuple[pygame.Rect, str, str]] = []
+        x, y0, w, h, gap = 6, 10, 44, 28, 6
+        for i, (layer, label) in enumerate(pages):
+            out.append((pygame.Rect(x, y0 + i * (h + gap), w, h), layer, label))
+        return out
+
+    def _hit_editor_layer_page(self, pos: tuple[int, int]) -> str | None:
+        for rect, layer, _label in self._editor_layer_page_rects():
+            if rect.collidepoint(pos):
+                return layer
+        return None
+
+    def _switch_edit_layer(self, layer: str) -> None:
+        assert self.map_data
+        if layer == "underground" and not map_has_layer_portals(self.map_data):
+            self.toast("先放楼梯或洞窟，会新增地下层页面")
+            return
+        if layer not in ("surface", "underground"):
+            return
+        self.edit_layer = layer
+        self.layer = layer
+        layer_cn = "地下" if layer == "underground" else "地面"
+        self.toast(f"编辑层：{layer_cn}")
+
+    def _draw_editor_layer_pages(self) -> None:
+        for rect, layer, label in self._editor_layer_page_rects():
+            selected = self.edit_layer == layer
+            bg = (55, 70, 110) if selected else (28, 34, 50)
+            border = (120, 190, 255) if selected else (80, 90, 120)
+            pygame.draw.rect(self.screen, bg, rect, border_radius=4)
+            pygame.draw.rect(self.screen, border, rect, 2 if selected else 1, border_radius=4)
+            txt = self.font_sm.render(label, True, (240, 245, 255) if selected else (180, 190, 210))
+            self.screen.blit(
+                txt,
+                (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2),
+            )
+
+    def _on_first_layer_portal(self) -> None:
+        """首次放置楼梯/洞窟：解锁地下层页面。"""
+        assert self.map_data
+        # 切到地下页提示用户新层可用
+        self.toast("已新增「地下」层页面 · 点左侧或 Tab 切换编辑")
+
+    def _clear_princess(self) -> None:
+        """去掉公主 → 自由探索（无通关条件）。"""
+        assert self.map_data
+        had = bool(self.map_data.get("princess")) or self.map_data.get("goal") is not None
+        self.map_data["princess"] = False
+        self.map_data["goal"] = None
+        if had:
+            self.toast("已去掉公主 · 自由探索（无通关）")
 
     def _erase_tile(self, tx: int, ty: int) -> None:
         """清除已放上去的地块；楼梯/洞窟会同步双层并更新列表。"""
         assert self.map_data
+        goal = self.map_data.get("goal")
+        if (
+            self.map_data.get("princess")
+            and isinstance(goal, (list, tuple))
+            and len(goal) >= 2
+            and int(goal[0]) == tx
+            and int(goal[1]) == ty
+            and self.edit_layer == self.map_data.get("goal_layer", "surface")
+        ):
+            self._clear_princess()
         grid = self.current_grid()
         cell = grid[ty][tx]
         grid[ty][tx] = EMPTY
@@ -2512,6 +3083,10 @@ class Game:
             else:
                 caves = self.map_data.setdefault("caves", [])
                 self.map_data["caves"] = [p for p in caves if p != [tx, ty]]
+            if not map_has_layer_portals(self.map_data) and self.edit_layer == "underground":
+                self.edit_layer = "surface"
+                self.layer = "surface"
+                self.toast("已无楼梯/洞窟 · 地下层页面收起")
 
     def _paint_at(self, pos: tuple[int, int], erase: bool) -> None:
         assert self.map_data
@@ -2526,17 +3101,33 @@ class Game:
         if not (0 <= tx < mw and 0 <= ty < mh):
             return
         if self.edit_mode == "start" or self.brush == BRUSH_START:
+            if erase:
+                return
             prev = self.map_data.get("start")
-            self.map_data["start"] = [tx, ty]
+            # 起点不可落在湖/墙等不可走格：自动挪到最近可走格，并尽量铺成草地
+            grid = layer_grid(self.map_data, "surface")
+            stx, sty = ensure_walkable_spawn(self.map_data, tx, ty, layer="surface")
+            if grid and 0 <= sty < len(grid) and 0 <= stx < len(grid[0]):
+                if grid[sty][stx] in SOLID:
+                    grid[sty][stx] = GRASS
+            self.map_data["start"] = [stx, sty]
             self.edit_layer = "surface"
             self.layer = "surface"
             # 拖放时保持起点笔刷，松手后再换笔刷
             if self.brush != BRUSH_START:
                 self.edit_mode = "tile"
-            if prev != [tx, ty]:
-                self.toast(f"起点 ({tx},{ty})")
+            if prev != [stx, sty]:
+                note = f"起点蓝框 ({stx},{sty})"
+                if (stx, sty) != (tx, ty):
+                    note += "（已避开水面/障碍）"
+                self.toast(note)
             return
         if self.edit_mode == "goal" or self.brush == BRUSH_PRINCESS:
+            if erase:
+                self._clear_princess()
+                if self.brush != BRUSH_PRINCESS:
+                    self.edit_mode = "tile"
+                return
             prev = self.map_data.get("goal")
             prev_layer = self.map_data.get("goal_layer")
             self.map_data["goal"] = [tx, ty]
@@ -2549,7 +3140,7 @@ class Game:
                 self.edit_mode = "tile"
             if prev != [tx, ty] or prev_layer != self.edit_layer:
                 layer_cn = "地下" if self.edit_layer == "underground" else "地面"
-                self.toast(f"公主 ({tx},{ty}) @ {layer_cn}")
+                self.toast(f"公主通关点 ({tx},{ty}) @ {layer_cn}")
             return
 
         if erase or self.brush == EMPTY:
@@ -2560,6 +3151,23 @@ class Game:
         grid = self.current_grid()
         grid[ty][tx] = self.brush
         if self.brush in LAYER_PORTALS:
+            # 放置前是否已有其它楼梯/洞窟（用于首次解锁地下层页）
+            had_before = False
+            for key in ("surface", "underground"):
+                g = self.map_data.get(key)
+                if not isinstance(g, list):
+                    continue
+                for yy, row in enumerate(g):
+                    for xx, t in enumerate(row):
+                        if (xx, yy) == (tx, ty):
+                            continue
+                        if t in LAYER_PORTALS:
+                            had_before = True
+                            break
+                    if had_before:
+                        break
+                if had_before:
+                    break
             # 双层同步楼梯 / 洞窟（可与另一类门户并存于不同格）
             other = "underground" if self.edit_layer == "surface" else "surface"
             layer_grid(self.map_data, other)[ty][tx] = self.brush
@@ -2574,6 +3182,8 @@ class Game:
                 if pos not in caves:
                     caves.append(pos)
                 self.map_data["stairs"] = [p for p in stairs if p != pos]
+            if not had_before:
+                self._on_first_layer_portal()
 
     def _next_diy_path(self) -> Path:
         MAPS_DIR.mkdir(exist_ok=True)
@@ -2695,6 +3305,8 @@ class Game:
                     self.screen.blit(tip, (SCREEN_W // 2 - tip.get_width() // 2, SCREEN_H - 70))
             elif self.state == "picker":
                 self.run_picker(events)
+            elif self.state == "kind_select":
+                self.run_kind_select(events)
             elif self.state == "play":
                 self.run_play(events, dt)
             elif self.state == "levelclear":
