@@ -259,8 +259,10 @@
 - [x] **H-RPG** 模式→游戏→**RPG**（Silent Oath / `Vpetgame`）独立进程启动；打包同步 `bundled/Vpetgame`
 - [x] **H-WALK** 走动顺畅；连续转向锁定 **≤3s**；自由/漫游/音乐/工作同半速步长（`MOVE_STEP=2`，工作用 `light` 位移）
 - [x] **H-WORK-VOICE-PACE** 工作（模式/动作）：语音抽检与自由同频（每 24 步、`VOICE_FREE_RANDOM_CHANCE`）；禁止每帧抽音与 30–90s 强制鼓励链
-- [x] **H-DRAG-YUQI** 拖动 move 超过 **5s** 强制随机播 `yuqi` 一条（长拖可再触发）；无资源退回台词框
+- [x] **H-DRAG-YUQI** 拖动 move 超过 **3s** 强制随机播 `yuqi` 一条（长拖可再触发）；无资源退回台词框
 - [x] **H-VOICE-PRELOAD** 特定触发（`yuqi`/eat/kick/sleep/hurt/hungry/work/walk/dizzy/call/你好/end）与 **normal 整组**一并 `preload_priority_clips` 提前缓存
+- [x] **H-VOICE-TRIM-CACHE** 语音**只去开头静音**（保留结尾）+ loudnorm，写入 `*_p4.wav`；**处理过一次后直接读缓存，不再二次 ffmpeg**；声音设置可调 `voice_volume` 并持久化
+- [x] **H-SIZE-ALLMATE** 设置三档大小：主宠与 Allmate **并行预热、同帧切换**；有 Allmate 时一起缩放
 - [x] **H-KEYOUT** 精灵抠图**只扣与外圈连通**的键色（边缘泛洪，不伤内色）
 - [x] **H-LOAD-FIXED** 入场/出场/加载像素动画**固定风格**（溶解 `radial`、加载 `pulse`），禁止随机换场
 - [x] **H-EXPOSE-NOSUB** 暴露失败：hurt 语音**无字幕**；故障反馈不得被全屏 clear 替代
@@ -283,7 +285,7 @@
 - [x] **H-RPG-TREE1** RPG 树木：两张 `tree` **横向并排**拼成一图，整体宽高**严格占一格**草地（逻辑仍一格）
 - [x] **H-RPG-PORTAL** 地图有洞窟时楼梯仍可用：门户并存；加载修复双层对齐；穿越时同格类型强制一致
 - [x] **H-RPG-INTRO-SLOW** RPG Start 页动画变慢（`intro_dur≈6.2`、`logo2_delay≈1.15`、`menu_fade_speed≈0.55`）
-- [x] **H-RPG-STARTMUSIC** 点 START（战役）先播 `startmusic`（相对循环 BGM 更响，`STARTMUSIC_VOLUME_MULT≈3.20`），再循环 `music`；默认循环音量约 **0.05**；可用音量键调节
+- [x] **H-RPG-STARTMUSIC** 点 START（战役）立刻播 `startmusic`（文件已响度归一；播放音量≈0.95），结束后循环 `music`（默认约 **0.05**）；可用音量键调节循环音量
 - [x] **H-RPG-DIY-LAYER** DIY 双层：楼梯/洞窟画一格同步另一层；**首次放置后新增左侧「地下」层页面**；`Tab`/点页签切地面/地下
 - [x] **H-RPG-KIND-SELECT** 加载 DIY / 试玩前选角页三选一：**knight** / **Vpet(下方文字 aoba)** / **Allmate(下方文字 ren)**；立绘**抠除外圈背景**；游玩中 **C** 切换；Vpet 用 `assets/vpet` 行走图，Allmate 用 `assets/allmate` 行走图
 - [x] **H-RPG-CHEST-SFX** 打开宝箱：本关宝箱数 +1，并播放获得奖励音效（`sfx_reward.wav`，缺则合成）
@@ -326,4 +328,4 @@
 | `bundled/Vpetgame/game.py` | Silent Oath RPG |
 | `panel_decor.py` | 面板主题色（含不透明内色） |
 
-**最后更新**：2026-07-17（Allmate 行走图；自由模式不随机 wink + 点一下恢复；重新打包）
+**最后更新**：2026-07-17（大小+Allmate 同步；move>3s yuqi；语音去静音缓存 p3；RPG startmusic 响度）

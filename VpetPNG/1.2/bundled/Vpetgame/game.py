@@ -23,8 +23,9 @@ STARTMUSIC_NAMES = ("startmusic.mp3", "startmusic.ogg", "startmusic.wav")
 LOOPMUSIC_NAMES = ("music.mp3", "music.ogg", "music.wav")
 MUSIC_DEFAULT_VOLUME = 0.05  # 循环 music 默认更轻，可用音量加减键调节
 MUSIC_VOLUME_STEP = 0.08
-# startmusic 相对循环 BGM 明显更响（仍受 music_volume / 音量键约束）
-STARTMUSIC_VOLUME_MULT = 3.20
+# 点 START 播 startmusic：用接近满音量（文件已响度归一）；循环 music 仍用 music_volume
+STARTMUSIC_VOLUME = 0.95
+STARTMUSIC_VOLUME_MULT = 12.0  # 兼容旧逻辑：相对循环音量的下限倍数
 
 TILE = 36
 # 屏幕可见格子（相机视口）
@@ -106,8 +107,8 @@ PALETTE = [
 ]
 
 # 出发点房屋绘制放大（格数边长）；树木：两张 tree 横向并排，整体仍只占 1 格
+# mountain 横纵都严格占 1 格（与 TREE 一样 TILE×TILE）
 HOUSE_DRAW_TILES = 3
-MOUNTAIN_DRAW_TILES = 2
 
 TREASURE_LOOT = (
     ("金币", "得到几枚闪亮的金币。"),
@@ -118,7 +119,7 @@ TREASURE_LOOT = (
 )
 
 INTERACT_HINTS = {
-    TREASURE: "踩上开箱 · E 也可打开",
+    TREASURE: "按 E 打开宝箱",
     HOUSE: "按 E 查看房屋",
     GATE: "靠近关卡门即可进入下一关",
     STAIRS: "踩上楼梯切换地面 / 地下",
@@ -374,8 +375,8 @@ class Assets:
                 side = TILE * HOUSE_DRAW_TILES
                 self.tiles[tid] = pygame.transform.scale(img, (side, side))
             elif tid == MOUNTAIN:
-                side = TILE * MOUNTAIN_DRAW_TILES
-                self.tiles[tid] = pygame.transform.scale(img, (side, side))
+                # 景区：横纵都压进 1 格
+                self.tiles[tid] = pygame.transform.scale(img, (TILE, TILE))
             elif tid == TREE:
                 # 两棵树图横向并排；整体宽高都压进 1 格（逻辑仍占一格草地）
                 self.tiles[tid] = self._make_pair_tree_tile(img)
@@ -628,34 +629,37 @@ def border_wall(grid: list[list[int]], wall: int = ROCK) -> None:
 
 def rock_ring_around_content(grid: list[list[int]], wall: int = ROCK) -> tuple[int, int, int, int]:
     """
-    石头围一圈：有绘制内容则绕内容包围盒外扩一格；
-    全空白则围整张地图边框。返回包围盒 (x0,y0,x1,y1)。
+    石头按内容**轮廓**包边（非正方形包围盒）：
+    在 EMPTY 且四邻接有已绘制内容的格子上放岩石。
+    全空白则围整张地图边框。返回内容包围盒 (x0,y0,x1,y1) 供提示。
     """
     h, w = len(grid), len(grid[0])
+    content = [[False] * w for _ in range(h)]
     xs: list[int] = []
     ys: list[int] = []
     for y in range(h):
         for x in range(w):
             if grid[y][x] != EMPTY:
+                content[y][x] = True
                 xs.append(x)
                 ys.append(y)
     if not xs:
         border_wall(grid, wall)
         return 0, 0, w - 1, h - 1
-    x0, x1 = min(xs), max(xs)
-    y0, y1 = min(ys), max(ys)
-    # 外扩一格，石头贴在内容外围
-    x0 = max(0, x0 - 1)
-    y0 = max(0, y0 - 1)
-    x1 = min(w - 1, x1 + 1)
-    y1 = min(h - 1, y1 + 1)
-    for x in range(x0, x1 + 1):
-        grid[y0][x] = wall
-        grid[y1][x] = wall
-    for y in range(y0, y1 + 1):
-        grid[y][x0] = wall
-        grid[y][x1] = wall
-    return x0, y0, x1, y1
+
+    place: list[tuple[int, int]] = []
+    for y in range(h):
+        for x in range(w):
+            if content[y][x] or grid[y][x] != EMPTY:
+                continue
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < w and 0 <= ny < h and content[ny][nx]:
+                    place.append((x, y))
+                    break
+    for x, y in place:
+        grid[y][x] = wall
+    return min(xs), min(ys), max(xs), max(ys)
 
 
 def border_brick(grid: list[list[int]]) -> None:
@@ -1639,32 +1643,6 @@ class Game:
         self.picker_mode = ""
         self.picker_delete_pending = None
 
-    def _open_treasure_at(self, tx: int, ty: int, *, announce: bool = True) -> bool:
-        """打开指定格宝箱；成功则本关计数 +1。"""
-        assert self.map_data
-        mw, mh = map_size(self.map_data)
-        if not (0 <= tx < mw and 0 <= ty < mh):
-            return False
-        grid = self.current_grid()
-        if grid[ty][tx] != TREASURE:
-            return False
-        loot_name, loot_desc = random.choice(TREASURE_LOOT)
-        grid[ty][tx] = TREASURE_OPEN
-        self.treasures += 1
-        self._play_reward_sfx()
-        if announce:
-            self.toast(
-                f"宝箱 +1：{loot_name}！{loot_desc}（本关 {self.treasures}）",
-                2.6,
-            )
-        return True
-
-    def _try_collect_treasure_here(self) -> None:
-        """踩上宝箱格时自动开箱（底栏计数同步增加）。"""
-        assert self.knight
-        tx, ty = self.knight.tile_pos()
-        self._open_treasure_at(tx, ty)
-
     def _interact_targets(self) -> list[tuple[int, int, int]]:
         """脚下与面前的可互动物。"""
         assert self.map_data and self.knight
@@ -1691,8 +1669,14 @@ class Game:
         # 优先宝箱
         targets.sort(key=lambda t: 0 if t[2] == TREASURE else 1)
         tx, ty, cell = targets[0]
+        grid = self.current_grid()
         if cell == TREASURE:
-            self._open_treasure_at(tx, ty)
+            loot_name, loot_desc = random.choice(TREASURE_LOOT)
+            grid[ty][tx] = TREASURE_OPEN
+            self.treasures += 1
+            self._play_reward_sfx()
+            # 说明类互动用 toast，不对白文本框打断操作
+            self.toast(f"宝箱：找到了{loot_name}！{loot_desc}（本关 {self.treasures}）", 3.2)
             return
         if cell == TREASURE_OPEN:
             self.toast("空宝箱：已经被翻过了")
@@ -1935,6 +1919,7 @@ class Game:
         self.campaign = True
         self.level_idx = 0
         self.total_treasures = 0
+        # 点 START 立刻播 startmusic（再进第一关）
         self._begin_adventure_bgm()
         self._load_level(0)
 
@@ -2150,12 +2135,12 @@ class Game:
                     surf.blit(stair_img, (sx, sy))
                 elif t in PROP_OVERLAY and t in self.assets.tiles:
                     prop = self.assets.tiles[t]
-                    if t in (HOUSE, GATE, MOUNTAIN):
+                    if t in (HOUSE, GATE):
                         # 高大物体：以格底为脚点，向上伸出多格
                         ox = sx + (TILE - prop.get_width()) // 2
                         oy = sy + TILE - prop.get_height()
-                    elif t == TREE:
-                        # 双树拼图已是 TILE×TILE：贴齐当前格
+                    elif t in (TREE, MOUNTAIN):
+                        # 树木/景区：严格 TILE×TILE，贴齐当前格
                         ox, oy = sx, sy
                     else:
                         ox = sx + (TILE - prop.get_width()) // 2
@@ -2253,9 +2238,11 @@ class Game:
         if not pygame.mixer.get_init():
             return
         try:
-            vol = float(self.music_volume)
             if getattr(self, "_bgm_phase", None) == "start":
-                vol = min(1.0, vol * STARTMUSIC_VOLUME_MULT)
+                # 开场 startmusic：固定大声，不受循环 BGM 的低默认音量拖累
+                vol = max(STARTMUSIC_VOLUME, min(1.0, float(self.music_volume) * STARTMUSIC_VOLUME_MULT))
+            else:
+                vol = float(self.music_volume)
             pygame.mixer.music.set_volume(max(0.0, min(1.0, vol)))
         except pygame.error:
             pass
@@ -2292,7 +2279,7 @@ class Game:
                 self.adjust_music_volume(-MUSIC_VOLUME_STEP)
 
     def _begin_adventure_bgm(self) -> None:
-        """点 START / 进入游玩：先播 startmusic，结束后续播循环 music。"""
+        """点 START / 进入游玩：先播 startmusic（大声），结束后续播循环 music。"""
         if not pygame.mixer.get_init():
             return
         if self._bgm_phase in ("start", "loop"):
@@ -2307,9 +2294,11 @@ class Game:
                 pygame.mixer.music.stop()
                 pygame.mixer.music.set_endevent(MUSIC_END_EVENT)
                 pygame.mixer.music.load(str(start_path))
-                pygame.mixer.music.play(0)
-                self._apply_music_volume()
                 self._bgm_phase = "start"
+                self._apply_music_volume()
+                pygame.mixer.music.play(0)
+                # 部分后端需 play 后再设一次音量才生效
+                self._apply_music_volume()
                 return
             except pygame.error:
                 pass
@@ -2699,9 +2688,7 @@ class Game:
         tx, ty = self.knight.tile_pos()
         if 0 <= tx < mw and 0 <= ty < mh:
             cell = grid[ty][tx]
-            if cell == TREASURE:
-                self._try_collect_treasure_here()
-            elif cell in LAYER_PORTALS:
+            if cell in LAYER_PORTALS:
                 self.try_use_layer_portal()
             else:
                 self.portal_stand_lock = None
@@ -2742,7 +2729,7 @@ class Game:
         layer_cn = "地下" if self.layer == "underground" else "地面"
         name = self.map_data.get("name", "")
         kind_cn = PLAYER_KIND_LABELS.get(self.player_kind, self.player_kind)
-        tip = self.nearby_hint or "踩宝箱开箱 · E互动 · F5存档 · C角色"
+        tip = self.nearby_hint or "E互动 F5存档 C角色"
         self.draw_ui_bar(
             f"{name} | {kind_cn} | {layer_cn} | 宝箱 {self.treasures} | {tip} | Esc"
             + (" | R重开" if self.campaign else "")
@@ -2878,9 +2865,7 @@ class Game:
                 elif e.key == pygame.K_c and not ctrl:
                     self.start_editor()
                 elif e.key == pygame.K_b and not ctrl:
-                    grid = self.current_grid()
-                    x0, y0, x1, y1 = rock_ring_around_content(grid, ROCK)
-                    self.toast(f"岩石已围一圈 ({x0},{y0})-({x1},{y1})")
+                    self._editor_apply_contour_border()
                 elif pygame.K_1 <= e.key <= pygame.K_9:
                     idx = e.key - pygame.K_1
                     if idx < len(PALETTE):
@@ -3238,12 +3223,26 @@ class Game:
         self.editor_delete_pending = True
         self.toast(f"再点删除 / 再按 Delete 确认删除 {path.name}")
 
+    def _editor_apply_contour_border(self) -> None:
+        """按内容轮廓包边（非正方形）；键盘 B / 底栏「包边」。"""
+        assert self.map_data
+        grid = self.current_grid()
+        x0, y0, x1, y1 = rock_ring_around_content(grid, ROCK)
+        self.editor_delete_pending = False
+        self.toast(f"已按轮廓包边 ({x0},{y0})-({x1},{y1}) · B")
+
     def _editor_file_button_rects(self) -> list[tuple[pygame.Rect, str, str]]:
-        """底栏右侧：保存 / 导出 / 删除 / 打开。"""
-        specs = (("保存", "save"), ("导出", "export"), ("删除", "delete"), ("打开", "open"))
-        bw, bh, gap = 52, 28, 6
+        """底栏右侧：包边 / 保存 / 导出 / 删除 / 打开。"""
+        specs = (
+            ("包边", "border"),
+            ("保存", "save"),
+            ("导出", "export"),
+            ("删除", "delete"),
+            ("打开", "open"),
+        )
+        bw, bh, gap = 48, 28, 5
         total = len(specs) * bw + (len(specs) - 1) * gap
-        x = SCREEN_W - total - 10
+        x = SCREEN_W - total - 8
         y = VIEW_H + (UI_H - bh) // 2
         out: list[tuple[pygame.Rect, str, str]] = []
         for label, action in specs:
@@ -3261,6 +3260,8 @@ class Game:
         for rect, label, action in self._editor_file_button_rects():
             if action == "delete" and self.editor_delete_pending:
                 bg, fg, border = (90, 36, 36), (255, 200, 200), (255, 120, 120)
+            elif action == "border":
+                bg, fg, border = (48, 58, 78), (200, 230, 255), (140, 180, 220)
             else:
                 bg, fg, border = (40, 48, 68), (230, 235, 245), (120, 140, 180)
             pygame.draw.rect(self.screen, bg, rect, border_radius=4)
@@ -3269,7 +3270,9 @@ class Game:
             self.screen.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
 
     def _run_editor_file_action(self, action: str) -> None:
-        if action == "save":
+        if action == "border":
+            self._editor_apply_contour_border()
+        elif action == "save":
             self.editor_delete_pending = False
             self._save_map(export_copy=False)
         elif action == "export":
