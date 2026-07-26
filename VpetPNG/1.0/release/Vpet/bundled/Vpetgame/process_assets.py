@@ -85,16 +85,22 @@ def near_white_bg(r: int, g: int, b: int, a: int) -> bool:
 
 
 def near_chroma(r: int, g: int, b: int, a: int) -> bool:
-    """外圈常见抠图色：白、黑、绿幕。"""
+    """外圈常见抠图色：白、黑、绿幕（含青草绿幕约 157,216,0）。"""
     if near_white_bg(r, g, b, a):
         return True
     # 近黑
     if r <= 12 and g <= 12 and b <= 12:
         return True
-    # 绿幕（饱和绿）；勿用过宽阈值，以免吃掉树叶绿
+    # 青草绿幕（约 157,216,0 / border 绿幕）
+    if g >= 160 and b <= 55 and 70 <= r <= 220 and (g - r) >= 15 and (g - b) >= 100:
+        return True
+    # 高饱和纯绿幕；勿用过宽阈值，以免吃掉树叶绿 / 草地（靠 flood 仅外圈连通）
     if g >= 200 and g > r + 50 and g > b + 50 and r <= 120 and b <= 120:
         return True
     if g >= 180 and r <= 80 and b <= 80 and g > r + 40 and g > b + 40:
+        return True
+    # 偏亮黄绿幕
+    if g >= 200 and b <= 40 and r <= 200 and (g - b) >= 140:
         return True
     return False
 
@@ -133,7 +139,8 @@ def flood_key(im: Image.Image, is_key=None) -> Image.Image:
         if not is_key(r, g, b, a):
             continue
         visited[y][x] = True
-        px[x, y] = (r, g, b, 0)
+        # 必须清成全透明黑，避免 RGB 绿残留在缩放/blit 时渗边
+        px[x, y] = (0, 0, 0, 0)
         stack.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
     return im
 
@@ -210,7 +217,7 @@ def key_blue_bg(im: Image.Image, key_rgb: tuple[int, int, int], thresh: float = 
         if not is_key(r, g, b, a):
             continue
         visited[y][x] = True
-        px[x, y] = (r, g, b, 0)
+        px[x, y] = (0, 0, 0, 0)
         stack.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
 
     return im
@@ -259,7 +266,7 @@ def key_green_outer(im: Image.Image) -> Image.Image:
         if not is_chroma_green(r, g, b, a):
             continue
         visited[y][x] = True
-        px[x, y] = (r, g, b, 0)
+        px[x, y] = (0, 0, 0, 0)
         stack.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
     return im
 
@@ -296,7 +303,7 @@ def punch_dark_interior(im: Image.Image, lum_thresh: int = 48) -> Image.Image:
         if not is_interior(r, g, b, a):
             continue
         visited[y][x] = True
-        px[x, y] = (r, g, b, 0)
+        px[x, y] = (0, 0, 0, 0)
         stack.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
     return im
 

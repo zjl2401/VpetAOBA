@@ -34,6 +34,7 @@ a = Analysis(
         "pet",
         "vpet_launcher",
         "panel_decor",
+        "home_cottage",
         "voice_audio",
         "voice_system",
         "bundled_paths",

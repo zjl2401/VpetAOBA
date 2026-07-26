@@ -1,4 +1,4 @@
-"""桌面桌宠 v1.0：四大模块菜单、打电话对话框、跟随鼠标、面板与大小调节。"""
+"""桌面桌宠 v1.0：四大模块菜单（模式/面板/互动/系统）、打电话、跟随、面板与大小调节。"""
 
 from __future__ import annotations
 
@@ -18,8 +18,10 @@ if sys.version_info < (3, 8):
 
 import threading
 import time
+import zipfile
 import tkinter as tk
 from tkinter import filedialog
+from tkinter import colorchooser
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -32,6 +34,9 @@ from uuid import uuid4
 from PIL import Image, ImageDraw, ImageTk
 
 from bundled_paths import LEGACY_GAME_ROOT, LEGACY_MUSIC_ROOT, resolve_bundled
+import desktop_clock
+import home_cottage as home_room
+import home_farm
 from media_bundled import is_audio_media
 from pet_id_cloud import (
     get_or_create_machine_id,
@@ -57,6 +62,9 @@ from panel_decor import (
 from voice_audio import ensure_voice_wav, voice_cache_path
 from voice_system import (
     VOICE_CHANNEL_ID,
+    VOICE_COOLDOWN_MAX_MS,
+    VOICE_COOLDOWN_MIN_MS,
+    VOICE_GLOBAL_COOLDOWN_MS,
     VOICE_HI_CATEGORY,
     VOICE_PRIORITY_AMBIENT,
     VOICE_PRIORITY_SCENE,
@@ -101,7 +109,12 @@ def _migrate_data_dir(src: Path, dst: Path) -> None:
 def _resolve_app_paths() -> tuple[Path, Path]:
     if getattr(sys, "frozen", False):
         bundle = Path(sys._MEIPASS)
-        exe_data = Path(sys.executable).resolve().parent / "data"
+        app_dir = Path(sys.executable).resolve().parent
+        exe_data = app_dir / "data"
+        # 分享/便携包：目录内有 PORTABLE 标记时，存档跟文件夹走（互不共用本机所属人）
+        if (app_dir / "PORTABLE").is_file() or (app_dir / "PORTABLE.txt").is_file():
+            exe_data.mkdir(parents=True, exist_ok=True)
+            return bundle, exe_data
         data = _user_persistent_root() / "userdata"
         data.mkdir(parents=True, exist_ok=True)
         _migrate_data_dir(exe_data, data)
@@ -121,6 +134,23 @@ def _read_build_stamp() -> str:
     return ""
 
 
+def _reset_operation_guide_if_updated(app_config: dict) -> bool:
+    """打包更新后清掉「操作说明已看过」，下次启动再弹一次。返回是否改过配置。"""
+    stamp = _read_build_stamp()
+    if not stamp:
+        return False
+    prev = str(app_config.get("last_build_stamp") or "").strip()
+    if prev == stamp:
+        return False
+    hints = app_config.get("seen_hints")
+    if not isinstance(hints, dict):
+        hints = {}
+        app_config["seen_hints"] = hints
+    hints.pop("operation_guide", None)
+    app_config["last_build_stamp"] = stamp
+    return True
+
+
 BUNDLE_DIR, DATA_DIR = _resolve_app_paths()
 ASSETS_DIR = BUNDLE_DIR / "assets"
 SPRITES_DIR = ASSETS_DIR / "sprites"
@@ -129,12 +159,97 @@ MINIPET_DIR = ASSETS_DIR / "minipet"
 AUDIO_ASSET_DIR = ASSETS_DIR / "audio"
 GALLERY_DIR = BUNDLE_DIR / "gallery"
 GALLERY_CONFIG_FILE = GALLERY_DIR / "gallery.json"
-GALLERY_THUMB_SIZE = 72
+GALLERY_THUMB_SIZE = 56
 GALLERY_PREVIEW_SIZE = 160
 GALLERY_COLS = 3
 GALLERY_WIN_W = 360
 GALLERY_SCROLL_H = 200
 GALLERY_ARROW_ZONE = 0.28
+GALLERY_THUMB_STEP_MS = 8
+HOME_LAYOUT_FILE = DATA_DIR / "home_layout.json"
+HOME_PROPS_DIR = DATA_DIR / "home_props"
+HOME_RPG_ASSETS_DIR = DATA_DIR / "rpg_assets"
+HOME_MATERIALS_DIR = DATA_DIR / "home_materials"
+HOME_MATERIALS_INDEX = DATA_DIR / "home_materials.json"
+HOME_PRESETS_DIR = DATA_DIR / "homes"
+HOME_EXPORTS_DIR = DATA_DIR / "exports"
+WALLET_FILE = DATA_DIR / "wallet.json"
+PEER_PRESENCE_DIR = DATA_DIR / "presence"
+PEER_MEET_POLL_MS = 750
+PEER_STALE_MS = 3200
+PEER_MEET_COOLDOWN_MS = 52_000
+PEER_MEET_LINES: tuple[str, ...] = (
+    "咦，怎么还有一个我？",
+    "……你也是苍叶？",
+    "撞到了……另一个我？",
+    "哇，分身术？",
+    "嘿，那边的我，你好呀。",
+    "等等，屏幕里怎么有两只我？",
+    "是幻觉，还是真的有另一个我？",
+)
+# Meta 破墙台词：低频随机；同句不重复（用尽后重置该事件池）
+META_BANTER_GLOBAL_COOLDOWN_MS = 110_000
+META_BANTER_IDLE_MS = 8 * 60_000
+META_BANTER_IDLE_CHECK_MS = 25_000
+META_BANTER_LINES: dict[str, tuple[str, ...]] = {
+    "drag_long": (
+        "你在挪窗口，不是在遛我……",
+        "鼠标拖我，算不算出门？",
+        "又被拎起来了。",
+    ),
+    "sleep_end": (
+        "原来醒来也要按键啊。",
+        "结束键……比闹钟温柔一点。",
+        "嗯，被你点醒了。",
+    ),
+    "work_flag": (
+        "终点又被你改了。",
+        "旗子搬家，箱子跟着倒霉。",
+        "目的地不稳定啊……",
+    ),
+    "bixin_end": (
+        "有传到屏幕那边吗？",
+        "爱心飞出去了……你接到了吗？",
+        "对着屏幕比心，会不会有点怪？",
+    ),
+    "idle_long": (
+        "屏幕暗了？还是你去忙了？",
+        "……还在吗？",
+        "安静好久了呢。",
+    ),
+    "peer_meet": (
+        "啊，又一个我。",
+        "双开了？那边的我也辛苦了。",
+        "屏幕里怎么站了两只……",
+    ),
+    "screen_edge": (
+        "再过去就要掉出桌面了。",
+        "到边了！到边了！",
+        "这边是屏幕的尽头哦。",
+    ),
+}
+META_BANTER_CHANCE: dict[str, float] = {
+    "drag_long": 0.20,
+    "sleep_end": 0.38,
+    "work_flag": 0.32,
+    "bixin_end": 0.48,
+    "idle_long": 0.40,
+    "peer_meet": 0.28,
+    "screen_edge": 0.22,
+}
+META_BANTER_EVENT_COOLDOWN_MS: dict[str, int] = {
+    "drag_long": 240_000,
+    "sleep_end": 200_000,
+    "work_flag": 160_000,
+    "bixin_end": 150_000,
+    "idle_long": 700_000,
+    "peer_meet": 320_000,
+    "screen_edge": 220_000,
+}
+PERSONA_DEV_TIP = (
+    "尚未开发完全\n"
+    "目前大部分动图画面为程序替换，后续更新可能替换为手绘画面"
+)
 # 面板过大时统一固定窗口尺寸，内容区滚动查看（与画廊同模式）
 PANEL_FIXED_W = 400
 PANEL_FIXED_H = 480
@@ -489,37 +604,53 @@ def _affinity_bar_pct(points: float) -> int:
 
 
 # 成就：解锁存在 ACHIEVEMENTS_FILE；条件在 DesktopPet._check_achievements 内判断
+# cat：成就面板分组标题
 ACHIEVEMENT_DEFS: tuple[dict[str, str], ...] = (
     # 日常相处
-    {"id": "owner_named", "title": "认主成功", "desc": "填写所属人昵称"},
-    {"id": "first_feed", "title": "开胃第一口", "desc": "第一次喂食"},
-    {"id": "diary_first", "title": "落笔成忆", "desc": "写下第一条日记"},
-    {"id": "schedule_set", "title": "日程在握", "desc": "添加一条日程提醒"},
-    {"id": "companion_on", "title": "莲来作伴", "desc": "开启智能伴侣"},
-    {"id": "gift_ready", "title": "生日小心思", "desc": "准备文字生日礼物"},
-    {"id": "pixel_gift", "title": "像素心意", "desc": "画一幅礼物像素画"},
-    {"id": "weather_peek", "title": "抬头看天", "desc": "打开一次天气预报"},
+    {"id": "owner_named", "title": "认主成功", "desc": "填写所属人昵称", "cat": "日常相处"},
+    {"id": "first_feed", "title": "开胃第一口", "desc": "第一次喂食", "cat": "日常相处"},
+    {"id": "diary_first", "title": "落笔成忆", "desc": "写下第一条日记", "cat": "日常相处"},
+    {"id": "schedule_set", "title": "日程在握", "desc": "添加一条日程提醒", "cat": "日常相处"},
+    {"id": "companion_on", "title": "莲来作伴", "desc": "开启智能伴侣", "cat": "日常相处"},
+    {"id": "gift_ready", "title": "生日小心思", "desc": "准备文字生日礼物", "cat": "日常相处"},
+    {"id": "pixel_gift", "title": "像素心意", "desc": "画一幅礼物像素画", "cat": "日常相处"},
+    {"id": "weather_peek", "title": "抬头看天", "desc": "打开一次天气预报", "cat": "日常相处"},
+    {"id": "timer_use", "title": "时间在手", "desc": "使用一次秒表或计时器", "cat": "日常相处"},
+    {"id": "memory_open", "title": "翻开回忆", "desc": "打开画廊或留声", "cat": "日常相处"},
+    {"id": "companion_week", "title": "七日相伴", "desc": "相伴满 7 天", "cat": "日常相处"},
     # 模式
-    {"id": "mode_follow", "title": "寸步不离", "desc": "进入跟随模式"},
-    {"id": "mode_work", "title": "兼职搬箱", "desc": "进入工作模式"},
-    {"id": "mode_sleep", "title": "安心入梦", "desc": "进入睡眠模式"},
-    {"id": "music_first", "title": "初次漫步", "desc": "第一次打开音乐模式听歌"},
+    {"id": "mode_follow", "title": "寸步不离", "desc": "进入跟随模式", "cat": "模式"},
+    {"id": "mode_stroll", "title": "悠闲散步", "desc": "进入漫步模式", "cat": "模式"},
+    {"id": "mode_work", "title": "兼职搬箱", "desc": "进入工作模式", "cat": "模式"},
+    {"id": "mode_sleep", "title": "安心入梦", "desc": "进入睡眠模式", "cat": "模式"},
+    {"id": "music_first", "title": "初次听歌", "desc": "第一次打开音乐模式听歌", "cat": "模式"},
+    {"id": "sleep_hour", "title": "好梦成章", "desc": "累计睡眠模式满 60 分钟", "cat": "模式"},
+    {"id": "work_hour", "title": "搬箱满时", "desc": "累计工作模式满 60 分钟", "cat": "模式"},
+    # 家园 / 经营
+    {"id": "home_visit", "title": "归巢一刻", "desc": "打开一次家园", "cat": "家园经营"},
+    {"id": "farm_plant", "title": "春耕第一粒", "desc": "经营中种下一颗种子", "cat": "家园经营"},
+    {"id": "farm_harvest", "title": "秋收第一筐", "desc": "经营中收获一次作物", "cat": "家园经营"},
+    {"id": "farm_chop", "title": "伐木新手", "desc": "经营中砍倒一棵树", "cat": "家园经营"},
+    {"id": "farm_fish", "title": "水边第一竿", "desc": "经营中钓到一次", "cat": "家园经营"},
+    {"id": "farm_craft", "title": "手作入门", "desc": "合成台完成一次合成", "cat": "家园经营"},
+    {"id": "home_paint", "title": "家园画匠", "desc": "为家园命名保存一张自创素材", "cat": "家园经营"},
     # 小游戏
-    {"id": "gather_play", "title": "接住生活", "desc": "完成一局采集"},
-    {"id": "gather_pro", "title": "手稳心细", "desc": "单局采集得分 ≥ 200"},
-    {"id": "typing_play", "title": "指尖热身", "desc": "完成一局打字"},
-    {"id": "typing_ace", "title": "打字达人", "desc": "打字取得 A 及以上"},
-    {"id": "vocab_play", "title": "开卷有益", "desc": "完成一局背单词"},
-    {"id": "vocab_streak", "title": "连对小达人", "desc": "背单词连对 ≥ 5"},
-    {"id": "rhythm_play", "title": "节奏入门", "desc": "完成一局音游"},
-    {"id": "rhythm_great", "title": "判定漂亮", "desc": "音游取得 A 及以上"},
-    {"id": "rhyme_win", "title": "莱姆胜者", "desc": "赢得一局莱姆对战"},
-    {"id": "rhyme_jinmu", "title": "金目登场", "desc": "莱姆对战中触发金目觉醒并获胜"},
-    {"id": "expose_clear", "title": "暴露成功", "desc": "完成一次暴露通关"},
+    {"id": "gather_play", "title": "接住生活", "desc": "完成一局采集", "cat": "小游戏"},
+    {"id": "gather_pro", "title": "手稳心细", "desc": "单局采集得分 ≥ 200", "cat": "小游戏"},
+    {"id": "typing_play", "title": "指尖热身", "desc": "完成一局打字", "cat": "小游戏"},
+    {"id": "typing_ace", "title": "打字达人", "desc": "打字取得 A 及以上", "cat": "小游戏"},
+    {"id": "vocab_play", "title": "开卷有益", "desc": "完成一局背单词", "cat": "小游戏"},
+    {"id": "vocab_streak", "title": "连对小达人", "desc": "背单词连对 ≥ 5", "cat": "小游戏"},
+    {"id": "rhythm_play", "title": "节奏入门", "desc": "完成一局音游", "cat": "小游戏"},
+    {"id": "rhythm_great", "title": "判定漂亮", "desc": "音游取得 A 及以上", "cat": "小游戏"},
+    {"id": "rpg_play", "title": "誓言启程", "desc": "打开一次 RPG · Silent Oath", "cat": "小游戏"},
+    {"id": "rhyme_win", "title": "莱姆胜者", "desc": "赢得一局莱姆对战", "cat": "小游戏"},
+    {"id": "rhyme_jinmu", "title": "金目登场", "desc": "莱姆对战中触发金目觉醒并获胜", "cat": "小游戏"},
+    {"id": "expose_clear", "title": "暴露成功", "desc": "完成一次暴露通关", "cat": "小游戏"},
     # 音乐好感（少量保留）
-    {"id": "affinity_first_bar", "title": "一寸心音", "desc": "任意人物好感攒满一格"},
-    {"id": "affinity_lv10", "title": "记你很久", "desc": "任意人物好感达到 Lv.10"},
-    {"id": "listen_hour", "title": "听完整场", "desc": "累计听歌满 60 分钟"},
+    {"id": "affinity_first_bar", "title": "一寸心音", "desc": "任意人物好感攒满一格", "cat": "音乐好感"},
+    {"id": "affinity_lv10", "title": "记你很久", "desc": "任意人物好感达到 Lv.10", "cat": "音乐好感"},
+    {"id": "listen_hour", "title": "听完整场", "desc": "累计听歌满 60 分钟", "cat": "音乐好感"},
 )
 
 
@@ -544,11 +675,32 @@ def _load_achievements() -> dict:
             "rhyme_jinmu_wins": 0,
             "expose_clears": 0,
             "modes_used": [],
+            "mode_seconds": {
+                "free": 0.0,
+                "follow": 0.0,
+                "stroll": 0.0,
+                "quiet": 0.0,
+                "work": 0.0,
+                "game": 0.0,
+                "music": 0.0,
+            },
             "companion_enabled": False,
+            "companion_open_count": 0,
             "owner_named": False,
             "gift_ready": False,
             "pixel_gift": False,
             "weather_peek": False,
+            "timer_use": False,
+            "memory_open": False,
+            "home_visit": False,
+            "farm_plant": False,
+            "farm_harvest": False,
+            "farm_chop": False,
+            "farm_fish": False,
+            "farm_craft": False,
+            "home_paint": False,
+            "rpg_play": False,
+            "meta_banter": {"last_ms": 0, "event_last": {}, "used": {}},
         },
     }
     if not ACHIEVEMENTS_FILE.exists():
@@ -560,11 +712,17 @@ def _load_achievements() -> dict:
         unlocked = data.get("unlocked") if isinstance(data.get("unlocked"), dict) else {}
         stats_in = data.get("stats") if isinstance(data.get("stats"), dict) else {}
         stats = dict(default["stats"])
-        stats.update({k: stats_in.get(k, v) for k, v in default["stats"].items()})
+        stats.update({k: stats_in.get(k, v) for k, v in default["stats"].items() if k != "mode_seconds"})
         # normalize types
         stats["listen_seconds"] = float(stats.get("listen_seconds", 0) or 0)
         stats["used_char_filter"] = bool(stats.get("used_char_filter", False))
         stats["modes_used"] = list(stats.get("modes_used") or [])
+        stats["companion_open_count"] = int(stats.get("companion_open_count", 0) or 0)
+        mode_sec_in = stats_in.get("mode_seconds") if isinstance(stats_in.get("mode_seconds"), dict) else {}
+        mode_sec = dict(default["stats"]["mode_seconds"])
+        for mk, mv in mode_sec.items():
+            mode_sec[mk] = float(mode_sec_in.get(mk, mv) or 0)
+        stats["mode_seconds"] = mode_sec
         return {
             "unlocked": {str(k): v for k, v in unlocked.items()},
             "stats": stats,
@@ -646,9 +804,12 @@ SPEECH_BORDER2_SRC_TOP = 35
 SPEECH_BORDER2_SRC_BOTTOM = 28
 SPEECH_BORDER2_MIN_H = 78
 SPEECH_BORDER2_MIN_W = 236
-SPEECH_BORDER2_MAX_W = 660
+SPEECH_BORDER2_MAX_W = 760
+SPEECH_BORDER2_MAX_H = 420
 # 对话区固定换行宽度（避免随高度增大而挤压横向空间）
-SPEECH_BORDER2_TEXT_WRAP = 420
+SPEECH_BORDER2_TEXT_WRAP = 520
+# Label wraplength 比窗口略窄，避免末字贴边被裁（Tk/中文常见）
+SPEECH_TEXT_EDGE_SLACK = 20
 # 对话/语音字幕内容区：不透明深色底；蓝粉像素主题
 SPEECH_TEXT_INNER_ALPHA = 1.0
 SPEECH_TEXT_BG = THEME_PANEL_INNER
@@ -764,23 +925,92 @@ def _speech_border2_scale_for_content(content_w: int, content_h: int) -> float:
 
 
 def _speech_border2_caps(scale: float) -> tuple[int, int, int, int]:
-    left = max(12, int(SPEECH_BORDER2_SRC_LEFT * scale))
-    right = max(10, int(SPEECH_BORDER2_SRC_RIGHT * scale))
+    left = max(14, int(SPEECH_BORDER2_SRC_LEFT * scale))
+    right = max(18, int(SPEECH_BORDER2_SRC_RIGHT * scale))
     top = max(8, int(SPEECH_BORDER2_SRC_TOP * scale))
     bottom = max(8, int(SPEECH_BORDER2_SRC_BOTTOM * scale))
     return left, top, right, bottom
 
 
 def _speech_border2_target_size(content_w: int, content_h: int) -> tuple[int, int, int, int, int, int]:
+    """根据文字区尺寸推边框外框。长文会抬高 scale，须限制左右帽，避免把换行宽度挤窄后裁字。"""
     content_w = max(40, int(content_w))
     content_h = max(16, int(content_h))
+    # 尽量保住对话换行宽度，避免「变高 → 左右帽变厚 → 文字区变窄 → 高度不够」裁切
+    keep_inner_w = min(content_w, SPEECH_BORDER2_TEXT_WRAP)
     scale = _speech_border2_scale_for_content(content_w, content_h)
     left, top, right, bottom = _speech_border2_caps(scale)
+    max_pad_x = max(48, SPEECH_BORDER2_MAX_W - keep_inner_w)
+    if left + right > max_pad_x:
+        shrink = max_pad_x / float(left + right)
+        left = max(14, int(left * shrink))
+        right = max(18, int(right * shrink))
     inner_max_w = max(40, SPEECH_BORDER2_MAX_W - left - right)
     content_w = min(content_w, inner_max_w)
     target_w = max(SPEECH_BORDER2_MIN_W, min(SPEECH_BORDER2_MAX_W, content_w + left + right))
     target_h = max(SPEECH_BORDER2_MIN_H, content_h + top + bottom)
+    if target_h > SPEECH_BORDER2_MAX_H:
+        target_h = SPEECH_BORDER2_MAX_H
+        content_h = max(16, target_h - top - bottom)
     return target_w, target_h, left, top, content_w, content_h
+
+
+def _estimate_wrapped_label_size(text: str, wrap_w: int, font=None) -> tuple[int, int]:
+    """按像素换行估算 Label 宽高（补 Tk 对 CJK/等宽字体 reqheight 偏低）。"""
+    import tkinter.font as tkfont
+
+    if font is None:
+        font = PIXEL_FONT
+    wrap_w = max(40, int(wrap_w))
+    raw = text if text is not None else ""
+    try:
+        f = tkfont.Font(font=font)
+        line_h = max(14, int(f.metrics("linespace")) + 2)
+    except Exception:
+        f = None
+        line_h = 18
+    max_line_w = 0
+    total_lines = 0
+    for para in raw.split("\n"):
+        if not para:
+            total_lines += 1
+            continue
+        if f is None:
+            # 粗等宽 + 中文约按字号估宽
+            cpl = max(1, wrap_w // 12)
+            n = max(1, (len(para) + cpl - 1) // cpl)
+            total_lines += n
+            max_line_w = max(max_line_w, min(wrap_w, len(para) * 12))
+            continue
+        x = 0
+        lines = 1
+        for ch in para:
+            cw = max(1, int(f.measure(ch)))
+            if x + cw > wrap_w and x > 0:
+                lines += 1
+                x = cw
+            else:
+                x += cw
+        total_lines += lines
+        natural = int(f.measure(para))
+        max_line_w = max(max_line_w, min(wrap_w, natural if natural > 0 else wrap_w))
+    total_lines = max(1, total_lines)
+    return max(40, min(wrap_w, max_line_w) if max_line_w else wrap_w), total_lines * line_h
+
+
+def _speech_border2_inner_pads(target_w: int, target_h: int) -> tuple[int, int, int, int]:
+    """与合成边框一致的内容区内边距（长气泡时限制左右帽，避免挤窄文字区）。"""
+    base = _speech_border2_base_image()
+    src_h = base.size[1] if base is not None else 132
+    scale = target_h / max(1, src_h)
+    pad_l, pad_t, pad_r, pad_b = _speech_border2_caps(scale)
+    keep_inner = min(SPEECH_BORDER2_TEXT_WRAP, max(40, target_w - 48))
+    max_pad_x = max(48, target_w - keep_inner)
+    if pad_l + pad_r > max_pad_x:
+        shrink = max_pad_x / float(pad_l + pad_r)
+        pad_l = max(14, int(pad_l * shrink))
+        pad_r = max(18, int(pad_r * shrink))
+    return pad_l, pad_t, pad_r, pad_b
 
 
 def _compose_speech_border2(target_w: int, target_h: int) -> Image.Image | None:
@@ -812,7 +1042,7 @@ def _compose_speech_border2(target_w: int, target_h: int) -> Image.Image | None:
     out.paste(left_cap, (0, 0), left_cap)
     out.paste(mid, (left_cap.width, 0), mid)
     out.paste(right_cap, (target_w - right_cap.width, 0), right_cap)
-    pad_l, pad_t, pad_r, pad_b = _speech_border2_caps(scale)
+    pad_l, pad_t, pad_r, pad_b = _speech_border2_inner_pads(target_w, target_h)
     inner_w = max(1, target_w - pad_l - pad_r)
     inner_h = max(1, target_h - pad_t - pad_b)
     overlay = Image.new(
@@ -1279,6 +1509,22 @@ def _resolve_sprite_filename(filename: str, persona: str | None = None) -> str:
 def _clear_sprite_image_caches() -> None:
     _SOURCE_FILE_CACHE.clear()
     _PROCESSED_CANVAS_CACHE.clear()
+    _GALLERY_RGB_CACHE.clear()
+    _REF_SCALE_CACHE.clear()
+
+
+def set_strip_outer_black(enabled: bool) -> None:
+    """全局：是否去掉立绘最外围连通黑边。切换时清空像素缓存。"""
+    global _STRIP_OUTER_BLACK
+    on = bool(enabled)
+    if _STRIP_OUTER_BLACK == on:
+        return
+    _STRIP_OUTER_BLACK = on
+    _clear_sprite_image_caches()
+
+
+def strip_outer_black_enabled() -> bool:
+    return bool(_STRIP_OUTER_BLACK)
 
 
 def _is_key_green_rgb(r: int, g: int, b: int) -> bool:
@@ -1595,6 +1841,9 @@ def ensure_nc_outfit_sprites(*, force: bool = False) -> int:
 
 DEFAULT_SIZE = 128
 SIZE_PRESETS: dict[str, int] = {"小": 96, "中": 128, "大": 176}
+SIZE_MIN_PX = 80
+SIZE_MAX_PX = 200
+SIZE_STEP_PX = 8  # 连续调节时对齐步进，减轻缓存压力
 
 WALK_FRAME_MS = 210
 MOVE_INTERVAL_MS = 55
@@ -1608,6 +1857,8 @@ MUSIC_WALK_FRAME_MS = 280
 ACTION_FRAME_MS = 180
 INTERACT_DURATION_MS = 3000
 WINK_DURATION_MS = 3000  # wink 仅停约 3s，然后恢复站立/走动
+BIXIN_DURATION_MS = 4000  # 比心：爱心从胸口放大传向使用者
+BIXIN_FX_MS = 48
 YESNO_WAIT_MS = 5000
 YESNO_ANSWER_TEXT = "你所问问题的答案是"
 INTERACT_DURATIONS: dict[str, int] = {
@@ -1622,6 +1873,7 @@ INTERACT_DURATIONS: dict[str, int] = {
     "shy": 3600,
     "wink": WINK_DURATION_MS,
     "like": WINK_DURATION_MS,
+    "bixin": BIXIN_DURATION_MS,
     "yes": 2600,
     "no": 2600,
     "yesno": YESNO_WAIT_MS + 3200,
@@ -1635,7 +1887,7 @@ HAPPY_FRAME_MS = 220
 FOLLOW_STOP_DIST = 65
 FOLLOW_FAR_DIST = 220
 FOLLOW_WAIT_COOLDOWN_MS = 8000
-MODE_VIA_FREE_MS = 380
+MODE_VIA_FREE_MS = 120
 
 STAMINA_TICK_MS = 15000
 STAMINA_DECAY = 1
@@ -1744,6 +1996,7 @@ WORK_TOTAL_SETTING_MAX = 30
 WORK_PROP_SIZE = 72
 # 堆箱相对旗脚的步进：须明显大于旗/箱重叠带，避免盖住旗面
 WORK_STACK_OFFSET = 56
+WORK_ANCHORED_BOX_MAX = 12  # 连续运送可见堆箱上限，避免色键窗堆积卡死
 # 旗/箱/采集物：magenta 仅作色键（必须被抠掉，禁止露出玫红底）
 WORK_CHROMA_RGB = (255, 0, 255)
 WORK_CHROMA_NAME = "magenta"
@@ -1759,6 +2012,50 @@ WORK_MODE_BANTER: tuple[str, ...] = (
     "运完这批还有下一批…但我们会坚持的！",
     "旧货店的活儿，交给苍叶就好~",
 )
+# 时间显示开启时，工作/睡眠/音乐结束提示（首次不用「又」；相邻次尽量换一句）
+_MODE_SESSION_FINISH_LINES: dict[str, dict[str, tuple[str, ...]]] = {
+    "work": {
+        "first": (
+            "和{owner}一起工作了{session}，累计工作{total}",
+            "陪{owner}工作了{session}，累计共{total}",
+        ),
+        "again": (
+            "和{owner}又一起工作了{session}，累计工作{total}",
+            "又陪{owner}忙活了{session}，一共工作{total}",
+            "和{owner}再工作了{session}，累计工作{total}",
+            "这次和{owner}工作了{session}，累计共{total}",
+        ),
+    },
+    "sleep": {
+        "first": (
+            "和{owner}一起睡了{session}，累计睡眠{total}",
+            "陪{owner}休息了{session}，累计睡眠{total}",
+        ),
+        "again": (
+            "和{owner}又一起睡了{session}，累计睡眠{total}",
+            "又陪{owner}睡了{session}，一共睡了{total}",
+            "和{owner}再休息了{session}，累计睡眠{total}",
+            "这次和{owner}睡了{session}，累计共{total}",
+        ),
+    },
+    "music": {
+        "first": (
+            "和{owner}一起听歌了{session}，累计听歌{total}",
+            "陪{owner}听了{session}音乐，累计听歌{total}",
+        ),
+        "again": (
+            "和{owner}又一起听歌了{session}，累计听歌{total}",
+            "又陪{owner}听了{session}，一共听歌{total}",
+            "和{owner}再听了{session}，累计听歌{total}",
+            "这次和{owner}听歌了{session}，累计共{total}",
+        ),
+    },
+}
+_MODE_SESSION_TOTAL_KEYS = {
+    "work": "work_total_seconds",
+    "sleep": "sleep_total_seconds",
+    "music": "music_total_seconds",
+}
 BULB_FX_SIZE = 144
 AI_DIALOG_HIDE_MS = 5000
 AI_CHAT_IDLE_MS = 5000
@@ -1868,8 +2165,10 @@ STARTUP_ANIM_MS = 50
 STARTUP_MIN_MS = 320
 WAIT_HINT_DEFAULT = "请耐心等待…"
 WAIT_HINT_TICK_MS = 500
-SPRITE_BATCH_SIZE = 24
-SPRITE_BATCH_MS = 1
+SPRITE_BATCH_SIZE = 36
+SPRITE_BATCH_MS = 8
+PERSONA_SPRITE_BATCH_SIZE = 48
+PERSONA_SPRITE_BATCH_MS = 8
 UI_BUSY_LAG_THRESHOLD_MS = 800
 IDLE_WATCHDOG_MS = 5000
 FOOD_DRAG_ICON = 40
@@ -1973,6 +2272,19 @@ PET_BIRTHDAY_MONTH = 4
 PET_BIRTHDAY_DAY = 22
 OWNER_NAME_MAX_LEN = 16
 DEFAULT_OWNER_BLESS = "愿你今天也闪闪发光，吃好喝好睡好觉～"
+# 太久没打开：超过该秒数再启动时触发「好想你」类问候
+OWNER_MISS_AFTER_SEC = 3 * 24 * 3600
+OWNER_WELCOME_LINES: tuple[str, ...] = (
+    "{name}！从今天起就拜托你啦～",
+    "认主成功！你好呀，{name}～以后多多指教哦！",
+    "{name}，我会一直在这里等你的。",
+)
+OWNER_MISS_LINES: tuple[str, ...] = (
+    "{name}……好想你呀。",
+    "好久不见，{name}！我等你好久了～",
+    "{name}，你终于来看我了……",
+    "太久没见了，{name}，我有一点点想你。",
+)
 # 录实况 / 演示：True=每次启动都弹出操作说明；正式发布为 False（仅首次弹一次）
 DEMO_ALWAYS_SHOW_GUIDES = False
 APP_CONFIG_FILE = DATA_DIR / "app_config.json"
@@ -2037,14 +2349,18 @@ ABOUT_NITROCHIRAL_URL = "https://www.nitrochiral.com/"
 RHYTHM_CARNIVAL_URL = "https://www.nitrochiral.com/game/rhythm-carnival/"
 RHYTHM_CARNIVAL_TITLE = "THE CHiRAL NIGHT rhythm carnival"
 RHYTHM_CARNIVAL_INTRO = (
-    "官方节奏作：《THE CHiRAL NIGHT rhythm carnival》。\n"
-    "桌宠内音游为同人小品，完整体验请支持正版。"
+    "· 官方节奏作：《THE CHiRAL NIGHT rhythm carnival》。\n"
+    "　　桌宠内音游为同人小品，完整体验请支持正版。"
 )
 ABOUT_CREDITS: tuple[tuple[str, str], ...] = (
     (
         "翛然而往",
         "企划构思 · 程序开发 · 像素立绘与界面 · 模式与互动玩法 · "
         "小游戏与莱姆对战 · 语音/音乐整合 · 打包发行 · 测试与维护",
+    ),
+    (
+        "扶桑 · 阿斯代伦重度依赖（猫爪） · 青石大反派 · 玥浅 · 酒池桜",
+        "一轮测试",
     ),
 )
 ABOUT_TEXT = (
@@ -2053,7 +2369,7 @@ ABOUT_TEXT = (
     "同人像素桌宠，非官方作品。\n"
     "完整剧情与官方内容请下载并支持正版《戏剧性谋杀》。\n"
     "当前功能尚不完全；更多关注与支持，会带来更多更新与优化。\n"
-    "可基于本仓库二次开发；贡献者见致谢。"
+    "可基于本仓库二次开发；社区投稿经审阅后，贡献者可加入「致谢」。"
 )
 # 赠送礼物 · 像素画板
 GIFT_PIXEL_SIZE = 12
@@ -2062,12 +2378,20 @@ GIFT_PIXEL_SHOW_MS = 5600
 GIFT_PIXEL_PALETTE: tuple[str | None, ...] = (
     None,  # 0 = 擦除 / 透明
     "#ff6b9d",
-    "#88ccff",
+    "#ff3355",
+    "#ff8844",
     "#ffdd66",
-    "#ffffff",
-    "#334455",
+    "#88ff66",
     "#66ddaa",
+    "#44ccff",
+    "#88ccff",
+    "#4466ff",
     "#cc88ff",
+    "#ffffff",
+    "#bbbbbb",
+    "#334455",
+    "#222222",
+    "#8b5a2b",
 )
 # 问题反馈 / 社区
 FEEDBACK_ISSUE_URL = f"{ABOUT_REPO_URL}/issues"
@@ -2075,7 +2399,47 @@ FEEDBACK_XHS_ID = "444225910"
 FEEDBACK_XHS_URL = f"https://www.xiaohongshu.com/user/profile/{FEEDBACK_XHS_ID}"
 FEEDBACK_BILI_UID = "696083047"
 FEEDBACK_BILI_URL = f"https://space.bilibili.com/{FEEDBACK_BILI_UID}"
-FEEDBACK_NOTE = "反馈时请附：现象、复现步骤、构建版本号、系统环境。"
+FEEDBACK_NOTE = "反馈时写清：发生了什么、怎么复现、构建版本；环境信息有更好。"
+CREATOR_PACK_MODULES: tuple[tuple[str, str, str], ...] = (
+    ("maps", "DIY 地图", "编辑器里「导出」的地图"),
+    ("pixel", "像素画 / 素材", "自创画、礼物画、命名素材"),
+    ("homes", "家园布置", "当前家园与已保存的家园"),
+    ("audio", "自导入音频", "留声机里你导入的音频"),
+)
+CREATOR_PACK_INTRO = (
+    "· 勾选想投的模块，打包成 zip，发到反馈渠道就行。\n"
+    "　　大文件可走网盘再贴链接。\n\n"
+    "· 不会打包：日记、日程、钱包、对话记录之类私密内容。\n"
+    "· 暂无官方直传——穷开发已经出力了，再出钱就过分了。"
+)
+CREATOR_PACK_README = (
+    "【Vpet 创作者投稿包】\n"
+    "· 本包由桌宠「系统 → 社区 → 投稿创意」自动打包，\n"
+    "　　供开发者审阅后择优收录。\n\n"
+    "本包会包含（若本机有且你勾选了对应模块）：\n"
+    "· RPG DIY 地图（maps/*.json）\n"
+    "· 像素画 / 自创画 / 命名素材（user_paint、gift_art、materials）\n"
+    "· 家园布置（home_layout / homes 存档）\n"
+    "· 你自行导入的留声音频\n"
+    "· 致谢署名（仅你填写的署名；见 contributor.json）\n\n"
+    "本包不会包含：\n"
+    "· 日记、日程、成就明细、钱包金币\n"
+    "· AI 对话记录、系统设置、登录账号类信息\n"
+    "· 系统其它无关私人文件\n\n"
+    "关于致谢：\n"
+    "· 若投稿被正式收录，可应本人意愿将署名加入桌宠「关于 → 致谢」。\n"
+    "· 打包时可填写希望使用的署名（见 contributor.json）。\n"
+    "· 是否入致谢、如何标注，由开发者统筹审阅后决定。\n\n"
+    "· 欢迎一并反馈：文案建议、音频、像素画、功能创意。\n\n"
+    "发送渠道（与「问题反馈」相同）：\n"
+    "· GitHub Issues（可直接附 zip）\n"
+    "· 小红书 / B站私信或评论（注明「投稿包」；\n"
+    "　　大文件可先上网盘再贴链接）\n\n"
+    "· 也可把本机「打包投稿包」生成的 zip 直接上传到上述反馈通道。\n"
+    "· 暂无官方直传服务器\n"
+    "　　（穷……已经出力了，还要我这个搞无偿的出钱过分了）。\n"
+    "· 请勿上传侵权或涉及隐私的内容。开发者有权拒绝收录。\n"
+)
 COMMUNITY_FOLLOW_BLURB = (
     "关注B站/小红书可及时获得最新进展与更新公告。\n\n"
     "源码见GitHub，拉取时请顺手点上小星星。\n\n"
@@ -2163,67 +2527,112 @@ DIFFICULTY_PRESETS: dict[str, dict] = {
     },
 }
 
+DIFFICULTY_T_BY_NAME: dict[str, float] = {"低": 0.0, "中": 0.5, "高": 1.0}
+
+
+def _snap_display_size(px: int) -> int:
+    px = max(SIZE_MIN_PX, min(SIZE_MAX_PX, int(px)))
+    stepped = SIZE_MIN_PX + round((px - SIZE_MIN_PX) / SIZE_STEP_PX) * SIZE_STEP_PX
+    return max(SIZE_MIN_PX, min(SIZE_MAX_PX, int(stepped)))
+
+
+def _lerp_num(a: float, b: float, t: float):
+    return a + (b - a) * t
+
+
+def _difficulty_params_at(t: float) -> dict:
+    """t∈[0,1] 在低→中→高之间插值。"""
+    t = max(0.0, min(1.0, float(t)))
+    lo = DIFFICULTY_PRESETS["低"]
+    mid = DIFFICULTY_PRESETS["中"]
+    hi = DIFFICULTY_PRESETS["高"]
+    if t <= 0.5:
+        u = t * 2.0
+        a, b = lo, mid
+    else:
+        u = (t - 0.5) * 2.0
+        a, b = mid, hi
+    out: dict = {}
+    for key, sample in mid.items():
+        va = a[key]
+        vb = b[key]
+        if isinstance(sample, bool):
+            out[key] = vb if u >= 0.5 else va
+        elif isinstance(sample, int):
+            out[key] = int(round(_lerp_num(float(va), float(vb), u)))
+        else:
+            out[key] = float(_lerp_num(float(va), float(vb), u))
+    return out
+
+
+def _difficulty_label_for_t(t: float) -> str:
+    t = max(0.0, min(1.0, float(t)))
+    if t < 0.25:
+        return "低"
+    if t < 0.75:
+        return "中"
+    return "高"
+
 OPERATION_GUIDE_INDEX = (
-    "本桌宠免费开放，供大家下载游玩。\n"
-    "同人作品，非官方；完整剧情请下载正版《戏剧性谋杀》。\n"
-    "功能尚不完全；更多支持会带来更多更新与优化。\n\n"
-    "请选择下列专题查看说明。\n"
-    "可随时按 F1 打开本说明。\n"
-    "首次进入某一玩法时，会再提示一次。"
+    "【总览】\n"
+    "· 同人桌宠，免费；完整体验请支持正版《戏剧性谋杀》。\n"
+    "· 右键打开菜单，F1 可再打开本说明。\n"
+    "· 下面只点几个入口——其余留给你自己撞见。"
+)
+
+OPERATION_GUIDE_TIPS = (
+    "【一点点心里话】\n"
+    "· 切换功能时若稍顿一下，请稍等。\n"
+    "· 音画多为手工录制、重绘，粗糙处还请见谅。\n"
+    "· 欢迎一起改：文案、像素、地图、点子都行。"
 )
 
 GUIDE_TOPICS: dict[str, dict] = {
     "basic": {
         "title": "基本操作",
         "body": (
-            "· 右键：模式 / 面板 / 互动 / 系统\n"
-            "· 拖拽蓝色区域：移动桌宠\n"
-            "· 拖动约 3 秒以上：触发 yuqi 语音\n"
-            "· 左键点击立绘：互动\n"
-            "· Esc：退出当前玩法或关闭子窗口\n"
-            "· Ctrl+Shift+Q：强制退出\n"
-            "· F1：操作说明\n"
-            "· 菜单约 8 秒无操作自动关闭"
+            "· 右键：菜单\n"
+            "· 拖蓝区：挪位置\n"
+            "· Esc：退出当前玩法\n"
+            "· F1：再看说明\n"
+            "· 拖太久……也许会听见什么"
         ),
     },
     "modes": {
         "title": "模式说明",
         "body": (
-            "· 自由：走动，偶发动作\n"
-            "· 跟随：跟随光标；急转弯可能眩晕\n"
-            "· 漫步：仅走动\n"
-            "· 睡眠：休息；体力过低自动入睡\n"
-            "　　睡眠时双击可短暂睁眼；多次双击可能触发语音（不离开关模式）\n"
-            "· 音乐：边走边听 BGM（设置内可切换顺序 / 随机）\n"
-            "· 工作：持续运送；起点搬走一箱再生成下一箱；终点旗可拖；送达后旗脚堆箱\n"
-            "· 游戏：采集 / 打字 / 背单词 / 音乐 / RPG\n\n"
-            "运送：\n"
-            "· 互动 → 自由运送：随机箱数与路线（搬走再生，搬完结束）\n"
-            "· 互动 → 自定义：可设箱数与终点旗（同上）\n"
-            "· 模式 → 工作：持续运送（点「结束」停止）"
+            "· 自由 / 漫步 / 跟随 / 睡眠 / 音乐 / 工作——各有脾气\n"
+            "· 游戏与家园：从菜单进去就行\n"
+            "· 跟随时急转弯，可能会晕"
         ),
     },
     "games": {
         "title": "小游戏总览",
         "body": (
-            "入口：模式 → 游戏\n\n"
-            "· 采集：限时接取下落物\n"
-            "· 打字：限时输入\n"
-            "· 背单词：选择正确释义\n"
-            "· 音乐：四轨节奏（D F J K）\n"
-            "· RPG：Silent Oath（楼梯 / 洞窟均可切换地面与地下）\n"
-            "　　游玩中按 C 切换操控角色：骑士 / 公主 / Vpet / Allmate\n"
-            "　　加载 DIY 地图试玩时不播放冒险 BGM"
+            "· 模式 → 游戏\n\n"
+            "· 采集、打字、背单词、音游：短局，结算有金币\n"
+            "· RPG：冒险、宝箱，也能进编辑器乱画地图\n"
+            "· 家园：布置，室外还能开「经营」\n\n"
+            "· 细则不多写。玩到卡壳再回来翻，\n"
+            "　　或自己试快捷键。"
+        ),
+    },
+    "home_farm": {
+        "title": "家园经营",
+        "body": (
+            "· 面板 → 家园 → 室外 →「经营」。\n\n"
+            "· 布置：左键铺、右键上色；可画素材、存档导出。\n"
+            "· 经营：数字键换工具，确定后再脚下执行。\n"
+            "　　锄、种、浇、收、砍、钓、采——顺序自己摸。\n"
+            "· 采下的花能插花瓶，也能……戴在头上。\n\n"
+            "· 第一次进经营会再弹一张短说明。"
         ),
     },
     "music_game": {
         "title": "音乐玩法 · 官方音游",
         "body": (
-            "桌宠内音乐玩法：\n"
-            "· 键位 D / F / J / K\n"
-            "· 音符到达判定线时按键\n"
-            "· 可选全曲或 90 秒\n"
-            "· Esc 结束\n\n"
+            "· 键位 D / F / J / K，音符落到线再按。\n"
+            "· Esc 退出。\n\n"
             + RHYTHM_CARNIVAL_INTRO
         ),
         "links": (
@@ -2232,29 +2641,44 @@ GUIDE_TOPICS: dict[str, dict] = {
         ),
     },
     "panel": {
-        "title": "面板 · 互动 · 暴露",
+        "title": "面板 · 家园 · 互动",
         "body": (
-            "面板：\n"
-            "· 体力 / 心情 / 背包\n"
-            "· 莱姆：本地回合制练习对战\n"
-            "· 智能伴侣：莲跟随\n"
-            "· 暴露：指针进入蓝区时按 Enter 判定\n\n"
-            "互动：动作与表情\n"
-            "音乐模式下暂停互动语音"
+            "· 面板里有体力、心情、好感、背包，\n"
+            "　　还有莲、人格、家园、莱姆……\n"
+            "· 互动里藏着动作、表情、对话和一些小工具。\n"
+            "· 时间显示开着时，睡眠/音乐/工作旁会多一块表。\n"
+            "· 「尚未开发完全」的项，点到了也别意外。"
         ),
     },
     "system": {
-        "title": "系统 · 快捷键 · 难度",
+        "title": "系统 · 我的 · 快捷键",
         "body": (
-            "系统：回忆 / 我的 / 设置 / 对话 / 重置 / 关于 / 退出 / 说明 / 反馈\n\n"
-            "我的 → 所属人：首次启动必填昵称，仅可填一次\n"
-            "我的 → 生日祝福：设定所属人生日祝福；赠送礼物后\n"
-            "　　每年 4 月 22 日（桌宠生日）会收到感谢语\n\n"
-            "Ctrl+Shift+\n"
-            "  H 打招呼  E 喂食  T 电话  J 下蹲\n"
-            "  N 睡眠    A 对话  V 菜单   Q 强制退出\n\n"
-            "显示层级：顶部置顶 / 中层 / 底部\n"
-            "难度：影响体力心情衰减、采集、暴露与对战"
+            "· 系统里有「我的」「设置」「社区」。\n"
+            "· 所属人、日记、成就、回忆——认主之后慢慢长。\n"
+            "· 生日祝福、日程、天气，都在互动 → 工具附近。\n"
+            "· 强制退出：Ctrl+Shift+Q\n"
+            "· 其余快捷键不多剧透；\n"
+            "　　乱按也许会打招呼、喂食、打电话……"
+        ),
+    },
+    "notes": {
+        "title": "制作说明 · 诚邀",
+        "body": (
+            "· 爱好向同人，免费，还在长大。\n"
+            "· 切换偶发等待、音画略糙，都还请包涵。\n"
+            "· 文案、音频、像素、DIY 地图、怪点子——都欢迎。\n"
+            "· 投稿办法见「导出与投稿」；也可去社区转转。"
+        ),
+    },
+    "submit": {
+        "title": "导出与投稿",
+        "body": (
+            "· 画好地图、像素或家园后，用各处的「导出 / 保存」。\n"
+            "· 然后：系统 → 社区 → 投稿创意 → 勾选模块 → 打包。\n"
+            "· 把 zip（或网盘链接）发到反馈渠道即可。\n"
+            "· 包里不会带日记、钱包之类私密内容。\n"
+            "· 署名随便写；大文件走网盘也行——\n"
+            "　　穷开发不搞官方直传。"
         ),
     },
     "community": {
@@ -2267,42 +2691,26 @@ GUIDE_TOPICS: dict[str, dict] = {
 
 FIRST_PLAY_GUIDES: dict[str, dict] = {
     "gather": {
-        "title": "采集 · 操作说明",
+        "title": "采集",
         "body": (
-            "移动鼠标（或按住拖动）接取下落物。\n\n"
-            "· 普通食物：收入背包\n"
-            "· +3s / -3s：增减剩余时间\n"
-            "· 晕眩物：短暂眩晕\n"
-            "· Esc：结算并退出\n\n"
-            "每局约 30 秒。"
+            "· 晃鼠标接东西。\n"
+            "· 有的加时，有的减时，有的会晕一下。\n"
+            "· Esc 结算。"
         ),
     },
     "typing": {
-        "title": "打字 · 操作说明",
-        "body": (
-            "限时 30 秒输入题目。\n\n"
-            "· 开始后可直接输入\n"
-            "· 输入正确得分并换词\n"
-            "· Esc 或关闭窗口退出"
-        ),
+        "title": "打字",
+        "body": "· 限时打词。打对换下一个。Esc 退出。",
     },
     "vocab": {
-        "title": "背单词 · 操作说明",
-        "body": (
-            "选择正确释义。\n\n"
-            "· 可选英语 / 中文词库\n"
-            "· Esc 或关闭窗口退出"
-        ),
+        "title": "背单词",
+        "body": "· 选对释义。词库可切换。Esc 退出。",
     },
     "rhythm_game": {
-        "title": "音乐 · 操作说明",
+        "title": "音乐",
         "body": (
-            "四轨节奏：音符到达判定线时按键。\n\n"
-            "· 键位：D F J K\n"
-            "· 短音点按；长音按住至结束\n"
-            "· 判定：Perfect / Great / Good / Miss\n"
-            "· 可调流速 / 谱面；可选全曲或 90 秒\n"
-            "· Esc 退出\n\n"
+            "· D F J K，落到判定线再按。\n"
+            "· 长音按住。Esc 退出。\n\n"
             + RHYTHM_CARNIVAL_INTRO
         ),
         "links": (
@@ -2310,35 +2718,26 @@ FIRST_PLAY_GUIDES: dict[str, dict] = {
         ),
     },
     "expose": {
-        "title": "暴露 · 操作说明",
-        "body": (
-            "指针进入蓝色区域时按 Enter 判定。\n\n"
-            "· 连续命中即可通关\n"
-            "· 失败扣除心情 / 体力\n"
-            "· Esc 中断"
-        ),
+        "title": "暴露",
+        "body": "· 指针进蓝区时按 Enter。连中就过。Esc 可停。",
     },
     "rhyme": {
-        "title": "莱姆 · 操作说明",
+        "title": "莱姆",
         "body": (
-            "回合制练习对战：攻击 / 防御 / 必杀。\n\n"
-            "· 每回合双方先各自选招，再同时结算伤害\n"
-            "· 攻击造成伤害；防御可大幅减伤\n"
-            "· 必杀冷却数回合后可用，有概率落空\n"
-            "· 耐久归零时可能触发金目觉醒\n"
-            "· Esc 结束"
+            "· 回合里选攻击 / 防御 / 必杀，再看骰子脸色。\n"
+            "· 打急了也许会……变个人。Esc 结束。"
         ),
     },
 }
 
-OPERATION_GUIDE_TEXT = "【操作说明】\n\n" + OPERATION_GUIDE_INDEX
+OPERATION_GUIDE_TEXT = "【操作说明】\n\n" + OPERATION_GUIDE_INDEX + "\n\n" + OPERATION_GUIDE_TIPS
 
 ONCE_HINTS: dict[str, str] = {
     "operation_guide": OPERATION_GUIDE_TEXT,
-    "game_mode": "采集：接取下落物。Esc 退出。",
-    "rhythm_game": "音乐：键位 D F J K。Esc 退出。",
+    "game_mode": "采集：接住下落的东西。Esc 退出。",
+    "rhythm_game": "音乐：D F J K。Esc 退出。",
     "companion_bar": "智能伴侣已开启。",
-    "music_mode": "音乐漫步已开启。",
+    "music_mode": "音乐漫步已开启。旁边若多出一块表，是时间显示在作怪。",
 }
 DEFAULT_VOCAB_WORDS: list[dict[str, str]] = [
     {"word": "苍叶", "meaning": "濑良垣苍叶，桌宠主角", "hint": "角色名"},
@@ -2406,6 +2805,27 @@ PIXEL_COLOR = SPEECH_FG_VPET
 MENU_BG = "#141824"
 MENU_FG = "#eef2ff"
 MENU_ACTIVE = "#2a3558"
+
+
+def _format_duration_zh(seconds: float | int) -> str:
+    """把秒数格式成可读中文时长。"""
+    sec = max(0, int(float(seconds or 0)))
+    if sec < 60:
+        return f"{sec} 秒" if sec > 0 else "不足 1 分钟"
+    minutes = sec // 60
+    if minutes < 60:
+        return f"{minutes} 分钟"
+    hours = minutes // 60
+    rem_m = minutes % 60
+    days = hours // 24
+    rem_h = hours % 24
+    if days > 0:
+        if rem_h > 0:
+            return f"{days} 天 {rem_h} 小时"
+        return f"{days} 天"
+    if rem_m > 0:
+        return f"{hours} 小时 {rem_m} 分钟"
+    return f"{hours} 小时"
 
 
 def _speech_fg_for_source(source: str | None) -> str:
@@ -2967,6 +3387,7 @@ STATE_MULTI_CLICK: dict[str, tuple[str, ...]] = {
     "work": ("货物我来运！", "打工人加油！", "嘿咻嘿咻~"),
     "like": ("谢谢点赞！", "你最好了~", "棒棒！"),
     "wink": ("😉 你懂的~", "嘿嘿~", "眨眼眨眼~"),
+    "bixin": ("比心给你~", "爱心发射！", "收到了吗？"),
     "happy": ("超开心！", "耶——！", "今天也是好日子~"),
     "sad": ("呜…", "别安慰了我更想哭…", "心里下雨了呢…"),
     "angry": ("哼！", "气鼓鼓！", "不理你了！"),
@@ -2994,6 +3415,7 @@ INTERACT_BANTER: dict[str, tuple[str, ...]] = {
     "happy": ("耶——！", "超开心！"),
     "shy": ("///", "脸红了啦…"),
     "like": ("棒棒！", "给你点赞~"),
+    "bixin": ("比心~", "爱你哦！", "传给你啦~"),
     "yes": ("是！", "嗯嗯！"),
     "no": ("否~", "不要啦…"),
     "yesno": ("命运揭晓…", "答案是…"),
@@ -3006,7 +3428,9 @@ MOD_SHIFT = 0x0004
 PRELOAD_IDLE_DELAY_MS = 5000
 PRELOAD_STEP_MS = 8000
 _SOURCE_FILE_CACHE: dict[str, Image.Image] = {}
-_REF_SCALE_CACHE: dict[int, float] = {}
+_GALLERY_RGB_CACHE: dict[tuple, Image.Image] = {}
+_STRIP_OUTER_BLACK = False
+_REF_SCALE_CACHE: dict[tuple, float] = {}
 _PROCESSED_CANVAS_CACHE: dict[tuple, Image.Image] = {}
 
 
@@ -3117,15 +3541,24 @@ def _gallery_frame_photo(
 
 
 def _gallery_photo(path: Path, max_side: int, *, bg_hex: str = MENU_BG) -> ImageTk.PhotoImage:
+    strip = strip_outer_black_enabled()
+    key = (str(path.resolve()), int(max_side), str(bg_hex), strip)
+    cached = _GALLERY_RGB_CACHE.get(key)
+    if cached is not None:
+        return ImageTk.PhotoImage(cached)
     img = Image.open(path).convert("RGBA")
+    if strip:
+        img = _remove_outer_black_frame(img)
     w, h = img.size
     scale = min(1.0, max_side / max(w, h, 1))
     if scale < 1.0:
-        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.BILINEAR)
     bg = _hex_to_rgb(bg_hex) + (255,)
     canvas = Image.new("RGBA", img.size, bg)
     canvas.paste(img, (0, 0), img)
-    return ImageTk.PhotoImage(canvas.convert("RGB"))
+    rgb = canvas.convert("RGB")
+    _GALLERY_RGB_CACHE[key] = rgb
+    return ImageTk.PhotoImage(rgb)
 
 
 def _open_asset_image(filename: str) -> Image.Image:
@@ -3152,7 +3585,8 @@ def _get_processed_canvas(
     flip: bool = False,
 ) -> Image.Image:
     scale_key = None if reference_scale is None else round(reference_scale, 5)
-    key = (filename, display_size, scale_key, flip)
+    strip = strip_outer_black_enabled()
+    key = (filename, display_size, scale_key, flip, strip)
     cached = _PROCESSED_CANVAS_CACHE.get(key)
     if cached is not None:
         return cached
@@ -3165,7 +3599,11 @@ def _get_processed_canvas(
         img = _remove_outer_lime_green(img)
         skip_green = True
     canvas = _to_fixed_canvas(
-        img, display_size, reference_scale=reference_scale, skip_green_removal=skip_green
+        img,
+        display_size,
+        reference_scale=reference_scale,
+        skip_green_removal=skip_green,
+        strip_outer_black=strip,
     )
     _PROCESSED_CANVAS_CACHE[key] = canvas
     return canvas
@@ -3394,6 +3832,27 @@ def _remove_outer_lime_green(img: Image.Image) -> Image.Image:
         return _remove_outer_key_pil(img, _is_outer_lime_screen)
 
 
+def _remove_outer_black_frame(img: Image.Image, *, thresh: int = 52) -> Image.Image:
+    """只去掉与画面边缘连通的近黑外框，保留角色内部黑发/描边。"""
+    try:
+        import numpy as np
+
+        arr = np.asarray(img.convert("RGBA"), dtype=np.uint8)
+        r = arr[..., 0].astype(np.int16)
+        g = arr[..., 1].astype(np.int16)
+        b = arr[..., 2].astype(np.int16)
+        a = arr[..., 3]
+        mx = np.maximum(np.maximum(r, g), b)
+        key = (a > 8) & (mx <= thresh) & (np.abs(r - g) < 20) & (np.abs(g - b) < 20)
+        return _remove_outer_key_rgba(img, key)
+    except Exception:
+
+        def is_black(r: int, g: int, b: int) -> bool:
+            return max(r, g, b) <= thresh and abs(r - g) < 20 and abs(g - b) < 20
+
+        return _remove_outer_key_pil(img, is_black)
+
+
 def _remove_green(img: Image.Image) -> Image.Image:
     """只抠与边缘连通的绿幕外圈，不清空图内绿色细节。"""
     try:
@@ -3427,10 +3886,15 @@ def _to_fixed_canvas(
     *,
     reference_scale: float | None = None,
     skip_green_removal: bool = False,
+    strip_outer_black: bool | None = None,
 ) -> Image.Image:
     if max(img.size) > max(display_size * 5, 512):
         img = _cap_source_image(img, display_size)
     rgba = img.convert("RGBA") if skip_green_removal else _remove_green(img)
+    if strip_outer_black is None:
+        strip_outer_black = strip_outer_black_enabled()
+    if strip_outer_black:
+        rgba = _remove_outer_black_frame(rgba)
 
     bbox = rgba.getbbox()
     if bbox is None:
@@ -3451,11 +3915,14 @@ def _to_fixed_canvas(
 
 
 def _reference_scale(display_size: int) -> float:
-    cached = _REF_SCALE_CACHE.get(display_size)
+    strip = strip_outer_black_enabled()
+    cached = _REF_SCALE_CACHE.get((display_size, strip))
     if cached is not None:
         return cached
     img = _cap_source_image(_open_asset_image("stand.jpg"), display_size)
     rgba = _remove_green(img)
+    if strip:
+        rgba = _remove_outer_black_frame(rgba)
     bbox = rgba.getbbox()
     if bbox is None:
         scale = 1.0
@@ -3463,7 +3930,7 @@ def _reference_scale(display_size: int) -> float:
         cropped = rgba.crop(bbox)
         crop_w, crop_h = cropped.size
         scale = min(display_size / crop_w, display_size / crop_h)
-    _REF_SCALE_CACHE[display_size] = scale
+    _REF_SCALE_CACHE[(display_size, strip)] = scale
     return scale
 
 
@@ -4295,6 +4762,101 @@ def _get_reminder_sound():
     return _reminder_sound
 
 
+_ui_sfx_cache: dict[str, object] = {}
+
+
+def _synth_sfx_from_notes(
+    notes: list[tuple[float, float, float]],
+    *,
+    sample_rate: int = 22050,
+    noise: float = 0.0,
+    volume: int = 9000,
+):
+    """notes: (freq_hz, start_sec, dur_sec)。返回 pygame Sound 或 None。"""
+    try:
+        import pygame
+
+        if not _init_pygame_mixer():
+            return None
+        total = 0.0
+        for _f, start, dur in notes:
+            total = max(total, start + dur)
+        n = max(1, int(sample_rate * total) + 1)
+        buf = array.array("h", [0] * n)
+        for freq, start, dur in notes:
+            s0 = int(start * sample_rate)
+            samples = int(dur * sample_rate)
+            for i in range(samples):
+                idx = s0 + i
+                if idx >= n:
+                    break
+                t = i / sample_rate
+                env = math.sin(math.pi * min(1.0, t / max(1e-6, dur))) ** 0.45
+                env *= math.exp(-t * (4.5 + freq / 800.0))
+                tone = math.sin(2 * math.pi * freq * t)
+                if noise > 0:
+                    tone = (1.0 - noise) * tone + noise * random.uniform(-1.0, 1.0)
+                val = int(volume * env * tone)
+                mixed = buf[idx] + val
+                buf[idx] = max(-32767, min(32767, mixed))
+        snd = pygame.mixer.Sound(buffer=bytes(buf))
+        return snd
+    except Exception:
+        return None
+
+
+def _make_ui_sfx(kind: str):
+    """合成短 UI / 经营音效（无外置 wav 时用）。"""
+    specs: dict[str, list[tuple[float, float, float]]] = {
+        # 金钱：清脆叮叮
+        "money": [(987.77, 0.0, 0.07), (1318.5, 0.06, 0.10)],
+        # 锄地：低沉土声
+        "till": [(120.0, 0.0, 0.05), (90.0, 0.04, 0.08)],
+        # 播种：轻柔落点
+        "plant": [(330.0, 0.0, 0.06), (220.0, 0.05, 0.08)],
+        # 浇水：水花感（带噪）
+        "water": [(640.0, 0.0, 0.05), (480.0, 0.04, 0.09), (720.0, 0.08, 0.06)],
+        # 收获：轻快两声
+        "harvest": [(523.25, 0.0, 0.06), (659.25, 0.07, 0.08)],
+        # 砍树：木质敲击
+        "chop": [(180.0, 0.0, 0.04), (140.0, 0.035, 0.07)],
+        # 钓鱼：入水
+        "fish": [(420.0, 0.0, 0.05), (280.0, 0.05, 0.10)],
+        # 采花：轻弹
+        "pick": [(880.0, 0.0, 0.05), (1174.0, 0.05, 0.07)],
+        # 商店：开店铃
+        "shop": [(784.0, 0.0, 0.08), (988.0, 0.09, 0.10), (1175.0, 0.18, 0.12)],
+        # 合成台：金属叮
+        "craft": [(392.0, 0.0, 0.05), (523.0, 0.06, 0.07), (311.0, 0.12, 0.09)],
+    }
+    notes = specs.get(kind)
+    if not notes:
+        return None
+    noise = 0.35 if kind in ("till", "water", "chop", "fish") else (0.12 if kind == "plant" else 0.0)
+    vol = 11000 if kind == "money" else (10000 if kind in ("shop", "craft") else 8500)
+    return _synth_sfx_from_notes(notes, noise=noise, volume=vol)
+
+
+def _get_ui_sfx(kind: str):
+    cached = _ui_sfx_cache.get(kind)
+    if cached is not None:
+        return cached
+    snd = _make_ui_sfx(kind)
+    _ui_sfx_cache[kind] = snd if snd is not None else False
+    return _ui_sfx_cache[kind]
+
+
+def _play_ui_sfx(kind: str, *, volume: float = 0.55) -> None:
+    snd = _get_ui_sfx(kind)
+    if not snd or snd is False:
+        return
+    try:
+        snd.set_volume(max(0.05, min(1.0, float(volume))))
+        snd.play()
+    except Exception:
+        pass
+
+
 PHONOGRAPH_CATEGORY_ORDER = ("voice", "music", "sfx")
 PHONOGRAPH_CATEGORY_LABEL = {"voice": "语音", "music": "音乐", "sfx": "音效"}
 
@@ -4353,7 +4915,31 @@ def _resolve_phonograph_user_path(entry: dict) -> Path | None:
     return path if path.is_file() else None
 
 
-def _build_phonograph_catalog() -> list[dict]:
+def _peek_music_track_audio(track_id: str | None) -> Path | None:
+    """列表用：已有缓存/源文件则返回，不在此做转码。"""
+    track = _music_track(track_id)
+    cache = Path(track["cache"])
+    if cache.is_file():
+        return cache
+    src = Path(track["src"])
+    if src.is_file():
+        return src
+    return None
+
+
+_PHONOGRAPH_CATALOG_CACHE: list[dict] | None = None
+
+
+def _invalidate_phonograph_catalog_cache() -> None:
+    global _PHONOGRAPH_CATALOG_CACHE
+    _PHONOGRAPH_CATALOG_CACHE = None
+
+
+def _build_phonograph_catalog(*, force: bool = False) -> list[dict]:
+    global _PHONOGRAPH_CATALOG_CACHE
+    if not force and _PHONOGRAPH_CATALOG_CACHE is not None:
+        return list(_PHONOGRAPH_CATALOG_CACHE)
+
     catalog: list[dict] = []
 
     def add_file(entry_id: str, title: str, wav: Path | None, *, category: str = "voice") -> None:
@@ -4392,9 +4978,9 @@ def _build_phonograph_catalog() -> list[dict]:
     )
     for tid in MUSIC_TRACK_ORDER:
         track = _music_track(tid)
-        wav = _ensure_music_track_wav(tid)
-        if wav is not None:
-            add_file(f"builtin:music:{tid}", str(track["phonograph"]), wav, category="music")
+        audio = _peek_music_track_audio(tid)
+        if audio is not None:
+            add_file(f"builtin:music:{tid}", str(track["phonograph"]), audio, category="music")
 
     catalog.extend(
         [
@@ -4419,7 +5005,8 @@ def _build_phonograph_catalog() -> list[dict]:
                 "user_id": item["id"],
             }
         )
-    return catalog
+    _PHONOGRAPH_CATALOG_CACHE = list(catalog)
+    return list(catalog)
 
 
 def _draw_pixel_bulb(canvas: tk.Canvas, x: int, y: int, px: int = 3, *, glow: float = 1.0) -> None:
@@ -4519,6 +5106,41 @@ def _draw_fight_action_icon(canvas: tk.Canvas, kind: str, size: int = 18) -> Non
         canvas.create_rectangle(px, size - px * 4, px * 4, size - px, fill="#ff6688", outline="")
         canvas.create_rectangle(px * 3, px * 2, px * 5, size - px * 3, fill="#ffaa44", outline="")
         _draw_pixel_star(canvas, size - px * 5, px, px=max(2, px - 1), color="#ffff88")
+
+
+def _draw_pixel_die(canvas: tk.Canvas, size: int, value: int, *, face: str = "#f4f0e6", pip: str = "#222233") -> None:
+    """像素骰子 1–6。"""
+    canvas.delete("all")
+    value = max(1, min(6, int(value)))
+    canvas.create_rectangle(1, 1, size - 2, size - 2, fill=face, outline="#888899")
+    canvas.create_rectangle(2, 2, size - 3, size - 3, fill=face, outline="")
+    pip_r = max(2, size // 10)
+    cx = size // 2
+    # 九点布局
+    spots = {
+        1: [(0, 0)],
+        2: [(-1, -1), (1, 1)],
+        3: [(-1, -1), (0, 0), (1, 1)],
+        4: [(-1, -1), (1, -1), (-1, 1), (1, 1)],
+        5: [(-1, -1), (1, -1), (0, 0), (-1, 1), (1, 1)],
+        6: [(-1, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (1, 1)],
+    }
+    step = size // 4
+    for ox, oy in spots[value]:
+        x = cx + ox * step - pip_r
+        y = cx + oy * step - pip_r
+        canvas.create_oval(x, y, x + pip_r * 2, y + pip_r * 2, fill=pip, outline="")
+
+
+def _rhyme_dice_threshold(action: str, difficulty_t: float) -> int:
+    """掷骰成功门槛（1–6）；难度越高越难。"""
+    t = max(0.0, min(1.0, float(difficulty_t)))
+    base = 2 + int(round(t * 2))  # 2..4
+    if action == "special":
+        return min(6, base + 1)
+    if action == "defense":
+        return min(6, base + 1)  # 完美格挡门槛
+    return min(6, base)
 
 
 def _spawn_game_clear_particles(width: int, height: int, accent: str) -> list[dict]:
@@ -5072,7 +5694,15 @@ def _load_app_config() -> dict:
         "weather_city": "北京",
         "seen_hints": {},
         "work_mode": {"show_props": True, "show_stack": True},
+        # 睡眠/音乐/工作等自动桌面秒表·计时器是否显示（工具菜单打开的仍可显示）
+        "show_timers": True,
         "voice_mode": False,
+        # 语音全局触发间隔（毫秒）；仅语音模式开启后可在设置里调
+        "voice_interval_ms": VOICE_GLOBAL_COOLDOWN_MS,
+        # 难度连续值 0=低 … 1=高（兼容旧 difficulty 字符串）
+        "difficulty_t": 0.5,
+        # 去掉立绘/画廊最外围连通黑边（仅边缘泛洪，缓存后不卡）
+        "strip_outer_black": False,
         # top=置顶 / middle=应用之下、桌面之上 / bottom=最底层（HWND_BOTTOM）
         "display_layer": "top",
         # 人格：default=默认立绘 / nc=金目（nc* 立绘）
@@ -5316,7 +5946,7 @@ def _normalize_profile_pet_id(data: dict) -> dict:
 def _normalize_gift_pixels(raw) -> list[int]:
     """礼物像素画：一维色板下标，长度 GIFT_PIXEL_SIZE²。"""
     n = GIFT_PIXEL_SIZE * GIFT_PIXEL_SIZE
-    max_idx = len(GIFT_PIXEL_PALETTE) - 1
+    max_idx = 23  # 基础色板 + 会话自选色
     out: list[int] = []
     if isinstance(raw, list):
         for i in range(n):
@@ -5379,14 +6009,23 @@ def _load_pet_profile() -> dict:
     else:
         profile["owner_name"] = ""
     profile.setdefault("owner_set_at", "")
+    if "owner_welcome_done" not in profile:
+        # 老存档已有所属人：视为欢迎过，避免升级后重复认主欢迎词
+        profile["owner_welcome_done"] = bool(str(profile.get("owner_name") or "").strip())
+    else:
+        profile["owner_welcome_done"] = bool(profile.get("owner_welcome_done"))
+    profile.setdefault("last_launch_at", "")
     profile.setdefault("bless_month", 0)
     profile.setdefault("bless_day", 0)
     profile.setdefault("bless_message", "")
     profile.setdefault("gift_text", "")
     profile["gift_pixels"] = _normalize_gift_pixels(profile.get("gift_pixels"))
+    profile.setdefault("active_gift_art_id", "")
     profile.setdefault("last_owner_bday_ymd", "")
     profile.setdefault("last_pet_bday_ymd", "")
     profile.setdefault("last_pet_bday_nudge_ymd", "")
+    profile.setdefault("wear_flower", False)
+    profile["wear_flower"] = bool(profile.get("wear_flower"))
 
     if PET_ID_FEATURE:
         profile = _normalize_profile_pet_id(profile)
@@ -7328,15 +7967,18 @@ class DesktopPet:
     def __init__(self) -> None:
         _ensure_data_dirs()
         app_cfg = _load_app_config()
+        if _reset_operation_guide_if_updated(app_cfg):
+            _save_app_config(app_cfg)
         _apply_font_size(int(app_cfg.get("font_size", 12)))
-        saved_size = int(app_cfg.get("display_size", DEFAULT_SIZE))
-        self.display_size = saved_size if saved_size in SIZE_PRESETS.values() else DEFAULT_SIZE
-        self.font_size = int(app_cfg.get("font_size", 12))
+        saved_size = _snap_display_size(int(app_cfg.get("display_size", DEFAULT_SIZE)))
+        self.display_size = saved_size
+        self.font_size = max(8, min(24, int(app_cfg.get("font_size", 12))))
         self.app_config = app_cfg
         persona = str(self.app_config.get("persona") or PERSONA_DEFAULT)
         if persona not in PERSONA_LABELS:
             persona = PERSONA_DEFAULT
         set_active_persona(persona)
+        set_strip_outer_black(bool(self.app_config.get("strip_outer_black")))
         # nc 套图生成放到后台 _startup_load_worker，避免启动前卡住
         self.pet_profile = _load_pet_profile()
         self.pet_id = self.pet_profile.get("pet_id") if PET_ID_FEATURE else None
@@ -7346,11 +7988,21 @@ class DesktopPet:
         self.diary_entries = _load_diary()
         self.vocab_words: list[dict[str, str]] = []
         self.ai_history: list[dict[str, str]] = []
-        self.difficulty = self.app_config.get("difficulty", "中")
-        if self.difficulty not in DIFFICULTY_PRESETS:
-            self.difficulty = "中"
+        # 难度：优先连续值；旧档名映射到 t
+        try:
+            self.difficulty_t = float(self.app_config.get("difficulty_t", 0.5))
+        except Exception:
+            self.difficulty_t = 0.5
+        legacy_diff = str(self.app_config.get("difficulty", "中"))
+        if "difficulty_t" not in self.app_config and legacy_diff in DIFFICULTY_T_BY_NAME:
+            self.difficulty_t = DIFFICULTY_T_BY_NAME[legacy_diff]
+        self.difficulty_t = max(0.0, min(1.0, self.difficulty_t))
+        self.difficulty = _difficulty_label_for_t(self.difficulty_t)
         self._mood_decay_counter = 0
         self._apply_difficulty_runtime()
+        self._home_move_gate_ms = 0
+        self._settings_size_job: str | None = None
+        self._settings_font_job: str | None = None
 
         self.root = tk.Tk()
         self.root.title("Vpet")
@@ -7360,6 +8012,7 @@ class DesktopPet:
         self.root.wm_attributes("-transparentcolor", "magenta")
 
         self._sprite_cache: dict[int, SpriteSet] = {}
+        self._persona_sprite_cache: dict[tuple[int, str], SpriteSet] = {}
         self._sprite_building: set[int] = set()
         self._panel_backpack_sig: tuple | None = None
         self.panel_backpack_open = False
@@ -7467,12 +8120,24 @@ class DesktopPet:
         self.work_use_work_sprites = False
         self.work_start_box_win: tk.Toplevel | None = None
         self.work_end_btn_win: tk.Toplevel | None = None
+        self.sleep_end_btn_win: tk.Toplevel | None = None
         self.work_flag_dragging = False
         self.work_flag_drag_origin: tuple[int, int, int, int] = (0, 0, 0, 0)
         self.work_flag_movable = False
         self.work_custom_win: tk.Toplevel | None = None
         self.work_continuous = False
+        self.work_session_kind = ""
         self.work_encourage_job: str | None = None
+        self.work_move_job: str | None = None
+        self.work_anim_job: str | None = None
+        self._work_boot_job: str | None = None
+        self._work_boot_token = 0
+        self._work_boot_busy = False
+        self._pending_work_start = False
+        self._work_props_prewarmed = False
+        self._mode_switch_pre_cleaned = False
+        self._exiting_work = False
+        self._achievements_save_job: str | None = None
         self.work_boxes_since_banter = 0
         self.work_banter_last_ms = 0
         self.work_anchored_box_wins: list[tk.Toplevel] = []
@@ -7576,10 +8241,25 @@ class DesktopPet:
         self.countdown_label: tk.Label | None = None
         self.happy_fx_win: tk.Toplevel | None = None
         self.happy_fx_canvas: tk.Canvas | None = None
+        self.head_flower_win: tk.Toplevel | None = None
+        self.head_flower_canvas: tk.Canvas | None = None
+        self._head_flower_place_sig: tuple[int, int] | None = None
         self.food_fx_win: tk.Toplevel | None = None
         self.food_fx_canvas: tk.Canvas | None = None
         self.food_fx_id: str | None = None
         self.food_inventory: dict[str, int] = _load_food_inventory()
+        self.wallet: dict = home_farm.load_wallet(WALLET_FILE)
+        self._home_edit_mode = "decorate"  # decorate | farm
+        self._home_farm_tool = "plant"  # till | plant | water | harvest
+        self._home_farm_seed = "seed_wheat"
+        self._home_farm_tick_job: str | None = None
+        self._home_farm_banner: tk.Label | None = None
+        self._home_farm_tool_btns: dict = {}
+        self._home_edit_mode_btns: dict = {}
+        self._home_farm_host: tk.Frame | None = None
+        self._home_farm_fx: dict | None = None
+        self._home_farm_fx_job: str | None = None
+        self._home_craft_flash_job: str | None = None
         self.shy_frame_idx = 0
         self.shy_last_click_ms = 0
         self.kick_base_y = 0
@@ -7671,6 +8351,13 @@ class DesktopPet:
         self.wink_fx_job: str | None = None
         self.wink_fx_phase = 0
         self.wink_fx_started_ms = 0
+        self.bixin_fx_win: tk.Toplevel | None = None
+        self.bixin_fx_canvas: tk.Canvas | None = None
+        self.bixin_fx_job: str | None = None
+        self.bixin_fx_phase = 0
+        self.bixin_fx_started_ms = 0
+        self._bixin_particles: list[dict] = []
+        self._bixin_fx_gen = 0
         self.multi_click_count = 0
         self.multi_click_last_ms = 0
         self.multi_click_key = ""
@@ -7763,6 +8450,9 @@ class DesktopPet:
         self.panel_settings_win: tk.Toplevel | None = None
         self.about_win: tk.Toplevel | None = None
         self.feedback_win: tk.Toplevel | None = None
+        self.creator_hub_win: tk.Toplevel | None = None
+        self.creator_upload_win: tk.Toplevel | None = None
+        self.creator_intro_win: tk.Toplevel | None = None
         self.diary_win: tk.Toplevel | None = None
         self.owner_name_win: tk.Toplevel | None = None
         self.owner_birthday_win: tk.Toplevel | None = None
@@ -7779,6 +8469,44 @@ class DesktopPet:
         self._weather_fetch_token = 0
         self.gallery_win: tk.Toplevel | None = None
         self.gallery_photos: list[ImageTk.PhotoImage] = []
+        self.home_win: tk.Toplevel | None = None
+        self.home_desktop_win: tk.Toplevel | None = None
+        self._home_photos: list[ImageTk.PhotoImage] = []
+        self._home_desktop_photos: list[ImageTk.PhotoImage] = []
+        self._home_tick_job: str | None = None
+        self._home_layout: dict | None = None
+        self._home_brush: str = "plant"
+        self._home_canvas: tk.Canvas | None = None
+        self._home_desktop_canvas: tk.Canvas | None = None
+        self._home_status: tk.Label | None = None
+        self._home_mode_btns: dict[str, tk.Button] = {}
+        self._home_zone_btns: dict[str, tk.Button] = {}
+        self._home_brush_btns: dict[str, tk.Button] = {}
+        self._home_brush_host: tk.Frame | None = None
+        self._home_bg_host: tk.Frame | None = None
+        self._home_bg_brush_btns: dict[str, tk.Button] = {}
+        self._home_pet_dir: str = "front"
+        self._home_walk_frame: int = 0
+        self._home_pose: str = "stand"  # stand|walk|sleep|squat
+        self._home_pose_until_ms: int = 0
+        self._home_pose_job: str | None = None
+        self._home_last_trigger: str = ""
+        self._home_desk_drag: tuple[int, int, int, int] | None = None
+        self._home_desktop_title: tk.Label | None = None
+        self._peer_meet_job: str | None = None
+        self._peer_meet_last_ms: int = 0
+        self._last_user_activity_ms: int = int(time.time() * 1000)
+        self._meta_idle_job: str | None = None
+        self._meta_edge_during_drag = False
+        self._peer_instance_id: str = f"{os.getpid()}_{int(time.time() * 1000)}"
+        self._mode_time_key: str | None = None
+        self._mode_time_start_ms: int = 0
+        self._mode_time_job: str | None = None
+        self.owner_info_win: tk.Toplevel | None = None
+        self._companion_heart_win: tk.Toplevel | None = None
+        self._companion_heart_canvas: tk.Canvas | None = None
+        self._companion_heart_job: str | None = None
+        self._companion_heart_gen: int = 0
         self.phonograph_win: tk.Toplevel | None = None
         self.phonograph_playing_id: str | None = None
         self.phonograph_play_job: str | None = None
@@ -7803,6 +8531,19 @@ class DesktopPet:
         self.schedule_win: tk.Toplevel | None = None
         self.triggered_reminders_today: set[str] = set()
         self._reminder_day = ""
+        # 桌面秒表 / 计时器
+        self._desk_clocks: dict[str, dict] = {}
+        self._desk_clock_job: str | None = None
+        self._desk_clock_walkers: dict[str, dict[str, list[ImageTk.PhotoImage]]] = {}
+        self._desk_clock_sleep_frames: list[ImageTk.PhotoImage] | None = None
+        self._desk_clock_drag: dict[str, tuple[int, int, int, int]] = {}
+        self.timer_setup_win: tk.Toplevel | None = None
+        self._work_timer_kind: str = "stopwatch"  # stopwatch | countdown
+        self._work_timer_duration_ms: int = 0
+        self._work_session_start_ms: int = 0
+        self._sleep_session_start_ms: int = 0
+        self._music_session_start_ms: int = 0
+        self._session_finish_last_line: dict[str, str] = {}
 
         self.label.bind("<Button-1>", self._on_press)
         self.label.bind("<B1-Motion>", self._on_drag)
@@ -7951,11 +8692,30 @@ class DesktopPet:
             self.wait_hint_reason = ""
             self._hide_wait_hint()
 
+    def _flush_wait_hint_now(self) -> None:
+        """阻塞操作前强制画出等待提示（只刷提示窗，避免整树 update 卡死）。"""
+        win = getattr(self, "wait_hint_win", None)
+        if win is None:
+            return
+        try:
+            if not win.winfo_exists():
+                return
+            win.attributes("-topmost", True)
+            win.lift()
+            self._place_wait_hint()
+            win.update_idletasks()
+            win.update()
+        except Exception:
+            pass
+
     def _enter_ui_busy(self, reason: str = "") -> None:
         self._ui_busy_depth += 1
         if reason:
             self.wait_hint_reason = reason
         self._show_wait_hint(reason or self._current_wait_hint_message())
+        # 切模式/进工作等会立刻卡住主线程，这里先把提示刷出来
+        if reason:
+            self._flush_wait_hint_now()
 
     def _exit_ui_busy(self) -> None:
         self._ui_busy_depth = max(0, self._ui_busy_depth - 1)
@@ -8076,6 +8836,8 @@ class DesktopPet:
             try:
                 self.sprites = ss
                 self._sprite_cache[self.display_size] = ss
+                # 正式套图换上后丢掉 sleep 占位预热窗，避免起点箱一直是 sleep1
+                self._invalidate_prewarmed_work_props()
                 # 仅开场加载期保持 sleep1；已进入自由模式则不回退画面
                 if not self._startup_ready or self.mode == "loading":
                     still = ss.sleep[0]
@@ -8213,6 +8975,9 @@ class DesktopPet:
         self._start_idle_watchdog()
         # 先强制所属人取名；取名完成后再弹首次操作说明（见 _maybe_prompt_owner_name）
         self.root.after(900, self._maybe_prompt_owner_name)
+        self.root.after(1400, self._maybe_daily_login_coin)
+        self.root.after(1600, self._maybe_restore_home_desktop)
+        self.root.after(1700, self._sync_head_flower)
         if PET_ID_FEATURE:
             self.root.after(1800, lambda: self._schedule_cloud_pet_id_sync(force=False, toast=False))
         self._enter_ui_busy("请耐心等待…整理资源")
@@ -8235,7 +9000,11 @@ class DesktopPet:
         self.mode = "free"
         self.state = "stand"
         self._resume_idle()
-        self.root.after(500, self._prewarm_game_drop_photos)
+        self.root.after(1800, self._prewarm_game_drop_photos)
+        self.root.after(2200, self._prewarm_work_props)
+        self.root.after(2600, self._start_peer_meet_poll)
+        self.root.after(3800, self._start_meta_idle_poll)
+        self._start_mode_time_tracking()
 
     def _hide_startup_canvas(self) -> None:
         if getattr(self, "_startup_canvas", None) and self._startup_canvas.winfo_exists():
@@ -8288,15 +9057,25 @@ class DesktopPet:
 
         self.root.after(PRELOAD_IDLE_DELAY_MS, lambda: load_one(0))
 
-    def _build_sprite_set_batched(self, size: int, pack: dict, on_done) -> None:
+    def _build_sprite_set_batched(
+        self,
+        size: int,
+        pack: dict,
+        on_done,
+        *,
+        batch_size: int | None = None,
+        batch_ms: int | None = None,
+    ) -> None:
         tasks = _sprite_photo_tasks(pack)
         photos: dict[str, ImageTk.PhotoImage] = {}
         by_id: dict[int, ImageTk.PhotoImage] = {}
+        step_n = max(1, int(batch_size if batch_size is not None else SPRITE_BATCH_SIZE))
+        delay = max(0, int(batch_ms if batch_ms is not None else SPRITE_BATCH_MS))
 
         def step(idx: int = 0) -> None:
             if self._closing:
                 return
-            end = min(idx + SPRITE_BATCH_SIZE, len(tasks))
+            end = min(idx + step_n, len(tasks))
             for i in range(idx, end):
                 key, img = tasks[i]
                 iid = id(img)
@@ -8306,7 +9085,10 @@ class DesktopPet:
                     by_id[iid] = photo
                 photos[key] = photo
             if end < len(tasks):
-                self._safe_after(SPRITE_BATCH_MS, lambda: step(end))
+                if delay <= 0:
+                    self.root.after_idle(lambda: step(end))
+                else:
+                    self._safe_after(delay, lambda: step(end))
                 return
             ss = SpriteSet.__new__(SpriteSet)
             ss.display_size = size
@@ -8332,6 +9114,10 @@ class DesktopPet:
 
         def finish(ss: SpriteSet) -> None:
             self._sprite_cache[size] = ss
+            try:
+                self._persona_sprite_cache[(size, get_active_persona())] = ss
+            except Exception:
+                pass
             self._sprite_building.discard(size)
             if not quiet:
                 self._exit_ui_busy()
@@ -8522,9 +9308,25 @@ class DesktopPet:
             hide_subtitle_cb=self._hide_voice_subtitle,
             has_companion_cb=lambda: bool(self.companion_bar_enabled and self.mini_pets),
         )
+        try:
+            ms = int(self.app_config.get("voice_interval_ms", VOICE_GLOBAL_COOLDOWN_MS) or VOICE_GLOBAL_COOLDOWN_MS)
+            self.voice_player.set_global_cooldown_ms(ms)
+        except Exception:
+            self.voice_player.set_global_cooldown_ms(VOICE_GLOBAL_COOLDOWN_MS)
         # 启动阶段不立刻全量转码；就绪后再轻量预热
         if self._voice_enabled():
             self.root.after(400, self._schedule_voice_preload_safe)
+
+    def _set_voice_interval_ms(self, ms: int, *, toast: bool = False) -> None:
+        ms = max(VOICE_COOLDOWN_MIN_MS, min(VOICE_COOLDOWN_MAX_MS, int(ms)))
+        self.app_config["voice_interval_ms"] = ms
+        _save_app_config(self.app_config)
+        try:
+            self.voice_player.set_global_cooldown_ms(ms)
+        except Exception:
+            pass
+        if toast:
+            self._show_toast(f"语音间隔：{ms // 1000} 秒", PIXEL_COLOR, duration_ms=1600)
 
     def _schedule_voice_preload_safe(self) -> None:
         if self._closing or not self._voice_enabled():
@@ -9180,6 +9982,10 @@ class DesktopPet:
             pass
         elif now_ms - last < DRAG_MOVE_VOICE_RETRY_MS:
             return
+        # 长拖：低频 meta 吐槽（与 yuqi 互斥，避免叠句）
+        if self._maybe_meta_banter("drag_long"):
+            self.drag_move_voice_ms = now_ms
+            return
         if not self._try_voice_drag_move():
             return
         self.drag_move_voice_ms = now_ms
@@ -9307,6 +10113,7 @@ class DesktopPet:
         *,
         click_through: bool = True,
         anchor_s: bool = False,
+        layout_sync: bool = True,
     ) -> tk.Toplevel:
         """旗/箱/下落物：先 withdraw 设好色键再显示，避免建窗瞬间闪玫红。"""
         win = tk.Toplevel(self.root)
@@ -9326,10 +10133,12 @@ class DesktopPet:
             geo_x = int(screen_x)
             geo_y = int(screen_y)
         win.geometry(f"{w}x{h}+{geo_x}+{geo_y}")
-        try:
-            win.update_idletasks()
-        except Exception:
-            pass
+        # 工作热路径可跳过：强制 idletasks 易在切模式时卡主线程
+        if layout_sync:
+            try:
+                win.update_idletasks()
+            except Exception:
+                pass
         self._apply_window_layer(win)
         self._win32_set_click_through(win, bool(click_through))
         try:
@@ -9370,6 +10179,144 @@ class DesktopPet:
             # 最底层：压到所有普通窗口之后
             self._win32_set_zorder(win, 1)  # HWND_BOTTOM
         self._win32_refresh_transparent_color(win)
+
+    def _ask_brush_color(
+        self,
+        parent: tk.Misc | None,
+        *,
+        title: str = "自选画笔颜色",
+        initial: str | None = None,
+    ) -> str | None:
+        """打开系统取色；临时取消置顶，避免对话框被桌宠/家园窗盖住。"""
+        wins: list[tk.Misc] = []
+        for w in (
+            parent,
+            getattr(self, "root", None),
+            getattr(self, "gift_win", None),
+            getattr(self, "home_paint_win", None),
+            getattr(self, "home_win", None),
+            getattr(self, "panel_win", None),
+        ):
+            if w is None:
+                continue
+            try:
+                if w.winfo_exists() and w not in wins:
+                    wins.append(w)
+            except Exception:
+                pass
+        # 再扫一遍当前置顶附属窗，防止漏网盖住取色器
+        try:
+            for w in self._iter_open_layer_windows():
+                if w not in wins:
+                    wins.append(w)
+        except Exception:
+            pass
+        for w in wins:
+            try:
+                w.attributes("-topmost", False)
+            except Exception:
+                pass
+        picked = None
+        try:
+            kwargs: dict = {"title": title}
+            if parent is not None:
+                try:
+                    if parent.winfo_exists():
+                        kwargs["parent"] = parent
+                except Exception:
+                    pass
+            if isinstance(initial, str) and initial.startswith("#"):
+                kwargs["color"] = initial
+            # 先把画板抬到普通层再弹系统对话框
+            try:
+                if parent is not None and parent.winfo_exists():
+                    parent.update_idletasks()
+                    parent.lift()
+            except Exception:
+                pass
+            picked = colorchooser.askcolor(**kwargs)
+        except Exception:
+            picked = None
+        finally:
+            for w in wins:
+                try:
+                    if w.winfo_exists():
+                        self._apply_window_layer(w)
+                except Exception:
+                    pass
+            try:
+                if parent is not None and parent.winfo_exists():
+                    parent.lift()
+                    parent.focus_force()
+            except Exception:
+                pass
+        if not picked or not picked[1]:
+            return None
+        hex_color = str(picked[1]).strip()
+        return hex_color if hex_color.startswith("#") else None
+
+    def _fill_pixel_palette_host(
+        self,
+        pal_host: tk.Misc,
+        *,
+        palette: list,
+        brush: tk.Variable,
+        on_add_custom,
+        on_recolor_slot,
+        cols: int = 8,
+    ) -> None:
+        """色板多行排布，并把「+取色」放在首行，避免被面板裁切。"""
+        for w in list(pal_host.winfo_children()):
+            try:
+                w.destroy()
+            except Exception:
+                pass
+        head = tk.Frame(pal_host, bg=MENU_BG)
+        head.pack(fill=tk.X, anchor=tk.W)
+        tk.Label(head, text="颜色", font=("Courier New", 9), fg="#8899aa", bg=MENU_BG).pack(side=tk.LEFT)
+        tk.Button(
+            head,
+            text="+取色",
+            font=("Courier New", 8),
+            bg="#6688aa",
+            fg="#ffffff",
+            command=on_add_custom,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        tk.Label(
+            head,
+            text="双击色块可替换",
+            font=("Courier New", 8),
+            fg="#667788",
+            bg=MENU_BG,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        swatches = tk.Frame(pal_host, bg=MENU_BG)
+        swatches.pack(anchor=tk.W, pady=(4, 0))
+        row_f: tk.Frame | None = None
+        for pi, col in enumerate(palette):
+            if pi % max(1, cols) == 0:
+                row_f = tk.Frame(swatches, bg=MENU_BG)
+                row_f.pack(anchor=tk.W)
+            bg = col or "#1a2030"
+            txt = "橡皮" if pi == 0 else " "
+            rb = tk.Radiobutton(
+                row_f,
+                text=txt,
+                variable=brush,
+                value=pi,
+                indicatoron=False,
+                width=4 if pi == 0 else 2,
+                font=("Courier New", 8),
+                bg=bg,
+                fg="#ffffff" if pi not in (11, 4) else "#222222",
+                selectcolor=bg,
+                activebackground=bg,
+                relief=tk.RAISED,
+            )
+            rb.pack(side=tk.LEFT, padx=1, pady=1)
+            if pi > 0:
+                rb.bind("<Double-Button-1>", lambda _e, p=pi: on_recolor_slot(p))
+
 
     def _iter_open_layer_windows(self) -> list[tk.Misc]:
         wins: list[tk.Misc] = []
@@ -9456,7 +10403,7 @@ class DesktopPet:
             self._sync_voice_player()
             self._stop_voice_audio()
             self._show_toast("语音模式已关闭", PIXEL_COLOR)
-        # 延迟刷新勾选，避免点选当下销毁窗口导致「按不了」
+
         def _refresh() -> None:
             if self.panel_settings_win and self.panel_settings_win.winfo_exists():
                 self.panel_settings_win.destroy()
@@ -9464,6 +10411,29 @@ class DesktopPet:
             self._open_panel_settings()
 
         self.root.after(80, _refresh)
+
+    def _set_strip_outer_black(self, enabled: bool) -> None:
+        """系统设置：去黑框 / 不去黑框。清缓存后分批重建立绘，避免卡死。"""
+        on = bool(enabled)
+        if on == strip_outer_black_enabled() and bool(self.app_config.get("strip_outer_black")) == on:
+            self._show_toast("去黑框已开启" if on else "已保留黑框", "#88ccff")
+            self.root.after(80, self._refresh_panel_settings_if_open)
+            return
+        self.app_config["strip_outer_black"] = on
+        _save_app_config(self.app_config)
+        set_strip_outer_black(on)
+        self._sprite_cache.clear()
+        self._persona_sprite_cache.clear()
+        self._drag_handle_cache.clear()
+        self._pet_click_zones_cache.clear()
+        self._sprite_building.clear()
+        self._show_toast(
+            "去黑框已开启，正在刷新…" if on else "已保留黑框，正在刷新…",
+            "#88ccff",
+            duration_ms=2800,
+        )
+        self._reload_persona_sprites()
+        self.root.after(80, self._refresh_panel_settings_if_open)
 
     def _set_display_layer(self, layer: str) -> None:
         raw = str(layer).strip().lower()
@@ -9624,11 +10594,21 @@ class DesktopPet:
         title = info["title"] if info else aid
         self._show_toast(f"成就解锁：{title}", "#ffcc66", duration_ms=3200)
 
+    def _note_achievement_flag(self, key: str) -> None:
+        """标记一次性成就统计并立即检查解锁。"""
+        stats = self.achievements.setdefault("stats", {})
+        if stats.get(key):
+            return
+        stats[key] = True
+        _save_achievements(self.achievements)
+        self._check_achievements(source=key)
+
     def _check_achievements(self, *, source: str = "") -> None:
         del source  # 预留
         points = self.music_affinity
         stats = self.achievements.setdefault("stats", {})
         modes = set(stats.get("modes_used") or [])
+        mode_sec = stats.get("mode_seconds") if isinstance(stats.get("mode_seconds"), dict) else {}
 
         if stats.get("owner_named") or _owner_display_name(self.pet_profile):
             self._unlock_achievement("owner_named")
@@ -9649,15 +10629,47 @@ class DesktopPet:
                 self._unlock_achievement("pixel_gift")
         if stats.get("weather_peek"):
             self._unlock_achievement("weather_peek")
+        if stats.get("timer_use"):
+            self._unlock_achievement("timer_use")
+        if stats.get("memory_open"):
+            self._unlock_achievement("memory_open")
+        try:
+            if self._companion_days() >= 7:
+                self._unlock_achievement("companion_week")
+        except Exception:
+            pass
 
         if "follow" in modes:
             self._unlock_achievement("mode_follow")
+        if "stroll" in modes:
+            self._unlock_achievement("mode_stroll")
         if "work" in modes:
             self._unlock_achievement("mode_work")
         if "quiet" in modes or "sleep" in modes:
             self._unlock_achievement("mode_sleep")
         if self.music_sprite_mode or float(stats.get("listen_seconds", 0) or 0) > 0:
             self._unlock_achievement("music_first")
+        if float(mode_sec.get("quiet", 0) or 0) >= 3600:
+            self._unlock_achievement("sleep_hour")
+        if float(mode_sec.get("work", 0) or 0) >= 3600:
+            self._unlock_achievement("work_hour")
+
+        if stats.get("home_visit"):
+            self._unlock_achievement("home_visit")
+        if stats.get("farm_plant"):
+            self._unlock_achievement("farm_plant")
+        if stats.get("farm_harvest"):
+            self._unlock_achievement("farm_harvest")
+        if stats.get("farm_chop"):
+            self._unlock_achievement("farm_chop")
+        if stats.get("farm_fish"):
+            self._unlock_achievement("farm_fish")
+        if stats.get("farm_craft"):
+            self._unlock_achievement("farm_craft")
+        if stats.get("home_paint"):
+            self._unlock_achievement("home_paint")
+        if stats.get("rpg_play"):
+            self._unlock_achievement("rpg_play")
 
         if int(stats.get("gather_plays", 0) or 0) >= 1:
             self._unlock_achievement("gather_play")
@@ -9698,6 +10710,81 @@ class DesktopPet:
             stats["modes_used"] = used
             _save_achievements(self.achievements)
             self._check_achievements(source="mode")
+        self._sync_mode_time_bucket()
+
+    def _active_mode_time_key(self) -> str:
+        if getattr(self, "music_sprite_mode", False):
+            return "music"
+        mode = str(getattr(self, "mode", "") or "free")
+        if mode in ("quiet", "sleep"):
+            return "quiet"
+        if mode in ("free", "follow", "stroll", "work", "game", "music"):
+            return mode
+        if mode == "loading":
+            return "free"
+        return "free"
+
+    def _flush_mode_time(self, *, save: bool = False) -> None:
+        key = getattr(self, "_mode_time_key", None)
+        start = int(getattr(self, "_mode_time_start_ms", 0) or 0)
+        now = int(time.time() * 1000)
+        if key and start > 0:
+            elapsed = max(0.0, (now - start) / 1000.0)
+            if elapsed > 0:
+                stats = self.achievements.setdefault("stats", {})
+                bucket = stats.setdefault("mode_seconds", {})
+                if not isinstance(bucket, dict):
+                    bucket = {}
+                    stats["mode_seconds"] = bucket
+                bucket[key] = float(bucket.get(key, 0) or 0) + elapsed
+                if save:
+                    try:
+                        _save_achievements(self.achievements)
+                    except Exception:
+                        pass
+        self._mode_time_start_ms = now
+
+    def _sync_mode_time_bucket(self) -> None:
+        if not getattr(self, "_startup_ready", False) or self._closing:
+            return
+        self._flush_mode_time(save=False)
+        self._mode_time_key = self._active_mode_time_key()
+        self._mode_time_start_ms = int(time.time() * 1000)
+        try:
+            self._sync_auto_desk_clocks()
+        except Exception:
+            pass
+
+    def _start_mode_time_tracking(self) -> None:
+        self._sync_mode_time_bucket()
+        if self._mode_time_job:
+            try:
+                self.root.after_cancel(self._mode_time_job)
+            except Exception:
+                pass
+            self._mode_time_job = None
+
+        def tick() -> None:
+            self._mode_time_job = None
+            if self._closing or not self._alive():
+                return
+            self._flush_mode_time(save=True)
+            self._mode_time_key = self._active_mode_time_key()
+            self._mode_time_start_ms = int(time.time() * 1000)
+            self._mode_time_job = self._safe_after(60_000, tick)
+
+        self._mode_time_job = self._safe_after(60_000, tick)
+
+    def _stop_mode_time_tracking(self) -> None:
+        if self._mode_time_job:
+            try:
+                self.root.after_cancel(self._mode_time_job)
+            except Exception:
+                pass
+            self._mode_time_job = None
+        self._flush_mode_time(save=True)
+        self._mode_time_key = None
+        self._mode_time_start_ms = 0
 
     def _note_game_achievement(self, category: str, payload: dict) -> None:
         stats = self.achievements.setdefault("stats", {})
@@ -9897,14 +10984,18 @@ class DesktopPet:
         self._apply_music_on()
 
     def _apply_music_off(self) -> None:
+        said = self._complete_mode_timed_session("music")
         self.music_sprite_mode = False
         self._stop_bg_music()
         self._stop_music_wave_fx()
         self._sync_mini_pet_music_waves()
+        self._hide_desk_clock("music")
+        self._sync_mode_time_bucket()
         if self.state in ("stand", "walk"):
             self._set_image(self._current_stand_sprite())
         self._sync_voice_player()
-        self._show_toast("音乐已关闭（仍为漫步）", PIXEL_COLOR)
+        if not said:
+            self._show_toast("音乐已关闭（仍为漫步）", PIXEL_COLOR)
 
     def _apply_music_on(self) -> None:
         self._interrupt_for_mode_switch()
@@ -9922,6 +11013,7 @@ class DesktopPet:
         self.action_name = ""
         self._clear_all_action_fx()
         self.music_sprite_mode = True
+        self._sync_mode_time_bucket()
         self._stop_voice_for_music_mode()
         self._start_bg_music()
         self._start_music_wave_fx()
@@ -10315,6 +11407,9 @@ class DesktopPet:
             "panel_win",
             "about_win",
             "feedback_win",
+            "creator_hub_win",
+            "creator_upload_win",
+            "creator_intro_win",
             "operation_guide_win",
             "owner_name_win",
             "owner_birthday_win",
@@ -10323,6 +11418,7 @@ class DesktopPet:
             "diary_win",
             "weather_win",
             "gallery_win",
+            "home_win",
             "ai_chat_win",
             "schedule_win",
             "leaderboard_win",
@@ -10809,7 +11905,7 @@ class DesktopPet:
         elif action == "sleep":
             self._play_sleep_interact()
         elif action == "ai_chat":
-            self._toggle_ai_chat()
+            self._open_ai_chat_stub()
         elif action == "toggle_menu":
             self._toggle_main_menu_from_hotkey()
         elif action in SELECT_ACTIONS:
@@ -10821,6 +11917,14 @@ class DesktopPet:
             return
         self._force_quitting = True
         self._closing = True
+        try:
+            self._stop_peer_meet_poll()
+        except Exception:
+            pass
+        try:
+            self._stop_meta_idle_poll()
+        except Exception:
+            pass
         try:
             self._unregister_hotkey()
         except Exception:
@@ -10867,12 +11971,13 @@ class DesktopPet:
         self._hide_like_fx()
         self._hide_shy_fx()
         self._hide_wink_fx()
+        self._hide_bixin_fx()
         self._hide_interact_fx()
         self._hide_follow_dizzy_fx()
         self._hide_gift_pixel_fx()
 
     def _difficulty_params(self) -> dict:
-        return DIFFICULTY_PRESETS.get(self.difficulty, DIFFICULTY_PRESETS["中"])
+        return _difficulty_params_at(getattr(self, "difficulty_t", DIFFICULTY_T_BY_NAME.get(self.difficulty, 0.5)))
 
     def _apply_difficulty_runtime(self) -> None:
         p = self._difficulty_params()
@@ -10884,20 +11989,27 @@ class DesktopPet:
         self._fight_enemy_mult = float(p["fight_enemy_mult"])
         self._fight_player_mult = float(p["fight_player_mult"])
 
+    def _set_difficulty_t(self, t: float, *, toast: bool = True) -> None:
+        self.difficulty_t = max(0.0, min(1.0, float(t)))
+        self.difficulty = _difficulty_label_for_t(self.difficulty_t)
+        self.app_config["difficulty_t"] = self.difficulty_t
+        self.app_config["difficulty"] = self.difficulty
+        _save_app_config(self.app_config)
+        self._apply_difficulty_runtime()
+        if toast:
+            p = self._difficulty_params()
+            self._show_toast(
+                f"难度：{self.difficulty}（{int(round(self.difficulty_t * 100))}%）\n"
+                f"体力间隔 {p['stamina_tick_ms']//1000}s · 游戏/暴露/对战同步调整",
+                PIXEL_COLOR,
+                duration_ms=2800,
+            )
+
     def _set_difficulty(self, level: str) -> None:
         if level not in DIFFICULTY_PRESETS:
             return
         self._hide_main_menu()
-        self.difficulty = level
-        self.app_config["difficulty"] = level
-        _save_app_config(self.app_config)
-        self._apply_difficulty_runtime()
-        p = self._difficulty_params()
-        self._show_toast(
-            f"难度：{level}\n体力间隔 {p['stamina_tick_ms']//1000}s · 游戏/暴露/对战同步调整",
-            PIXEL_COLOR,
-            duration_ms=3200,
-        )
+        self._set_difficulty_t(DIFFICULTY_T_BY_NAME.get(level, 0.5), toast=True)
 
     def _mark_hint_seen(self, key: str) -> None:
         hints = self.app_config.setdefault("seen_hints", {})
@@ -10918,7 +12030,7 @@ class DesktopPet:
         self._show_toast(text, "#88ccff", duration_ms=duration_ms)
 
     def _maybe_show_first_run_guide(self) -> None:
-        """启动操作说明：仅首次；必须在所属人已填写之后。"""
+        """启动操作说明：首次，或打包更新后（见 last_build_stamp）；须在所属人已填之后。"""
         if not self._alive() or self._closing:
             return
         if not _owner_display_name(self.pet_profile):
@@ -10979,7 +12091,7 @@ class DesktopPet:
             wraplength=GUIDE_TEXT_WRAP,
         ).pack(anchor=tk.W, pady=(8, 6))
 
-        topic_order = ("basic", "modes", "games", "music_game", "panel", "system")
+        topic_order = ("basic", "modes", "games", "home_farm", "music_game", "panel", "system", "submit", "notes", "community")
         for key in topic_order:
             info = GUIDE_TOPICS.get(key)
             if not info:
@@ -10995,6 +12107,16 @@ class DesktopPet:
                 anchor=tk.W,
                 cursor="hand2",
             ).pack(fill=tk.X, pady=2)
+
+        tk.Label(
+            frame,
+            text=OPERATION_GUIDE_TIPS,
+            font=PIXEL_FONT,
+            fg=MENU_FG,
+            bg=MENU_BG,
+            justify=tk.LEFT,
+            wraplength=GUIDE_TEXT_WRAP,
+        ).pack(anchor=tk.W, pady=(10, 6))
 
         tk.Button(
             frame,
@@ -11211,6 +12333,7 @@ class DesktopPet:
         self.root.geometry(f"{self.display_size}x{self.display_size}+{self.x}+{display_y}")
         # 拖动/走动：只做轻量位置更新，避免每帧重排一层特效导致卡顿
         self._reposition_pet_attached_popups(force=False)
+        self._place_head_flower()
         if light:
             return
         self._place_ai_chat()
@@ -11223,11 +12346,265 @@ class DesktopPet:
         self._place_shy_fx()
         self._place_like_fx()
         self._place_wink_fx()
+        self._place_bixin_fx()
         self._place_follow_dizzy_fx()
         self._place_all_mini_pet_waves()
         self._sync_all_mini_pet_bg_fx(place_only=True)
         self._place_wait_hint()
         self._lift_pet_above_bg_fx()
+
+    def _peer_presence_path(self) -> Path:
+        return PEER_PRESENCE_DIR / f"{self._peer_instance_id}.json"
+
+    def _publish_peer_presence(self) -> None:
+        try:
+            PEER_PRESENCE_DIR.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "id": self._peer_instance_id,
+                "pid": os.getpid(),
+                "x": int(self.x),
+                "y": int(self.y + self.click_bounce_offset),
+                "size": int(self.display_size),
+                "ts": int(time.time() * 1000),
+            }
+            self._peer_presence_path().write_text(
+                json.dumps(payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+    def _clear_peer_presence(self) -> None:
+        try:
+            path = self._peer_presence_path()
+            if path.is_file():
+                path.unlink()
+        except Exception:
+            pass
+
+    def _save_achievements_soon(self, delay_ms: int = 900) -> None:
+        """合并短时间内的成就写盘，减轻卡顿。"""
+        job = getattr(self, "_achievements_save_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+        self._achievements_save_job = self.root.after(
+            max(120, int(delay_ms)), self._flush_achievements_save
+        )
+
+    def _flush_achievements_save(self) -> None:
+        self._achievements_save_job = None
+        if self._closing:
+            return
+        try:
+            _save_achievements(self.achievements)
+        except Exception:
+            pass
+
+    def _note_user_activity(self) -> None:
+        self._last_user_activity_ms = int(time.time() * 1000)
+
+    def _meta_banter_state(self) -> dict:
+        stats = self.achievements.setdefault("stats", {})
+        state = stats.get("meta_banter")
+        if not isinstance(state, dict):
+            state = {"last_ms": 0, "event_last": {}, "used": {}}
+            stats["meta_banter"] = state
+        if not isinstance(state.get("event_last"), dict):
+            state["event_last"] = {}
+        if not isinstance(state.get("used"), dict):
+            state["used"] = {}
+        return state
+
+    def _meta_banter_allowed(self, *, allow_dragging: bool = False) -> bool:
+        if self._closing or not getattr(self, "_startup_ready", False):
+            return False
+        if self.mode == "loading":
+            return False
+        if self.dragging and not allow_dragging:
+            return False
+        if self.state == "action":
+            return False
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            return False
+        if getattr(self, "voice_subtitle_win", None) and self._voice_subtitle_active:
+            try:
+                if self.voice_subtitle_win.winfo_exists() and not self._win_is_withdrawn(self.voice_subtitle_win):
+                    return False
+            except Exception:
+                pass
+        return True
+
+    def _pick_meta_banter_line(self, event: str) -> str | None:
+        lines = META_BANTER_LINES.get(event) or ()
+        if not lines:
+            return None
+        state = self._meta_banter_state()
+        used_map = state.setdefault("used", {})
+        used = [str(x) for x in (used_map.get(event) or []) if str(x)]
+        unused = [ln for ln in lines if ln not in used]
+        if not unused:
+            used = []
+            unused = list(lines)
+        line = random.choice(unused)
+        used.append(line)
+        used_map[event] = used
+        return line
+
+    def _maybe_meta_banter(self, event: str, *, chance: float | None = None) -> bool:
+        """低频 meta 台词；全局冷却 + 事件冷却；同句不重复。"""
+        if event not in META_BANTER_LINES:
+            return False
+        allow_drag = event == "drag_long"
+        if not self._meta_banter_allowed(allow_dragging=allow_drag):
+            return False
+        roll = META_BANTER_CHANCE.get(event, 0.3) if chance is None else float(chance)
+        if random.random() >= max(0.0, min(1.0, roll)):
+            return False
+        now = int(time.time() * 1000)
+        state = self._meta_banter_state()
+        if now - int(state.get("last_ms") or 0) < META_BANTER_GLOBAL_COOLDOWN_MS:
+            return False
+        event_last = state.setdefault("event_last", {})
+        ev_cd = int(META_BANTER_EVENT_COOLDOWN_MS.get(event, 180_000))
+        if now - int(event_last.get(event) or 0) < ev_cd:
+            return False
+        line = self._pick_meta_banter_line(event)
+        if not line:
+            return False
+        state["last_ms"] = now
+        event_last[event] = now
+        try:
+            self._save_achievements_soon()
+        except Exception:
+            pass
+        self._show_speech_dialog(line, auto_hide_ms=2800, use_border5=False)
+        return True
+
+    def _start_meta_idle_poll(self) -> None:
+        if self._closing or not getattr(self, "_startup_ready", False):
+            return
+        if self._meta_idle_job:
+            return
+        self._meta_idle_tick()
+
+    def _stop_meta_idle_poll(self) -> None:
+        if self._meta_idle_job:
+            try:
+                self.root.after_cancel(self._meta_idle_job)
+            except Exception:
+                pass
+            self._meta_idle_job = None
+
+    def _meta_idle_tick(self) -> None:
+        self._meta_idle_job = None
+        if self._closing or not self._alive():
+            return
+        try:
+            now = int(time.time() * 1000)
+            idle_for = now - int(getattr(self, "_last_user_activity_ms", now) or now)
+            if idle_for >= META_BANTER_IDLE_MS:
+                if self._maybe_meta_banter("idle_long"):
+                    # 触发后视为一次「活动」，避免连续追问
+                    self._note_user_activity()
+        except Exception:
+            pass
+        self._meta_idle_job = self._safe_after(META_BANTER_IDLE_CHECK_MS, self._meta_idle_tick)
+
+    def _is_at_screen_edge(self, *, margin: int = 4) -> bool:
+        sw, sh = self._screen_wh()
+        return (
+            self.x <= margin
+            or self.y <= margin
+            or self.x >= sw - self.display_size - margin
+            or self.y >= sh - self.display_size - margin
+        )
+
+    def _stop_peer_meet_poll(self) -> None:
+        if self._peer_meet_job:
+            try:
+                self.root.after_cancel(self._peer_meet_job)
+            except Exception:
+                pass
+            self._peer_meet_job = None
+        self._clear_peer_presence()
+
+    def _start_peer_meet_poll(self) -> None:
+        if self._closing or not getattr(self, "_startup_ready", False):
+            return
+        if self._peer_meet_job:
+            return
+        self._peer_meet_tick()
+
+    def _peer_meet_allowed(self) -> bool:
+        if self._closing or not getattr(self, "_startup_ready", False):
+            return False
+        if self.dragging:
+            return False
+        if self.mode in ("loading", "game"):
+            return False
+        if self.state == "action":
+            return False
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            return False
+        return True
+
+    def _peer_meet_tick(self) -> None:
+        self._peer_meet_job = None
+        if self._closing or not self._alive():
+            self._clear_peer_presence()
+            return
+        self._publish_peer_presence()
+        try:
+            self._maybe_trigger_peer_meet()
+        except Exception:
+            pass
+        self._peer_meet_job = self._safe_after(PEER_MEET_POLL_MS, self._peer_meet_tick)
+
+    def _maybe_trigger_peer_meet(self) -> None:
+        if not self._peer_meet_allowed():
+            return
+        now = int(time.time() * 1000)
+        if now - int(self._peer_meet_last_ms or 0) < PEER_MEET_COOLDOWN_MS:
+            return
+        if not PEER_PRESENCE_DIR.is_dir():
+            return
+        ax, ay = int(self.x), int(self.y + self.click_bounce_offset)
+        asz = int(self.display_size)
+        for path in list(PEER_PRESENCE_DIR.glob("*.json")):
+            if path.name == f"{self._peer_instance_id}.json":
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            ts = int(data.get("ts") or 0)
+            if now - ts > PEER_STALE_MS:
+                try:
+                    path.unlink()
+                except Exception:
+                    pass
+                continue
+            bx = int(data.get("x") or 0)
+            by = int(data.get("y") or 0)
+            bsz = max(16, int(data.get("size") or asz))
+            # 略放宽容差：靠近也算相遇
+            pad = max(8, min(asz, bsz) // 6)
+            if not self._rects_overlap(
+                ax - pad, ay - pad, asz + pad * 2, asz + pad * 2,
+                bx - pad, by - pad, bsz + pad * 2, bsz + pad * 2,
+            ):
+                continue
+            self._peer_meet_last_ms = now
+            if self._maybe_meta_banter("peer_meet"):
+                return
+            line = random.choice(PEER_MEET_LINES)
+            self._show_speech_dialog(line, auto_hide_ms=2800, use_border5=False)
+            return
 
     def _screen_wh(self) -> tuple[int, int]:
         now = time.time()
@@ -11268,6 +12645,7 @@ class DesktopPet:
             "wink_fx_win",
             "rain_fx_win",
             "happy_fx_win",
+            "head_flower_win",
             "food_fx_win",
             "gift_pixel_fx_win",
             "music_wave_win",
@@ -11275,9 +12653,11 @@ class DesktopPet:
             "follow_dizzy_fx_win",
             "companion_loading_win",
             "sleep_zzz_win",
+            "sleep_end_btn_win",
             # 工作装饰：旗/起点箱叠在桌宠上会吞掉拖动
             "work_overlay",
             "work_start_box_win",
+            "work_end_btn_win",
         )
         out: list[tk.Misc] = []
         for name in names:
@@ -11353,6 +12733,9 @@ class DesktopPet:
         self._reassert_display_layer_after_lift()
 
     def _set_image(self, photo: ImageTk.PhotoImage) -> None:
+        # 同图跳过，减少工作/行走热路径上的 Label 重配
+        if getattr(self.label, "image", None) is photo:
+            return
         self.label.config(image=photo)
         self.label.image = photo
         if not self.sprites:
@@ -11492,7 +12875,13 @@ class DesktopPet:
 
     def _open_mode_menu(self) -> None:
         follow_label = "跟随 ✓" if self.mode == "follow" else "跟随"
-        free_label = "自由 ✓" if self.mode == "free" else "自由"
+        # 睡眠模式：与工作类似，用「结束」回到自由
+        if self.mode == "quiet":
+            free_label = "结束 ✓"
+        elif self.mode == "free":
+            free_label = "自由 ✓"
+        else:
+            free_label = "自由"
         stroll_label = "漫步 ✓" if self.mode == "stroll" else "漫步"
         quiet_label = "睡眠 ✓" if self.mode == "quiet" else "睡眠"
         game_label = "采集 ✓" if self.mode == "game" else "采集"
@@ -11528,13 +12917,21 @@ class DesktopPet:
             self._sync_work_overlay()
 
     def _open_work_mode_menu(self) -> None:
-        active = self.mode == "work"
-        toggle_label = "停止工作 ✓" if active else "开始工作"
+        free_label = "结束 ✓" if self.mode == "work" else "自由"
+        self._show_sub_menu(
+            [
+                (free_label, self._start_work_free),
+                ("自定义 ▶", self._open_work_custom_dialog),
+                ("设置 ▶", self._open_work_mode_settings),
+            ],
+            offset_x=120,
+        )
+
+    def _open_work_mode_settings(self) -> None:
         show_props = self._work_mode_config().get("show_props", True)
         show_stack = self._work_mode_config().get("show_stack", True)
         self._show_sub_menu(
             [
-                (toggle_label, self._toggle_work_mode),
                 (
                     f"显示目的地{' ✓' if show_props else ''}",
                     lambda: self._set_work_mode_setting("show_props", not show_props),
@@ -11544,7 +12941,7 @@ class DesktopPet:
                     lambda: self._set_work_mode_setting("show_stack", not show_stack),
                 ),
             ],
-            offset_x=120,
+            offset_x=180,
         )
 
     def _toggle_work_mode(self) -> None:
@@ -11593,6 +12990,7 @@ class DesktopPet:
                 kwargs["stderr"] = subprocess.DEVNULL
             subprocess.Popen(cmd, **kwargs)
             self._show_toast("已打开 RPG · Silent Oath", "#88ccff")
+            self._note_achievement_flag("rpg_play")
             self._addon_voice_vpet("game", chain=False)
         except Exception as exc:
             self._show_toast(f"RPG 启动失败：{exc}", "#ff6666")
@@ -12154,11 +13552,13 @@ class DesktopPet:
         if self.schedule_win and self.schedule_win.winfo_exists():
             self.schedule_win.destroy()
             self.schedule_win = None
+        self._close_home()
         for attr in (
             "diary_win",
             "weather_win",
             "music_track_picker_win",
             "gallery_win",
+            "home_win",
             "panel_backpack_win",
             "phonograph_win",
             "typing_game_win",
@@ -12167,6 +13567,9 @@ class DesktopPet:
             "panel_settings_win",
             "about_win",
             "feedback_win",
+            "creator_hub_win",
+            "creator_upload_win",
+            "creator_intro_win",
             "rhyme_fight_win",
             "operation_guide_win",
             "work_custom_win",
@@ -12194,6 +13597,7 @@ class DesktopPet:
         self._hide_companion_loading()
         self._hide_food_fx()
         self._hide_happy_fx()
+        self._hide_head_flower()
         self._hide_rain_fx()
         self._hide_bulb_fx()
         self._hide_game_clear()
@@ -12204,6 +13608,7 @@ class DesktopPet:
         self._hide_like_fx()
         self._hide_shy_fx()
         self._hide_wink_fx()
+        self._hide_bixin_fx()
         self._hide_follow_dizzy_fx()
         self._stop_music_wave_fx()
         self.music_sprite_mode = False
@@ -12241,6 +13646,7 @@ class DesktopPet:
         self.state = "stand"
         self._set_image(self.sprites.stand)
         self._place_window()
+        self._sync_mode_time_bucket()
         self._show_toast(toast, PIXEL_COLOR, duration_ms=3500 if was_game else 2000)
         self._resume_idle()
 
@@ -12276,9 +13682,39 @@ class DesktopPet:
         if target == "work" and self.state == "work" and self.mode != "work":
             self._stop_work_mode()
 
-    def _stop_work_mode(self) -> None:
+    def _cancel_work_loops(self) -> None:
+        for attr in ("work_move_job", "work_anim_job", "_work_boot_job"):
+            job = getattr(self, attr, None)
+            if job:
+                try:
+                    self.root.after_cancel(job)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
+    def _begin_work_boot_busy(self) -> None:
+        """进入工作前立刻提示耐心等待（分帧建旗/箱时主线程会顿一下）。"""
+        if self._work_boot_busy:
+            self._show_wait_hint("请耐心等待…进入工作")
+            self._flush_wait_hint_now()
+            return
+        self._work_boot_busy = True
+        self._enter_ui_busy("请耐心等待…进入工作")
+        # _enter_ui_busy 已 flush 提示；勿再整树 update_idletasks
+
+    def _end_work_boot_busy(self) -> None:
+        if not self._work_boot_busy:
+            return
+        self._work_boot_busy = False
+        self._exit_ui_busy()
+
+    def _stop_work_mode(self, *, leave_mode: bool = True) -> None:
+        self._cancel_work_loops()
+        self._end_work_boot_busy()
         self.work_animating = False
         self.work_continuous = False
+        self.work_session_kind = ""
+        self._pending_work_start = False
         if self.work_encourage_job:
             try:
                 self.root.after_cancel(self.work_encourage_job)
@@ -12288,14 +13724,25 @@ class DesktopPet:
         self.work_boxes_since_banter = 0
         self.work_banter_last_ms = 0
         self._clear_work_anchored_boxes()
-        self._hide_work_overlay()
+        self._hide_work_overlay(destroy=False)
         if self.work_start_box_win and self.work_start_box_win.winfo_exists():
-            self.work_start_box_win.destroy()
-        self.work_start_box_win = None
+            try:
+                self.work_start_box_win.withdraw()
+            except Exception:
+                try:
+                    self.work_start_box_win.destroy()
+                except Exception:
+                    pass
+                self.work_start_box_win = None
         self._hide_work_end_button()
         self.work_phase = ""
         self.work_carrying = False
         self.work_has_start_box = False
+        self._hide_desk_clock("work")
+        self._work_session_start_ms = 0
+        # 避免 mode=work 但 state 已非 work 的空壳（站死、结束钮消失、无法再进）
+        if leave_mode and self.mode == "work":
+            self.mode = "free"
 
     def _cancel_idle_chain(self) -> None:
         self._cancel_follow_chain()
@@ -12322,7 +13769,9 @@ class DesktopPet:
         self.interaction_token += 1
         self._cancel_idle_chain()
         self._hide_size_loading()
-        self._hide_companion_loading()
+        # 正在加载智能伴侣时不要掐掉（否则开伴侣后的开心互动会把莲取消掉）
+        if not (self.companion_loading_active and self.companion_bar_enabled):
+            self._hide_companion_loading()
         self._cancel_food_drag()
         self._cancel_action_end()
         self._cancel_action_defer()
@@ -12331,12 +13780,15 @@ class DesktopPet:
         self._stop_call_audio()
         self._hide_food_fx()
         self._hide_happy_fx()
+        self._hide_head_flower()
+        self._hide_companion_heart_transfer()
         self._hide_rain_fx()
         self._hide_bulb_fx()
         self._hide_interact_fx()
         self._hide_like_fx()
         self._hide_shy_fx()
         self._hide_wink_fx()
+        self._hide_bixin_fx()
         self._hide_follow_dizzy_fx()
         self._cancel_expose_qte()
         self._cancel_game_countdown()
@@ -12390,27 +13842,70 @@ class DesktopPet:
             self._close_rhythm_game(resume=False)
 
     def _apply_work_mode(self) -> None:
-        self._ensure_mode_exclusive_cleanup("work")
-        self._interrupt_for_mode_switch()
-        self._leave_quiet_mode()
+        # via-free 刚清过场则跳过整段 interrupt，避免进工作连清两次
+        cleaned = bool(getattr(self, "_mode_switch_pre_cleaned", False))
+        self._mode_switch_pre_cleaned = False
+        if cleaned:
+            self.interaction_token += 1
+            self._cancel_idle_chain()
+            self._ensure_mode_exclusive_cleanup("work")
+        else:
+            self._ensure_mode_exclusive_cleanup("work")
+            self._interrupt_for_mode_switch()
+            self._leave_quiet_mode()
+        self._begin_work_mode_when_ready()
+
+    def _begin_work_mode_when_ready(self, tries: int = 0, *, prepared: bool = True) -> None:
+        """等拖拽结束再真正进入工作，避免 mode=work 空壳卡住。"""
+        if self._closing:
+            self._end_work_boot_busy()
+            return
+        if self.dragging:
+            if tries == 0:
+                self._begin_work_boot_busy()
+                self._show_toast("松开后再开始工作…", "#ffcc66", duration_ms=1600)
+            if tries >= 100:
+                self._show_toast("请先松开鼠标再开始工作", "#ff8866", duration_ms=2200)
+                self._pending_work_start = False
+                self._end_work_boot_busy()
+                return
+            self._pending_work_start = True
+            self.root.after(
+                50,
+                lambda t=tries + 1, p=prepared: self._begin_work_mode_when_ready(t, prepared=p),
+            )
+            return
+        self._pending_work_start = False
         self.mode = "work"
-        # 模式工作：持续运送；终点可拖；箱子数量不随机（持续到点结束）
-        self._start_work_impl(WORK_BOX_TOTAL_DEFAULT, flag_movable=True, continuous=True)
-        self._note_mode_for_achievement("work")
+        # prepared：上游已清场则跳过二次 interrupt；空壳重启须 False
+        self._start_work_impl(
+            WORK_BOX_TOTAL_DEFAULT,
+            flag_movable=True,
+            continuous=True,
+            prepared=prepared,
+        )
 
     def _enable_work(self) -> None:
-        if self.mode == "work":
+        # 已在正常工作中：忽略；空壳 mode=work：允许重启
+        if self.mode == "work" and self.state == "work":
+            return
+        self._begin_work_boot_busy()
+        if self.mode == "work" and self.state != "work":
+            self._begin_work_mode_when_ready(prepared=False)
             return
         self._request_mode_switch(self._apply_work_mode)
 
     def _leave_quiet_mode(self) -> None:
         if self.mode != "quiet":
             return
+        self._complete_mode_timed_session("sleep")
         if self.rest_peek_job:
             self.root.after_cancel(self.rest_peek_job)
             self.rest_peek_job = None
         self._stop_rest_bobble()
         self._hide_sleep_zzz()
+        self._hide_sleep_end_button()
+        self._hide_desk_clock("sleep")
         if self.state == "rest":
             self.state = "stand"
             self._set_image(self.sprites.stand)
@@ -12428,8 +13923,8 @@ class DesktopPet:
         self._cancel_pending_mode_switch()
         self._interrupt_for_mode_switch()
         self._leave_quiet_mode()
-        if self.mode == "work":
-            self._stop_work_mode()
+        if self.mode == "work" or self.state == "work":
+            self._stop_work_mode(leave_mode=True)
         if self.mode == "game":
             self._stop_game_mode()
         self.mode = "free"
@@ -12443,23 +13938,60 @@ class DesktopPet:
         self._place_window()
         self._resume_idle()
 
+    def _exit_work_to_free(self, *, reason: str = "done", celebrate: bool = False) -> None:
+        """箱数到 / 定时到 / 点结束：清工作并回到自由走动。"""
+        if self.state != "work" and self.mode != "work":
+            return
+        if getattr(self, "_exiting_work", False):
+            return
+        self._exiting_work = True
+        try:
+            self._complete_work_session(reason=reason)
+            self._stop_work_mode(leave_mode=True)
+            self.mode = "free"
+            self.state = "stand"
+            self.work_animating = False
+            self.action_name = ""
+            self._set_image(self._current_stand_sprite())
+            self._place_window()
+            if celebrate and not self.dragging and not self.music_sprite_mode:
+                # _play_happy 结束后会 _resume_idle
+                self._play_happy()
+            else:
+                self._resume_idle()
+        finally:
+            self._exiting_work = False
+
     def _request_mode_switch(self, apply_fn: callable) -> None:
         """非自由 → 非自由 时，先回到自由模式，再进入目标模式。"""
         self._cancel_pending_mode_switch()
         self._hide_main_menu()
         self.mode_switch_token += 1
         tok = self.mode_switch_token
+        self._mode_switch_pre_cleaned = False
+        via_free = self.mode != "free"
+        if via_free:
+            self._enter_ui_busy("请耐心等待…切换模式")
 
         def run_target() -> None:
             if tok != self.mode_switch_token:
+                if via_free:
+                    self._exit_ui_busy()
                 return
             self.mode_switch_job = None
-            apply_fn()
+            try:
+                apply_fn()
+            finally:
+                # 工作等会再进 boot busy；这里只卸掉切模式这一层
+                if via_free:
+                    self._exit_ui_busy()
 
-        if self.mode == "free":
+        if not via_free:
             run_target()
             return
         self._apply_free_transition()
+        # 供工作等目标模式跳过二次整段 interrupt
+        self._mode_switch_pre_cleaned = True
         self.mode_switch_job = self.root.after(MODE_VIA_FREE_MS, run_target)
 
     def _apply_follow_mode(self) -> None:
@@ -12483,6 +14015,7 @@ class DesktopPet:
         self.state = "stand"
         self._set_image(self._current_stand_sprite())
         self._resume_idle()
+        self._note_mode_for_achievement("stroll")
 
     def _apply_quiet_mode(self) -> None:
         self._interrupt_for_mode_switch()
@@ -12495,6 +14028,7 @@ class DesktopPet:
         self._schedule_rest_bobble()
         # 延后播 sleep：避免模式切换 interrupt / 关菜单 的同帧收尾掐掉刚排队的语音
         self._schedule_quiet_sleep_voice()
+        self._sync_sleep_end_button()
         self._note_mode_for_achievement("quiet")
 
     def _schedule_quiet_sleep_voice(self) -> None:
@@ -12530,6 +14064,10 @@ class DesktopPet:
         self._cancel_pending_mode_switch()
         self.mode_switch_token += 1
         self._hide_main_menu()
+        # 互动/自定义工作可能 mode 仍是 free 但 state=work，必须先停工作
+        if self.state == "work" or self.mode == "work":
+            self._exit_work_to_free(reason="done", celebrate=False)
+            return
         if self.mode == "free":
             self._resume_idle()
             return
@@ -12572,6 +14110,7 @@ class DesktopPet:
             self._set_image(self.sprites.stand)
             self._show_game_hud()
             self._mark_hint_seen("game_mode")
+            self._sync_mode_time_bucket()
             self._game_tick()
             self._game_spawn_box()
 
@@ -12614,6 +14153,606 @@ class DesktopPet:
         )
         self._place_popup(self.game_hud_win, self.x, max(0, self.y - 52))
 
+    # —— 桌面秒表 / 计时器（数字框 + 绕圈小人）——
+
+    def _timers_display_enabled(self) -> bool:
+        return bool(self.app_config.get("show_timers", True))
+
+    def _set_timers_display(self, on: bool) -> None:
+        self.app_config["show_timers"] = bool(on)
+        _save_app_config(self.app_config)
+        self._show_toast(f"时间显示：{'开' if on else '关'}", PIXEL_COLOR)
+        self._sync_auto_desk_clocks()
+        if not on:
+            # 仅收起自动类；工具开的保留
+            for slot in ("sleep", "music", "work"):
+                self._hide_desk_clock(slot)
+
+    def _desk_clock_active(self, slot: str) -> bool:
+        info = self._desk_clocks.get(slot)
+        if not info:
+            return False
+        win = info.get("win")
+        try:
+            return bool(win and win.winfo_exists())
+        except Exception:
+            return False
+
+    def _ensure_desk_clock_walkers(self, style: str = "walk") -> dict[str, list[ImageTk.PhotoImage]]:
+        key = str(style or "walk").strip().lower()
+        if key not in ("walk", "work", "music"):
+            key = "walk"
+        cached = self._desk_clock_walkers.get(key)
+        if cached:
+            return cached
+        try:
+            frames = desktop_clock.load_walker_frames(SPRITES_DIR, size=26, style=key)
+        except Exception:
+            frames = {"front": [], "back": [], "left": [], "right": []}
+        self._desk_clock_walkers[key] = frames
+        return frames
+
+    def _desk_clock_walker_style(self, slot: str) -> str:
+        """时钟环绕小人贴图：音乐→music，工作→work，其余普通 walk。"""
+        if slot == "music":
+            return "music"
+        if slot == "work":
+            return "work"
+        return "walk"
+
+    def _ensure_desk_clock_sleep_frames(self) -> list[ImageTk.PhotoImage]:
+        if self._desk_clock_sleep_frames:
+            return self._desk_clock_sleep_frames
+        try:
+            self._desk_clock_sleep_frames = desktop_clock.load_sleep_frames(SPRITES_DIR, size=26)
+        except Exception:
+            self._desk_clock_sleep_frames = []
+        return self._desk_clock_sleep_frames
+
+    def _desk_clock_slot_index(self, slot: str) -> int:
+        order = ("tool_sw", "tool_cd", "work", "sleep", "music")
+        try:
+            return order.index(slot)
+        except ValueError:
+            return len(order)
+
+    def _default_desk_clock_pos(self, slot: str) -> tuple[int, int]:
+        sw = self.root.winfo_screenwidth()
+        idx = self._desk_clock_slot_index(slot)
+        return max(8, sw - 260), 48 + idx * 118
+
+    def _start_desk_clock(
+        self,
+        slot: str,
+        *,
+        kind: str,
+        title: str,
+        duration_ms: int = 0,
+        force: bool = False,
+        with_controls: bool = False,
+        on_done=None,
+    ) -> None:
+        """kind: stopwatch | countdown。force=工具打开时无视显示开关。
+        with_controls：仅工具秒表/计时器显示开始/暂停（秒表另有结束）。"""
+        if not force and not self._timers_display_enabled() and slot not in ("tool_sw", "tool_cd"):
+            return
+        self._hide_desk_clock(slot)
+        now = int(time.time() * 1000)
+        if slot == "sleep":
+            self._sleep_session_start_ms = now
+        elif slot == "music":
+            self._music_session_start_ms = now
+        pad = 30
+        inner_w, inner_h = 148, 44
+        win_w = inner_w + pad * 2
+        win_h = inner_h + pad * 2
+        if with_controls:
+            win_h += 28
+        x0, y0 = self._default_desk_clock_pos(slot)
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        self._apply_window_layer(win)
+        win.configure(bg="#0e1420")
+        win.geometry(f"{win_w}x{win_h}+{x0}+{y0}")
+        canvas = tk.Canvas(
+            win,
+            width=win_w,
+            height=inner_h + pad * 2,
+            bg="#0e1420",
+            highlightthickness=0,
+        )
+        canvas.pack()
+        # 工具时钟默认暂停，等点「开始」；睡眠/音乐/工作等自动跑
+        running = not with_controls
+        info = {
+            "win": win,
+            "canvas": canvas,
+            "kind": kind,
+            "title": title,
+            "start_ms": now,
+            "duration_ms": max(0, int(duration_ms)),
+            "pad": pad,
+            "inner_w": inner_w,
+            "inner_h": inner_h,
+            "win_w": win_w,
+            "win_h": win_h,
+            "on_done": on_done,
+            "done": False,
+            "photos": [],
+            "with_controls": bool(with_controls),
+            "running": running,
+            "accum_ms": 0,
+            "segment_start_ms": now if running else 0,
+        }
+        self._desk_clocks[slot] = info
+
+        if with_controls:
+            bf = tk.Frame(win, bg="#0e1420")
+            bf.pack(fill=tk.X, padx=6, pady=(0, 4))
+
+            def _btn(text: str, action: str) -> None:
+                tk.Button(
+                    bf,
+                    text=text,
+                    font=("Courier New", 8),
+                    bg="#1a2838",
+                    fg="#c8d8e8",
+                    activebackground="#2a4060",
+                    activeforeground="#ffffff",
+                    relief=tk.FLAT,
+                    padx=6,
+                    pady=1,
+                    command=lambda a=action: self._desk_clock_control(slot, a),
+                ).pack(side=tk.LEFT, padx=(0, 4))
+
+            _btn("开始", "start")
+            _btn("暂停", "pause")
+            if kind == "stopwatch":
+                _btn("结束", "end")
+
+        def on_press(e: tk.Event, s=slot) -> None:
+            try:
+                gx = int(e.x_root)
+                gy = int(e.y_root)
+                geo = self._desk_clocks[s]["win"].geometry()
+                parts = geo.split("+")
+                wx, wy = int(parts[1]), int(parts[2])
+                self._desk_clock_drag[s] = (gx, gy, wx, wy)
+            except Exception:
+                pass
+
+        def on_drag(e: tk.Event, s=slot) -> None:
+            drag = self._desk_clock_drag.get(s)
+            if not drag:
+                return
+            gx0, gy0, wx, wy = drag
+            nx = wx + (int(e.x_root) - gx0)
+            ny = wy + (int(e.y_root) - gy0)
+            try:
+                self._desk_clocks[s]["win"].geometry(f"+{nx}+{ny}")
+            except Exception:
+                pass
+
+        def on_release(_e: tk.Event, s=slot) -> None:
+            self._desk_clock_drag.pop(s, None)
+
+        for w in (win, canvas):
+            w.bind("<ButtonPress-1>", on_press)
+            w.bind("<B1-Motion>", on_drag)
+            w.bind("<ButtonRelease-1>", on_release)
+            w.bind("<Button-3>", lambda _e, s=slot: self._hide_desk_clock(s))
+
+        self._ensure_desk_clock_tick()
+        self._draw_desk_clock(slot)
+
+    def _desk_clock_control(self, slot: str, action: str) -> None:
+        """工具秒表/计时器：开始 / 暂停 / 结束。"""
+        info = self._desk_clocks.get(slot)
+        if not info or not info.get("with_controls"):
+            return
+        now = int(time.time() * 1000)
+        if action == "start":
+            if not info.get("running"):
+                info["segment_start_ms"] = now
+                info["running"] = True
+        elif action == "pause":
+            if info.get("running"):
+                seg = int(info.get("segment_start_ms") or now)
+                info["accum_ms"] = int(info.get("accum_ms") or 0) + max(0, now - seg)
+                info["running"] = False
+                info["segment_start_ms"] = 0
+        elif action == "end":
+            self._hide_desk_clock(slot)
+            self._show_toast("秒表已结束", "#8899aa")
+            return
+        self._draw_desk_clock(slot)
+
+    def _hide_desk_clock(self, slot: str) -> None:
+        info = self._desk_clocks.pop(slot, None)
+        self._desk_clock_drag.pop(slot, None)
+        if not info:
+            return
+        win = info.get("win")
+        try:
+            if win and win.winfo_exists():
+                win.destroy()
+        except Exception:
+            pass
+        if not self._desk_clocks:
+            self._stop_desk_clock_tick()
+
+    def _hide_all_desk_clocks(self) -> None:
+        for slot in list(self._desk_clocks.keys()):
+            self._hide_desk_clock(slot)
+
+    def _ensure_desk_clock_tick(self) -> None:
+        if self._desk_clock_job:
+            return
+
+        def tick() -> None:
+            self._desk_clock_job = None
+            if self._closing or not self._alive():
+                return
+            if not self._desk_clocks:
+                return
+            for slot in list(self._desk_clocks.keys()):
+                self._draw_desk_clock(slot)
+            # 200ms 足够（小人帧约 210ms）；过密全清屏易与工作色键窗叠闪
+            self._desk_clock_job = self._safe_after(200, tick)
+
+        self._desk_clock_job = self._safe_after(200, tick)
+
+    def _stop_desk_clock_tick(self) -> None:
+        if self._desk_clock_job:
+            try:
+                self.root.after_cancel(self._desk_clock_job)
+            except Exception:
+                pass
+            self._desk_clock_job = None
+
+    def _desk_clock_elapsed_ms(self, info: dict) -> int:
+        now = int(time.time() * 1000)
+        accum = int(info.get("accum_ms") or 0)
+        if info.get("running"):
+            seg = int(info.get("segment_start_ms") or now)
+            accum += max(0, now - seg)
+        kind = str(info.get("kind") or "stopwatch")
+        if kind == "countdown":
+            left = int(info.get("duration_ms") or 0) - accum
+            return max(0, left)
+        return max(0, accum)
+
+    def _desk_clock_progress_ms(self, info: dict) -> int:
+        """绕圈动画用的已走时间（暂停时冻结）。"""
+        kind = str(info.get("kind") or "stopwatch")
+        if kind == "countdown":
+            return max(0, int(info.get("duration_ms") or 0) - self._desk_clock_elapsed_ms(info))
+        return self._desk_clock_elapsed_ms(info)
+
+    def _draw_desk_clock(self, slot: str) -> None:
+        info = self._desk_clocks.get(slot)
+        if not info:
+            return
+        canvas = info.get("canvas")
+        win = info.get("win")
+        if not canvas or not win:
+            return
+        try:
+            if not win.winfo_exists():
+                self._desk_clocks.pop(slot, None)
+                return
+        except Exception:
+            self._desk_clocks.pop(slot, None)
+            return
+
+        kind = str(info.get("kind") or "stopwatch")
+        ms = self._desk_clock_elapsed_ms(info)
+        if kind == "countdown" and ms <= 0 and info.get("running") and not info.get("done"):
+            info["done"] = True
+            cb = info.get("on_done")
+            title = str(info.get("title") or "计时器")
+            self._hide_desk_clock(slot)
+            if callable(cb):
+                try:
+                    cb()
+                except Exception:
+                    pass
+            else:
+                self._show_toast(f"{title}时间到！", "#ffcc66", duration_ms=2800)
+            return
+
+        pad = int(info["pad"])
+        iw, ih = int(info["inner_w"]), int(info["inner_h"])
+        ww = int(info["win_w"])
+        ch = ih + pad * 2
+        title = str(info.get("title") or "")
+        status = ""
+        if info.get("with_controls") and not info.get("running"):
+            status = " · 暂停"
+        title_text = f"{title}{status}"
+        accent = "#ffcc66" if kind == "countdown" else "#88ffcc"
+        time_text = desktop_clock.format_clock_ms(ms)
+
+        progressed = self._desk_clock_progress_ms(info)
+        t = desktop_clock.walker_progress(progressed)
+        px, py, edge = desktop_clock.perimeter_point(t, left=pad, top=pad, width=iw, height=ih)
+        photo = None
+        if slot == "sleep":
+            # 睡眠时钟：sleep1/sleep2 轮播（仍沿框环绕）
+            sleep_frames = self._ensure_desk_clock_sleep_frames()
+            if sleep_frames:
+                photo = sleep_frames[(progressed // 480) % len(sleep_frames)]
+                info["photos"] = list(sleep_frames)
+        else:
+            walkers = self._ensure_desk_clock_walkers(self._desk_clock_walker_style(slot))
+            facing = desktop_clock.edge_to_facing(edge)
+            frames = walkers.get(facing) or walkers.get("front") or []
+            if frames:
+                frame_i = (progressed // 210) % len(frames)
+                photo = frames[frame_i]
+                info["photos"] = [photo]
+
+        items = info.get("items")
+        # 增量更新：避免每 tick delete("all") 造成时钟区闪一下
+        if not isinstance(items, dict) or not items.get("time"):
+            canvas.delete("all")
+            canvas.create_rectangle(2, 2, ww - 3, ch - 3, outline="#3a4a66", width=2)
+            canvas.create_rectangle(pad, pad, pad + iw, pad + ih, fill="#162030", outline="#88ccff", width=2)
+            items = {
+                "title": canvas.create_text(
+                    pad + 8,
+                    pad + 10,
+                    text=title_text,
+                    fill="#8899aa",
+                    font=("Courier New", 8),
+                    anchor="w",
+                ),
+                "time": canvas.create_text(
+                    pad + iw // 2,
+                    pad + ih // 2 + 6,
+                    text=time_text,
+                    fill=accent,
+                    font=("Courier New", 16, "bold"),
+                ),
+                "walker": canvas.create_image(px, py, image=photo) if photo else None,
+            }
+            info["items"] = items
+            info["_clock_title"] = title_text
+            info["_clock_accent"] = accent
+            return
+
+        if info.get("_clock_title") != title_text:
+            canvas.itemconfig(items["title"], text=title_text)
+            info["_clock_title"] = title_text
+        if info.get("_clock_accent") != accent:
+            canvas.itemconfig(items["time"], fill=accent)
+            info["_clock_accent"] = accent
+        canvas.itemconfig(items["time"], text=time_text)
+        if photo is not None:
+            wid = items.get("walker")
+            if wid is None:
+                items["walker"] = canvas.create_image(px, py, image=photo)
+            else:
+                canvas.coords(wid, px, py)
+                canvas.itemconfig(wid, image=photo)
+        elif items.get("walker") is not None:
+            try:
+                canvas.delete(items["walker"])
+            except Exception:
+                pass
+            items["walker"] = None
+
+    def _sync_auto_desk_clocks(self) -> None:
+        """按当前模式同步睡眠/音乐/工作自动时钟（受显示开关控制）。"""
+        if not getattr(self, "_startup_ready", False) or self._closing:
+            return
+        show = self._timers_display_enabled()
+
+        # 睡眠
+        if show and self.mode == "quiet":
+            if not self._desk_clock_active("sleep"):
+                self._start_desk_clock("sleep", kind="stopwatch", title="睡眠")
+        else:
+            self._hide_desk_clock("sleep")
+
+        # 音乐
+        if show and getattr(self, "music_sprite_mode", False):
+            if not self._desk_clock_active("music"):
+                self._start_desk_clock("music", kind="stopwatch", title="音乐")
+        else:
+            self._hide_desk_clock("music")
+
+        # 工作（互动/模式）
+        if show and self.state == "work":
+            if not self._desk_clock_active("work"):
+                kind = getattr(self, "_work_timer_kind", "stopwatch") or "stopwatch"
+                dur = int(getattr(self, "_work_timer_duration_ms", 0) or 0)
+                if kind == "countdown" and dur > 0:
+                    self._start_desk_clock(
+                        "work",
+                        kind="countdown",
+                        title="工作·定时",
+                        duration_ms=dur,
+                        on_done=self._on_work_countdown_done,
+                    )
+                else:
+                    self._start_desk_clock("work", kind="stopwatch", title="工作")
+        else:
+            if self.state != "work":
+                self._hide_desk_clock("work")
+
+    def _toggle_tool_stopwatch(self) -> None:
+        self._hide_main_menu()
+        if self._desk_clock_active("tool_sw"):
+            self._hide_desk_clock("tool_sw")
+            self._show_toast("秒表已关闭", "#8899aa")
+            return
+        self._start_desk_clock("tool_sw", kind="stopwatch", title="秒表", force=True, with_controls=True)
+        self._note_achievement_flag("timer_use")
+        self._show_toast("秒表已开启（开始/暂停/结束 · 可拖动）", "#88ffcc")
+
+    def _open_tool_timer_dialog(self) -> None:
+        self._hide_main_menu()
+        old = getattr(self, "timer_setup_win", None)
+        if old and old.winfo_exists():
+            try:
+                old.lift()
+                old.focus_force()
+            except Exception:
+                pass
+            return
+        win = tk.Toplevel(self.root)
+        self.timer_setup_win = win
+        win.title("计时器")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
+        frame.pack()
+        tk.Label(frame, text="计时器", font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(anchor=tk.W)
+        tk.Label(frame, text="设定倒计时（到点提示）", font=("Courier New", 8), fg="#8899aa", bg=MENU_BG).pack(
+            anchor=tk.W, pady=(2, 6)
+        )
+        row = tk.Frame(frame, bg=MENU_BG)
+        row.pack(fill=tk.X)
+        tk.Label(row, text="分", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        mins = tk.Entry(row, width=4, font=PIXEL_FONT)
+        mins.pack(side=tk.LEFT, padx=(4, 10))
+        mins.insert(0, "25")
+        tk.Label(row, text="秒", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        secs = tk.Entry(row, width=4, font=PIXEL_FONT)
+        secs.pack(side=tk.LEFT, padx=(4, 0))
+        secs.insert(0, "0")
+
+        def start() -> None:
+            try:
+                m = max(0, int(mins.get().strip() or "0"))
+                s = max(0, min(59, int(secs.get().strip() or "0")))
+            except ValueError:
+                self._show_toast("请输入有效时间", "#ff8866")
+                return
+            total_ms = (m * 60 + s) * 1000
+            if total_ms < 1000:
+                self._show_toast("至少 1 秒", "#ff8866")
+                return
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            self.timer_setup_win = None
+            self._start_desk_clock(
+                "tool_cd",
+                kind="countdown",
+                title="计时器",
+                duration_ms=total_ms,
+                force=True,
+                with_controls=True,
+            )
+            self._note_achievement_flag("timer_use")
+            self._show_toast(
+                f"计时器 {desktop_clock.format_duration_cn(total_ms / 1000)}（点开始）",
+                "#ffcc66",
+            )
+
+        tk.Button(frame, text="开始", font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG, command=start).pack(
+            anchor=tk.E, pady=(10, 0)
+        )
+        self._place_panel_popup(win)
+
+    def _work_total_seconds_stat(self) -> float:
+        return self._mode_session_total_seconds("work")
+
+    def _add_work_total_seconds(self, seconds: float) -> float:
+        return self._add_mode_session_total_seconds("work", seconds)
+
+    def _mode_session_total_seconds(self, kind: str) -> float:
+        key = _MODE_SESSION_TOTAL_KEYS.get(kind, f"{kind}_total_seconds")
+        stats = self.achievements.setdefault("stats", {})
+        return float(stats.get(key) or 0)
+
+    def _add_mode_session_total_seconds(self, kind: str, seconds: float) -> float:
+        key = _MODE_SESSION_TOTAL_KEYS.get(kind, f"{kind}_total_seconds")
+        stats = self.achievements.setdefault("stats", {})
+        cur = float(stats.get(key) or 0) + max(0.0, float(seconds))
+        stats[key] = cur
+        try:
+            _save_achievements(self.achievements)
+        except Exception:
+            pass
+        return cur
+
+    def _mode_session_finish_message(self, kind: str, session_sec: float) -> str:
+        owner = _owner_display_name(self.pet_profile) or self.owner_name or "你"
+        prev = self._mode_session_total_seconds(kind)
+        first = prev < 0.5
+        total = self._add_mode_session_total_seconds(kind, session_sec)
+        pack = _MODE_SESSION_FINISH_LINES.get(kind) or _MODE_SESSION_FINISH_LINES["work"]
+        lines = pack["first"] if first else pack["again"]
+        last = (getattr(self, "_session_finish_last_line", {}) or {}).get(kind, "")
+        candidates = [ln for ln in lines if ln != last]
+        if not candidates:
+            candidates = list(lines)
+        template = random.choice(candidates)
+        msg = template.format(
+            owner=owner,
+            session=desktop_clock.format_duration_cn(session_sec),
+            total=desktop_clock.format_duration_cn(total),
+        )
+        self._session_finish_last_line[kind] = template
+        return msg
+
+    def _read_mode_session_seconds(self, slot: str, start_ms_attr: str) -> float:
+        start = int(getattr(self, start_ms_attr, 0) or 0)
+        info = self._desk_clocks.get(slot)
+        if start <= 0 and not info:
+            return 0.0
+        now = int(time.time() * 1000)
+        session = max(0.0, (now - start) / 1000.0) if start > 0 else 0.0
+        if info and str(info.get("kind")) == "stopwatch":
+            session = max(session, self._desk_clock_elapsed_ms(info) / 1000.0)
+        elif info and str(info.get("kind")) == "countdown":
+            dur = int(info.get("duration_ms") or 0) / 1000.0
+            elapsed = dur - self._desk_clock_elapsed_ms(info) / 1000.0
+            session = max(session, max(0.0, elapsed))
+        return session
+
+    def _complete_mode_timed_session(self, kind: str) -> bool:
+        """结束工作/睡眠/音乐会话：时间显示相关结算文案。返回是否已提示。"""
+        slot_attr = {
+            "work": ("work", "_work_session_start_ms"),
+            "sleep": ("sleep", "_sleep_session_start_ms"),
+            "music": ("music", "_music_session_start_ms"),
+        }.get(kind)
+        if not slot_attr:
+            return False
+        slot, start_attr = slot_attr
+        # 睡眠/音乐：仅在「时间显示」开启（或本局已有时钟）时说结束语
+        if kind in ("sleep", "music"):
+            if not self._timers_display_enabled() and not self._desk_clock_active(slot):
+                setattr(self, start_attr, 0)
+                return False
+        session = self._read_mode_session_seconds(slot, start_attr)
+        self._hide_desk_clock(slot)
+        setattr(self, start_attr, 0)
+        if session < 0.5:
+            return False
+        msg = self._mode_session_finish_message(kind, session)
+        self._show_toast(msg, "#88ffcc", duration_ms=4200)
+        return True
+
+    def _work_finish_message(self, session_sec: float) -> str:
+        return self._mode_session_finish_message("work", session_sec)
+
+    def _complete_work_session(self, *, reason: str = "done") -> None:
+        """结束工作会话：结算时长文案、收时钟。"""
+        self._complete_mode_timed_session("work")
+
+    def _on_work_countdown_done(self) -> None:
+        if self.state != "work":
+            return
+        self._show_toast("工作定时到！", "#ffcc66", duration_ms=1800)
+        # 自定义定时 / 自由运送定时：一律退出工作并回自由
+        self._exit_work_to_free(reason="timer", celebrate=True)
+
     def _finish_game(self) -> None:
         if self.mode != "game":
             return
@@ -12640,7 +14779,12 @@ class DesktopPet:
             },
         )
         detail = self._format_food_counts(session_food)
+        coin_gain = min(15, max(0, score // 25 + catches // 3))
+        if coin_gain > 0:
+            self.grant_coins(coin_gain, reason=f"采集奖励 +{coin_gain}")
         subtitle = f"接取 {catches} 个 · 得分 {score}\n错过 {misses}  ·  库存 {self._food_inventory_total()}\n{detail}"
+        if coin_gain > 0:
+            subtitle += f"\n金币 +{coin_gain}"
         self._show_game_clear(
             title="采集完成",
             subtitle=subtitle,
@@ -13116,16 +15260,32 @@ class DesktopPet:
                 ("打开面板", lambda: (self._hide_main_menu(), self._toggle_panel())),
                 (companion_label, self._toggle_companion_bar),
                 (persona_label, self._toggle_jinmu_persona),
+                ("家园", self._open_home),
+                ("邀请", self._open_invite_stub),
                 ("莱姆", self._open_rhyme_fight),
                 ("暴露", self._play_expose_qte),
             ],
             offset_x=60,
         )
 
+    def _open_invite_stub(self) -> None:
+        self._hide_main_menu()
+        self._show_toast("尚未开发完全", "#ffcc66", duration_ms=2800)
+
+    def _open_ai_chat_stub(self) -> None:
+        """AI 对话：功能未完成，与邀请相同提示。"""
+        self._hide_main_menu()
+        self._show_toast("尚未开发完全", "#ffcc66", duration_ms=2800)
+
+    def _open_strip_black_stub(self) -> None:
+        """立绘去黑框：功能未完成，与邀请相同提示。"""
+        self._show_toast("尚未开发完全", "#ffcc66", duration_ms=2800)
+
     def _toggle_jinmu_persona(self) -> None:
         """单按钮切换：默认 ↔ 金目（nc 立绘）。"""
+        self._hide_main_menu()
         target = PERSONA_DEFAULT if _persona_is_jinmu() else PERSONA_NC
-        self._switch_persona(target)
+        self._switch_persona(target, from_menu=False, show_dev_tip=True)
 
     def _regen_nc_outfit_sprites(self) -> None:
         self._hide_main_menu()
@@ -13137,8 +15297,9 @@ class DesktopPet:
         if _persona_is_jinmu():
             self._reload_persona_sprites()
 
-    def _switch_persona(self, persona: str) -> None:
-        self._hide_main_menu()
+    def _switch_persona(self, persona: str, *, from_menu: bool = True, show_dev_tip: bool = False) -> None:
+        if from_menu:
+            self._hide_main_menu()
         key = str(persona or "").strip().lower()
         if key in ("jinmu", "金目"):
             key = PERSONA_NC
@@ -13150,14 +15311,18 @@ class DesktopPet:
                 self._show_toast("缺少 ncstand.png，无法切换金目人格", "#ff8844")
                 return
         if key == get_active_persona():
-            self._show_toast(f"当前已是「{PERSONA_LABELS[key]}」", "#88ccff")
+            tip = PERSONA_DEV_TIP if show_dev_tip else f"当前已是「{PERSONA_LABELS[key]}」"
+            self._show_toast(tip, "#88ccff" if not show_dev_tip else "#ffcc66", duration_ms=4200 if show_dev_tip else 2000)
             return
         set_active_persona(key)
         self.app_config["persona"] = key
         _save_app_config(self.app_config)
         self._reload_persona_sprites()
         label = PERSONA_LABELS[key]
-        self._show_toast(f"已切换人格：{label}", "#ffcc66")
+        if show_dev_tip:
+            self._show_toast(f"{PERSONA_DEV_TIP}\n已切换人格：{label}", "#ffcc66", duration_ms=5200)
+        else:
+            self._show_toast(f"已切换人格：{label}", "#ffcc66")
         if key == PERSONA_NC:
             speech = "……金目，在线。"
         else:
@@ -13166,25 +15331,69 @@ class DesktopPet:
 
     def _reload_persona_sprites(self) -> None:
         """切换人格后重建立绘缓存并刷新当前画面。"""
-        _clear_sprite_image_caches()
-        self._sprite_cache.clear()
+        persona = get_active_persona()
+        cache_key = (self.display_size, persona)
+        cached = self._persona_sprite_cache.get(cache_key)
+        if cached is not None:
+            self.sprites = cached
+            self._sprite_cache[self.display_size] = cached
+            try:
+                self._interrupt_for_mode_switch()
+            except Exception:
+                pass
+            self.state = "stand"
+            self.action_name = ""
+            self._set_image(self._current_stand_sprite())
+            self._place_window()
+            return
+
+        # 不整表清空像素缓存，避免来回切换重复解码
+        self._sprite_cache.pop(self.display_size, None)
         self._drag_handle_cache.clear()
         self._pet_click_zones_cache.clear()
-        self._sprite_building.clear()
-        if self.display_size in self._sprite_building:
-            pass
+        self._sprite_building.discard(self.display_size)
         try:
             self._refresh_drag_handle()
         except Exception:
             pass
-        pack = _build_sprite_pack(self.display_size, get_active_persona())
+
+        size = self.display_size
+        self._show_wait_hint("请耐心等待…切换人格")
+        self._sprite_building.add(size)
+
+        def worker() -> None:
+            pack: dict | None = None
+            try:
+                pack = _build_sprite_pack(size, persona)
+            except Exception:
+                pack = None
+            self.root.after(0, lambda: self._on_persona_pack_ready(size, persona, pack))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_persona_pack_ready(self, size: int, persona: str, pack: dict | None) -> None:
+        if self._closing:
+            self._sprite_building.discard(size)
+            self._hide_wait_hint()
+            return
+        if pack is None:
+            self._sprite_building.discard(size)
+            self._hide_wait_hint()
+            self._show_toast("人格资源加载失败", "#ff6666")
+            return
+        if get_active_persona() != persona or size != self.display_size:
+            self._sprite_building.discard(size)
+            self._hide_wait_hint()
+            return
 
         def on_ready(ss: SpriteSet) -> None:
             if self._closing:
                 return
             self.sprites = ss
-            self._sprite_cache[self.display_size] = ss
-            # 打断当前动作，回到站立（金目/默认）
+            self._sprite_cache[size] = ss
+            self._persona_sprite_cache[(size, persona)] = ss
+            self._sprite_building.discard(size)
+            self._hide_wait_hint()
             try:
                 self._interrupt_for_mode_switch()
             except Exception:
@@ -13195,17 +15404,3423 @@ class DesktopPet:
             self._set_image(img)
             self._place_window()
 
-        self._show_wait_hint("请耐心等待…切换人格")
-        self._build_sprite_set_batched(self.display_size, pack, on_ready)
+        self._build_sprite_set_batched(
+            size,
+            pack,
+            on_ready,
+            batch_size=PERSONA_SPRITE_BATCH_SIZE,
+            batch_ms=PERSONA_SPRITE_BATCH_MS,
+        )
+
+    def _close_home(self) -> None:
+        """只关编辑窗；桌面家园保留。"""
+        self._cancel_home_farm_tick()
+        job = getattr(self, "_home_farm_fx_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+        self._home_farm_fx_job = None
+        self._home_farm_fx = None
+        self._home_edit_mode = "decorate"
+        if self._home_layout is not None:
+            try:
+                home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+            except Exception:
+                pass
+            self._persist_wallet()
+        if self.home_win and self.home_win.winfo_exists():
+            try:
+                self.home_win.destroy()
+            except Exception:
+                pass
+        self.home_win = None
+        self._home_canvas = None
+        self._home_status = None
+        self._home_mode_btns = {}
+        self._home_zone_btns = {}
+        self._home_brush_btns = {}
+        self._home_brush_host = None
+        self._home_bg_host = None
+        self._home_bg_brush_btns = {}
+        self._home_farm_banner = None
+        self._home_photos.clear()
+        # 若桌面家园还在，继续自由走动
+        if self._home_any_view_open():
+            if self._home_layout and self._home_layout.get("move_mode") == "free":
+                self._schedule_home_tick()
+            return
+        for job_name in ("_home_tick_job", "_home_pose_job"):
+            job = getattr(self, job_name, None)
+            if job:
+                try:
+                    self.root.after_cancel(job)
+                except Exception:
+                    pass
+                setattr(self, job_name, None)
+        self._home_pose = "stand"
+        self._home_last_trigger = ""
+
+    def _close_home_desktop(self) -> None:
+        if self._home_layout is not None:
+            self._home_layout["on_desktop"] = False
+            try:
+                if self.home_desktop_win and self.home_desktop_win.winfo_exists():
+                    self._home_layout["desktop_x"] = int(self.home_desktop_win.winfo_x())
+                    self._home_layout["desktop_y"] = int(self.home_desktop_win.winfo_y())
+                home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+            except Exception:
+                pass
+        if self.home_desktop_win and self.home_desktop_win.winfo_exists():
+            try:
+                self.home_desktop_win.destroy()
+            except Exception:
+                pass
+        self.home_desktop_win = None
+        self._home_desktop_canvas = None
+        self._home_desktop_photos.clear()
+        self._home_desk_drag = None
+        self._home_desktop_title = None
+        if not self._home_any_view_open():
+            for job_name in ("_home_tick_job", "_home_pose_job"):
+                job = getattr(self, job_name, None)
+                if job:
+                    try:
+                        self.root.after_cancel(job)
+                    except Exception:
+                        pass
+                    setattr(self, job_name, None)
+            self._home_pose = "stand"
+            self._home_last_trigger = ""
+        self._show_toast("已从桌面收起家园", "#88ccff")
+
+    def _home_any_view_open(self) -> bool:
+        ed = bool(self.home_win and self.home_win.winfo_exists())
+        desk = bool(self.home_desktop_win and self.home_desktop_win.winfo_exists())
+        return ed or desk
+
+    def _maybe_restore_home_desktop(self) -> None:
+        """启动后若上次已放到桌面，自动恢复桌面家园（无需再开编辑窗）。"""
+        if self._closing or not self._alive():
+            return
+        if self.home_desktop_win and self.home_desktop_win.winfo_exists():
+            return
+        try:
+            layout = home_room.load_layout(HOME_LAYOUT_FILE)
+        except Exception:
+            return
+        if not layout.get("on_desktop"):
+            return
+        self._home_setup_assets()
+        self._home_layout = layout
+        self._place_home_on_desktop()
+
+    def _home_setup_assets(self) -> None:
+        rpg_root = resolve_bundled("Vpetgame", legacy=LEGACY_GAME_ROOT)
+        rpg_assets = (rpg_root / "assets") if rpg_root else None
+        HOME_PROPS_DIR.mkdir(parents=True, exist_ok=True)
+        HOME_RPG_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+
+        def _sync_art(name: str) -> None:
+            src = HOME_PROPS_DIR / name
+            if not src.is_file():
+                # 也允许从 RPG userdata 回拷
+                alt = HOME_RPG_ASSETS_DIR / name
+                if alt.is_file():
+                    try:
+                        shutil.copy2(alt, src)
+                    except Exception:
+                        return
+                else:
+                    return
+            for dest_dir in (HOME_RPG_ASSETS_DIR,):
+                try:
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dest_dir / name)
+                except Exception:
+                    pass
+            try:
+                local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+                if local:
+                    user_assets = Path(local) / "Vpet" / "rpg" / "assets"
+                    user_assets.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, user_assets / name)
+            except Exception:
+                pass
+            if rpg_assets is not None:
+                try:
+                    rpg_assets.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, rpg_assets / name)
+                except Exception:
+                    pass
+
+        _sync_art("gift_art.png")
+        _sync_art("user_paint.png")
+        HOME_MATERIALS_DIR.mkdir(parents=True, exist_ok=True)
+        mats = home_room.load_materials_index(HOME_MATERIALS_INDEX)
+        home_room.set_materials_root(HOME_MATERIALS_DIR, mats)
+        home_room.set_asset_roots(rpg_assets=rpg_assets, props_dir=HOME_PROPS_DIR)
+
+    def _home_display_name(self) -> str:
+        name = ""
+        if self._home_layout:
+            name = str(self._home_layout.get("house_name") or "").strip()
+        return name or "我的小屋"
+
+    def _companion_days(self) -> int:
+        """相伴天数（至少 1）。"""
+        set_at = str((self.pet_profile or {}).get("owner_set_at") or "")
+        start_dt = self._parse_profile_time(set_at) or self._parse_profile_time(
+            str((self.pet_profile or {}).get("created") or "")
+        )
+        if start_dt is None:
+            return 1
+        return max(1, (datetime.now().date() - start_dt.date()).days + 1)
+
+    def _home_max_rooms(self) -> int:
+        return home_room.max_rooms_for_companion_days(self._companion_days())
+
+    def _ask_simple_name(
+        self,
+        *,
+        title: str,
+        prompt: str,
+        default: str = "",
+        max_len: int = 16,
+        confirm_text: str = "确定",
+    ) -> str | None:
+        parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
+        result: dict[str, str | None] = {"name": None}
+        win = tk.Toplevel(parent)
+        win.title(title)
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        win.resizable(False, False)
+        try:
+            win.transient(parent)
+            win.grab_set()
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        frame = tk.Frame(win, bg=MENU_BG, padx=14, pady=12)
+        frame.pack()
+        tk.Label(frame, text=prompt, font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(anchor=tk.W)
+        entry = tk.Entry(frame, width=18, font=PIXEL_FONT)
+        entry.pack(anchor=tk.W, pady=(8, 0))
+        if default:
+            entry.insert(0, default[:max_len])
+            entry.select_range(0, tk.END)
+        tip = tk.Label(frame, text="", font=("Courier New", 9), fg="#ff8866", bg=MENU_BG)
+        tip.pack(anchor=tk.W, pady=(4, 0))
+        btns = tk.Frame(frame, bg=MENU_BG)
+        btns.pack(fill=tk.X, pady=(10, 0))
+
+        def confirm(_event=None) -> None:
+            raw = entry.get().strip()[:max_len]
+            if not raw:
+                tip.config(text="名字不能为空哦")
+                return
+            result["name"] = raw
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            win.destroy()
+
+        def cancel(_event=None) -> None:
+            result["name"] = None
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            win.destroy()
+
+        tk.Button(btns, text=confirm_text, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG, command=confirm).pack(
+            side=tk.LEFT
+        )
+        tk.Button(btns, text="取消", font=PIXEL_FONT, bg="#555555", fg=MENU_FG, command=cancel).pack(side=tk.RIGHT)
+        entry.bind("<Return>", confirm)
+        win.protocol("WM_DELETE_WINDOW", cancel)
+        entry.focus_set()
+        try:
+            win.wait_window()
+        except Exception:
+            return None
+        return result["name"]
+
+    def _ask_home_house_name(self) -> str | None:
+        """放到桌面前为房屋命名；取消返回 None。"""
+        cur = ""
+        if self._home_layout:
+            cur = str(self._home_layout.get("house_name") or "").strip()
+        return self._ask_simple_name(
+            title="房屋命名",
+            prompt="给这间屋子起个名字",
+            default=cur or "我的小屋",
+            confirm_text="确定放到桌面",
+        )
+    def _place_home_on_desktop(self) -> None:
+        """把当前搭好的小屋贴到桌面（无边框可拖动）；先命名房屋。"""
+        if self._home_layout is None:
+            self._home_setup_assets()
+            self._home_layout = home_room.load_layout(HOME_LAYOUT_FILE)
+        home_room.sync_active_zone(self._home_layout)
+
+        name = self._ask_home_house_name()
+        if name is None:
+            return
+        self._home_layout["house_name"] = name
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+
+        if self.home_desktop_win and self.home_desktop_win.winfo_exists():
+            if self._home_desktop_title and self._home_desktop_title.winfo_exists():
+                self._home_desktop_title.config(text=self._home_display_name())
+            self._home_redraw()
+            try:
+                self.home_desktop_win.lift()
+            except Exception:
+                pass
+            self._show_toast(f"已更新屋名：{self._home_display_name()}", "#88ccff")
+            return
+
+        cols = int(self._home_layout["cols"])
+        rows = int(self._home_layout["rows"])
+        tile = home_room.HOME_TILE
+        room_w = cols * tile
+        room_h = rows * tile + 18
+        bar_h = 22
+
+        win = tk.Toplevel(self.root)
+        self.home_desktop_win = win
+        win.overrideredirect(True)
+        self._apply_window_layer(win)
+        win.configure(bg="#1a2030")
+        try:
+            win.attributes("-topmost", False)
+        except Exception:
+            pass
+
+        bar = tk.Frame(win, bg="#243044", height=bar_h)
+        bar.pack(fill=tk.X)
+        bar.pack_propagate(False)
+        title_lbl = tk.Label(
+            bar,
+            text=self._home_display_name(),
+            font=("Courier New", 9),
+            fg="#c8d8ff",
+            bg="#243044",
+        )
+        title_lbl.pack(side=tk.LEFT, padx=6)
+        self._home_desktop_title = title_lbl
+        close_lbl = tk.Label(bar, text="×", font=("Courier New", 12, "bold"), fg="#ff8899", bg="#243044", cursor="hand2")
+        close_lbl.pack(side=tk.RIGHT, padx=6)
+        close_lbl.bind("<Button-1>", lambda _e: self._close_home_desktop())
+        # 双击标题可改名
+        def rename_house(_event=None) -> None:
+            new_name = self._ask_home_house_name()
+            if new_name is None or not self._home_layout:
+                return
+            self._home_layout["house_name"] = new_name
+            title_lbl.config(text=self._home_display_name())
+            try:
+                home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+            except Exception:
+                pass
+            self._show_toast(f"屋名：{self._home_display_name()}", "#88ccff")
+
+        title_lbl.bind("<Double-Button-1>", rename_house)
+
+        canvas = tk.Canvas(win, width=room_w, height=room_h, bg=home_room.HOME_WALL, highlightthickness=0)
+        canvas.pack()
+        self._home_desktop_canvas = canvas
+        self._home_desktop_photos = []
+
+        def start_drag(event: tk.Event) -> None:
+            self._home_desk_drag = (event.x_root, event.y_root, win.winfo_x(), win.winfo_y())
+
+        def do_drag(event: tk.Event) -> None:
+            if not self._home_desk_drag:
+                return
+            ox, oy, wx, wy = self._home_desk_drag
+            nx = wx + (event.x_root - ox)
+            ny = wy + (event.y_root - oy)
+            win.geometry(f"+{nx}+{ny}")
+
+        def end_drag(_event: tk.Event | None = None) -> None:
+            self._home_desk_drag = None
+            if self._home_layout is not None and win.winfo_exists():
+                self._home_layout["desktop_x"] = int(win.winfo_x())
+                self._home_layout["desktop_y"] = int(win.winfo_y())
+                self._home_layout["on_desktop"] = True
+                try:
+                    home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+                except Exception:
+                    pass
+
+        for w in (bar, canvas):
+            w.bind("<ButtonPress-1>", start_drag)
+            w.bind("<B1-Motion>", do_drag)
+            w.bind("<ButtonRelease-1>", end_drag)
+
+        def on_key(event: tk.Event) -> None:
+            if event.keysym == "Escape":
+                self._close_home_desktop()
+                return
+            if not self._home_layout:
+                return
+            mapping = {
+                "Up": (0, -1),
+                "w": (0, -1),
+                "W": (0, -1),
+                "Down": (0, 1),
+                "s": (0, 1),
+                "S": (0, 1),
+                "Left": (-1, 0),
+                "a": (-1, 0),
+                "A": (-1, 0),
+                "Right": (1, 0),
+                "d": (1, 0),
+                "D": (1, 0),
+            }
+            delta = mapping.get(event.keysym)
+            if not delta:
+                return
+            # 睡觉/坐下时方向键先醒来再切操控走动
+            if self._home_pose in ("sleep", "squat"):
+                if self._home_pose_job:
+                    try:
+                        self.root.after_cancel(self._home_pose_job)
+                    except Exception:
+                        pass
+                    self._home_pose_job = None
+                self._home_pose_until_ms = 0
+                self._home_last_trigger = ""
+                self._home_pose = "walk"
+            self._home_layout["move_mode"] = "control"
+            if self._home_tick_job:
+                try:
+                    self.root.after_cancel(self._home_tick_job)
+                except Exception:
+                    pass
+                self._home_tick_job = None
+            self._home_try_move_pet(delta[0], delta[1], check_interact=True)
+
+        win.bind("<Key>", on_key)
+        win.focus_set()
+
+        dx = int(self._home_layout.get("desktop_x") or -1)
+        dy = int(self._home_layout.get("desktop_y") or -1)
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        if dx < 0 or dy < 0:
+            dx = max(20, (sw - room_w) // 2)
+            dy = max(40, sh - room_h - bar_h - 80)
+        dx = max(0, min(dx, sw - room_w - 8))
+        dy = max(0, min(dy, sh - room_h - bar_h - 8))
+        win.geometry(f"{room_w}x{room_h + bar_h}+{dx}+{dy}")
+        self._home_layout["on_desktop"] = True
+        self._home_layout["desktop_x"] = dx
+        self._home_layout["desktop_y"] = dy
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+
+        self._home_redraw()
+        if self._home_layout.get("move_mode") == "free":
+            self._schedule_home_tick()
+        self._show_toast(
+            f"「{self._home_display_name()}」已放到桌面 · 可拖动 · 双击标题改名",
+            "#88ccff",
+            duration_ms=3200,
+        )
+
+
+    def _open_home(self) -> None:
+        """面板→家园：编辑布置；可放到桌面。"""
+        self._hide_main_menu()
+        if self.home_win and self.home_win.winfo_exists():
+            try:
+                self.home_win.lift()
+                self.home_win.focus_force()
+            except Exception:
+                pass
+            return
+
+        self._home_setup_assets()
+        self.wallet = home_farm.load_wallet(WALLET_FILE)
+        self._home_layout = home_room.load_layout(HOME_LAYOUT_FILE)
+        self._note_achievement_flag("home_visit")
+        zone = str(self._home_layout.get("zone") or "indoor")
+        self._home_brush = "plant" if zone == "indoor" else "flower"
+        self._home_photos = []
+        self._home_drag_last = None
+        if not (self.home_desktop_win and self.home_desktop_win.winfo_exists()):
+            self._home_pet_dir = "front"
+            self._home_walk_frame = 0
+            self._home_pose = "stand"
+            self._home_pose_until_ms = 0
+            self._home_last_trigger = ""
+        cols = int(self._home_layout["cols"])
+        rows = int(self._home_layout["rows"])
+        tile = home_room.HOME_TILE
+        room_w = cols * tile
+        room_h = rows * tile + 18
+        side_w = 400
+
+        win = tk.Toplevel(self.root)
+        self.home_win = win
+        win.title("家园")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        win.protocol("WM_DELETE_WINDOW", self._close_home)
+        win_w = max(980, room_w + side_w + 56)
+        win_h = max(680, min(860, max(room_h + 100, 720)))
+        _fit_panel_wh(win, win_w, win_h)
+
+        outer = tk.Frame(win, bg=MENU_BG, padx=8, pady=6)
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        title_row = tk.Frame(outer, bg=MENU_BG)
+        title_row.pack(fill=tk.X)
+        # 顶部小场景横幅（少字多画面）
+        hero = tk.Canvas(title_row, width=max(640, min(900, win_w - 80)), height=48, bg=MENU_BG, highlightthickness=0)
+        hero.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        hero.create_rectangle(0, 0, 960, 48, fill="#1a2438", outline="")
+        hero.create_rectangle(0, 34, 960, 48, fill="#2a3a28", outline="")
+        for i in range(10):
+            hero.create_oval(18 + i * 52, 28, 34 + i * 52, 44, fill="#4a8a3a", outline="#2a5a28")
+        hero.create_rectangle(40, 10, 78, 36, fill="#c8a878", outline="#8a6848")  # 小屋
+        hero.create_polygon(40, 14, 59, 2, 78, 14, fill="#a85848", outline="#7a3830")
+        hero.create_oval(420, 6, 442, 28, fill="#ffe8a0", outline="#ccb060")  # 太阳
+        hero.create_text(110, 18, text="家园", fill=THEME_PINK, font=PIXEL_FONT, anchor="w")
+        hero.create_text(110, 34, text="左栏操作 · 右栏房间 · 左键铺 · 右键上色", fill="#8899aa", font=("Courier New", 8), anchor="w")
+        close_btn = tk.Label(
+            title_row,
+            text="×",
+            font=("Courier New", 16, "bold"),
+            fg=THEME_PINK,
+            bg=MENU_BG,
+            cursor="hand2",
+            padx=6,
+        )
+        close_btn.pack(side=tk.RIGHT)
+        close_btn.bind("<Button-1>", lambda _e: self._close_home())
+
+        self._home_farm_banner = tk.Label(
+            outer,
+            text=home_farm.FARM_DISCLAIMER,
+            font=("Courier New", 9, "bold"),
+            fg="#ffcc66",
+            bg="#3a3020",
+        )
+        # 仅经营模式 pack
+
+        # 左右分栏：左操作 / 右房间画面
+        main = tk.Frame(outer, bg=MENU_BG)
+        main.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+        self._home_main_row = main
+        scroll_wrap, body, _home_scroll = _make_scrollable_frame(
+            main, width=side_w, height=max(520, win_h - 110), bg=MENU_BG
+        )
+        scroll_wrap.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
+        self._home_scroll_wrap = scroll_wrap
+        self._home_scroll_canvas = _home_scroll
+
+        right = tk.Frame(main, bg=MENU_BG)
+        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._home_right_host = right
+
+        # —— 区域 / 存档工具条 ——
+        top_bar = tk.Frame(body, bg="#222a38", padx=6, pady=4)
+        top_bar.pack(fill=tk.X, pady=(0, 4))
+        zone_row = tk.Frame(top_bar, bg="#222a38")
+        zone_row.pack(fill=tk.X)
+        self._home_zone_btns = {}
+
+        def set_zone(z: str) -> None:
+            if not self._home_layout:
+                return
+            home_room.switch_zone(self._home_layout, z)
+            self._home_after_zone_change(z)
+
+        for z, label in (("indoor", "室内"), ("outdoor", "室外")):
+            btn = tk.Button(
+                zone_row,
+                text=label,
+                font=PIXEL_FONT,
+                bg=MENU_BG,
+                fg=MENU_FG,
+                command=lambda zz=z: set_zone(zz),
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 6))
+            self._home_zone_btns[z] = btn
+
+        self._home_room_host = tk.Frame(top_bar, bg="#222a38")
+        self._home_room_host.pack(fill=tk.X, pady=(2, 0))
+        self._home_room_btns = {}
+        self._home_rebuild_room_row()
+
+        file_row = tk.Frame(top_bar, bg="#222a38")
+        file_row.pack(fill=tk.X, pady=(4, 0))
+        for text, cmd, bg in (
+            ("保存", self._home_save_preset, MENU_ACTIVE),
+            ("打开", self._home_open_preset, "#445566"),
+            ("导出", self._home_export_layout, "#445566"),
+        ):
+            tk.Button(file_row, text=text, font=("Courier New", 8), bg=bg, fg=MENU_FG, command=cmd).pack(
+                side=tk.LEFT, padx=(0, 4)
+            )
+
+        self._home_edit_mode_host = tk.Frame(body, bg=MENU_BG)
+        self._home_edit_mode_host.pack(fill=tk.X, pady=(0, 2))
+        self._home_edit_mode_btns = {}
+        self._home_farm_host = tk.Frame(body, bg=MENU_BG)
+        self._home_farm_host.pack(fill=tk.X, pady=(0, 2))
+        self._home_farm_tool_btns = {}
+        self._home_edit_mode = "decorate"
+        self._home_rebuild_edit_mode_row()
+        self._home_rebuild_farm_panel()
+
+        mode_bar = tk.Frame(body, bg="#222a38", padx=6, pady=4)
+        mode_bar.pack(fill=tk.X, pady=(0, 4))
+        mode_row = tk.Frame(mode_bar, bg="#222a38")
+        mode_row.pack(fill=tk.X)
+        self._home_mode_btns = {}
+
+        def set_mode(mode: str) -> None:
+            if not self._home_layout:
+                return
+            # 切自由/操控：睡觉或坐下时先醒来，进入可走动状态
+            if self._home_pose in ("sleep", "squat"):
+                if self._home_pose_job:
+                    try:
+                        self.root.after_cancel(self._home_pose_job)
+                    except Exception:
+                        pass
+                    self._home_pose_job = None
+                self._home_pose_until_ms = 0
+                self._home_last_trigger = ""
+                self._home_pose = "walk"
+            self._home_layout["move_mode"] = mode
+            for m, btn in self._home_mode_btns.items():
+                on = m == mode
+                btn.config(bg=MENU_ACTIVE if on else MENU_BG, relief=tk.SUNKEN if on else tk.RAISED)
+            if mode == "free":
+                self._schedule_home_tick()
+            elif self._home_tick_job:
+                try:
+                    self.root.after_cancel(self._home_tick_job)
+                except Exception:
+                    pass
+                self._home_tick_job = None
+            self._home_redraw()
+            self._home_update_status()
+
+        self._home_set_mode = set_mode
+        for mode, label in (("control", "操控"), ("free", "自由运动")):
+            btn = tk.Button(
+                mode_row,
+                text=label,
+                font=PIXEL_FONT,
+                bg=MENU_BG,
+                fg=MENU_FG,
+                command=lambda m=mode: set_mode(m),
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 6))
+            self._home_mode_btns[mode] = btn
+
+        tk.Button(
+            mode_row,
+            text="放到桌面",
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+            command=self._place_home_on_desktop,
+        ).pack(side=tk.LEFT, padx=(8, 4))
+        tk.Button(
+            mode_row,
+            text="重置",
+            font=("Courier New", 9),
+            bg="#444455",
+            fg=MENU_FG,
+            command=self._home_reset_layout,
+        ).pack(side=tk.RIGHT)
+
+        size_row = tk.Frame(mode_bar, bg="#222a38")
+        size_row.pack(fill=tk.X, pady=(4, 0))
+        tk.Label(size_row, text="格子", font=("Courier New", 9), fg="#8899aa", bg="#222a38").pack(side=tk.LEFT)
+        self._home_cols_var = tk.StringVar(value=str(cols))
+        self._home_rows_var = tk.StringVar(value=str(rows))
+        tk.Label(size_row, text="宽", font=("Courier New", 8), fg="#8899aa", bg="#222a38").pack(side=tk.LEFT, padx=(8, 2))
+        tk.Entry(size_row, textvariable=self._home_cols_var, width=3, font=("Courier New", 9)).pack(side=tk.LEFT)
+        tk.Label(size_row, text="高", font=("Courier New", 8), fg="#8899aa", bg="#222a38").pack(side=tk.LEFT, padx=(6, 2))
+        tk.Entry(size_row, textvariable=self._home_rows_var, width=3, font=("Courier New", 9)).pack(side=tk.LEFT)
+        tk.Button(
+            size_row,
+            text="应用",
+            font=("Courier New", 8),
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+            command=self._home_apply_grid_size,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        style_bar = tk.Frame(body, bg="#1e2834", padx=6, pady=4)
+        style_bar.pack(fill=tk.X, pady=(0, 4))
+
+        color_row = tk.Frame(style_bar, bg="#1e2834")
+        color_row.pack(fill=tk.X, pady=(0, 2))
+        for name, a, b in home_room.FLOOR_COLOR_PRESETS:
+            tk.Button(
+                color_row,
+                text=name,
+                font=("Courier New", 8),
+                bg=a,
+                fg="#ffffff",
+                command=lambda aa=a, bb=b: self._home_set_floor_colors(aa, bb),
+            ).pack(side=tk.LEFT, padx=1)
+        tk.Button(
+            color_row,
+            text="自选A",
+            font=("Courier New", 8),
+            bg="#445566",
+            fg=MENU_FG,
+            command=lambda: self._home_pick_floor("a"),
+        ).pack(side=tk.LEFT, padx=(4, 1))
+        tk.Button(
+            color_row,
+            text="自选B",
+            font=("Courier New", 8),
+            bg="#445566",
+            fg=MENU_FG,
+            command=lambda: self._home_pick_floor("b"),
+        ).pack(side=tk.LEFT, padx=1)
+
+        self._home_bg_host = tk.Frame(style_bar, bg="#1e2834")
+        self._home_bg_host.pack(fill=tk.X, pady=(0, 2))
+        self._home_bg_brush_btns = {}
+        self._home_rebuild_bg_panel()
+
+        furn_row = tk.Frame(style_bar, bg="#1e2834")
+        furn_row.pack(fill=tk.X, pady=(2, 0))
+        for name, col in home_room.FURN_COLOR_PRESETS:
+            tk.Button(
+                furn_row,
+                text=name,
+                font=("Courier New", 8),
+                bg=col,
+                fg="#ffffff",
+                command=lambda c=col: self._home_set_furn_color(c),
+            ).pack(side=tk.LEFT, padx=1)
+        tk.Button(
+            furn_row,
+            text="自选",
+            font=("Courier New", 8),
+            bg="#445566",
+            fg=MENU_FG,
+            command=self._home_pick_furn_color,
+        ).pack(side=tk.LEFT, padx=(4, 0))
+
+        self._home_room_frame = tk.Frame(right, bg="#1a2030", padx=6, pady=6)
+        self._home_room_frame.pack(fill=tk.BOTH, expand=True)
+        canvas = tk.Canvas(
+            self._home_room_frame,
+            width=room_w,
+            height=room_h,
+            bg=home_room.HOME_WALL,
+            highlightthickness=0,
+        )
+        canvas.pack(anchor=tk.CENTER, expand=True)
+        self._home_canvas = canvas
+        self._home_bind_canvas_paint(canvas)
+
+        # 素材栏仍放左侧，方便对照房间操作
+        brush_bar = tk.Frame(body, bg="#222a38", padx=6, pady=4)
+        brush_bar.pack(fill=tk.X, pady=(6, 2))
+        head = tk.Frame(brush_bar, bg="#222a38")
+        head.pack(fill=tk.X)
+        tk.Label(head, text="素材", font=PIXEL_FONT, fg=THEME_PINK, bg="#222a38").pack(side=tk.LEFT)
+        tk.Button(
+            head,
+            text="画素材",
+            font=("Courier New", 8),
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+            command=self._open_home_pixel_painter,
+        ).pack(side=tk.RIGHT)
+        self._home_brush_host = tk.Frame(brush_bar, bg="#222a38")
+        self._home_brush_host.pack(fill=tk.X, pady=(4, 0))
+        self._home_rebuild_brushes()
+
+        self._home_status = tk.Label(right, text="", font=("Courier New", 9), fg="#88ccff", bg=MENU_BG)
+        self._home_status.pack(anchor=tk.W, pady=(6, 0))
+
+        def on_key(event: tk.Event) -> None:
+            if event.keysym in ("Escape",):
+                self._close_home()
+                return
+            if not self._home_layout:
+                return
+            farm_mode = (
+                getattr(self, "_home_edit_mode", "") == "farm"
+                and str(self._home_layout.get("zone") or "") == "outdoor"
+            )
+            mapping = {
+                "Up": (0, -1),
+                "w": (0, -1),
+                "W": (0, -1),
+                "Down": (0, 1),
+                "s": (0, 1),
+                "S": (0, 1),
+                "Left": (-1, 0),
+                "a": (-1, 0),
+                "A": (-1, 0),
+                "Right": (1, 0),
+                "d": (1, 0),
+                "D": (1, 0),
+            }
+            delta = mapping.get(event.keysym)
+            # 睡觉/坐下时：方向键醒来并切操控再走动；其它键仍忽略
+            if self._home_pose in ("sleep", "squat") and not farm_mode and not getattr(self, "_home_farm_fx", None):
+                if not delta:
+                    return
+                set_mode("control")
+                self._home_try_move_pet(delta[0], delta[1], check_interact=True)
+                return
+            if farm_mode:
+                tool = home_farm.FARM_TOOL_KEYS.get(event.keysym) or home_farm.FARM_TOOL_KEYS.get(
+                    (event.char or "").strip()
+                )
+                if tool:
+                    self._home_set_farm_tool(tool)
+                    return
+                if event.keysym in ("space", "e", "E", "Return"):
+                    fish = getattr(self, "_home_fish", None)
+                    if fish and str(fish.get("phase") or "") in ("wait", "bite"):
+                        self._home_fish_try_catch()
+                        self._home_redraw()
+                    else:
+                        self._home_farm_use_at_pet()
+                    return
+            elif event.keysym in ("space", "e", "E", "Return"):
+                # 布置模式：站在门上可按键进出
+                if self._home_try_use_door(force=True):
+                    return
+            if self._home_layout.get("move_mode") != "control":
+                set_mode("control")
+            if delta:
+                # 打断工具姿势
+                if self._home_pose == "squat" and farm_mode:
+                    self._home_pose = "stand"
+                self._home_try_move_pet(delta[0], delta[1], check_interact=True)
+
+        win.bind("<Key>", on_key)
+        win.focus_set()
+
+        set_zone(zone)
+        set_mode(str(self._home_layout.get("move_mode") or "free"))
+        self._home_redraw()
+        self._place_panel_popup(win)
+        if self._home_layout.get("on_desktop") and not (
+            self.home_desktop_win and self.home_desktop_win.winfo_exists()
+        ):
+            self.root.after(120, self._place_home_on_desktop)
+        try:
+            stats = self.achievements.setdefault("stats", {})
+            stats["home_opened"] = True
+            self._check_achievements()
+        except Exception:
+            pass
+
+
+
+
+    def _persist_wallet(self) -> None:
+        try:
+            home_farm.save_wallet(WALLET_FILE, self.wallet)
+        except Exception:
+            pass
+
+    def grant_coins(self, n: int, *, reason: str = "", toast: bool = True) -> int:
+        """统一钱包加币。"""
+        add = max(0, int(n))
+        total = home_farm.grant_coins_to_wallet(self.wallet, add)
+        self._persist_wallet()
+        if add > 0:
+            _play_ui_sfx("money", volume=0.62)
+        if toast and add > 0:
+            tip = reason or f"金币 +{add}"
+            self._show_toast(f"{tip}（持有 {total}）", "#ffcc66", duration_ms=2200)
+        self._home_update_status()
+        return total
+
+    def _maybe_daily_login_coin(self) -> None:
+        """每天打开桌宠领取 1 金币（同日仅一次）。"""
+        if self._closing or not getattr(self, "_startup_ready", False):
+            return
+        try:
+            ok, total = home_farm.try_claim_daily_login_coin(self.wallet)
+        except Exception:
+            return
+        if not ok:
+            return
+        self._persist_wallet()
+        _play_ui_sfx("money", volume=0.62)
+        self._show_toast(
+            f"今日登录礼：金币 +{home_farm.DAILY_LOGIN_COINS}（持有 {total}）",
+            "#ffcc66",
+            duration_ms=2600,
+        )
+        self._home_update_status()
+
+    def spend_coins(self, n: int, *, reason: str = "") -> bool:
+        ok = home_farm.spend_coins_from_wallet(self.wallet, n)
+        if ok:
+            self._persist_wallet()
+            self._home_update_status()
+        elif reason:
+            self._show_toast(reason or "金币不足", "#ff8866")
+        return ok
+
+    def _ensure_home_farm_grid(self) -> list:
+        if not self._home_layout:
+            return []
+        cols = int(self._home_layout["cols"])
+        rows = int(self._home_layout["rows"])
+        farm = self._home_layout.get("farm")
+        if not isinstance(farm, list) or len(farm) != rows or (farm and len(farm[0]) != cols):
+            farm = home_farm.normalize_farm(farm, cols, rows)
+            self._home_layout["farm"] = farm
+        if not isinstance(self._home_layout.get("crafted_furniture"), list):
+            self._home_layout["crafted_furniture"] = []
+        return farm
+
+    def _home_set_edit_mode(self, mode: str, *, quiet: bool = False) -> None:
+        mode = "farm" if mode == "farm" else "decorate"
+        zone = str((self._home_layout or {}).get("zone") or "indoor")
+        if mode == "farm" and zone != "outdoor":
+            if not quiet:
+                self._show_toast("请先切换到室外再开经营", "#ff8866")
+            mode = "decorate"
+        self._home_edit_mode = mode
+        banner = getattr(self, "_home_farm_banner", None)
+        if banner is not None:
+            try:
+                if mode == "farm":
+                    main_row = getattr(self, "_home_main_row", None)
+                    if main_row is not None and main_row.winfo_exists():
+                        banner.pack(fill=tk.X, pady=(0, 4), before=main_row)
+                    elif not banner.winfo_ismapped():
+                        banner.pack(fill=tk.X, pady=(0, 4))
+                else:
+                    banner.pack_forget()
+            except Exception:
+                pass
+        for m, btn in getattr(self, "_home_edit_mode_btns", {}).items():
+            if btn.winfo_exists():
+                on = m == mode
+                btn.config(bg=MENU_ACTIVE if on else MENU_BG, relief=tk.SUNKEN if on else tk.RAISED)
+        self._home_rebuild_farm_panel()
+        self._home_rebuild_brushes()
+        if mode == "farm":
+            self._maybe_show_home_farm_hint()
+            self._schedule_home_farm_tick()
+            self._home_farm_tool = getattr(self, "_home_farm_tool", "plant")
+        else:
+            self._cancel_home_farm_tick()
+        self._home_update_status()
+        self._home_redraw()
+
+    def _maybe_show_home_farm_hint(self) -> None:
+        hints = self.app_config.get("seen_hints", {})
+        if isinstance(hints, dict) and hints.get("home_farm_guide"):
+            return
+        self._mark_hint_seen("home_farm_guide")
+        self.root.after(180, self._open_home_farm_guide)
+
+    def _open_home_farm_guide(self) -> None:
+        parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
+        old = getattr(self, "home_farm_guide_win", None)
+        if old and old.winfo_exists():
+            try:
+                old.lift()
+                old.focus_force()
+            except Exception:
+                pass
+            return
+        win = tk.Toplevel(parent)
+        self.home_farm_guide_win = win
+        win.title("经营说明")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        _, frame, scroll_wrap = _pack_guide_scroll_panel(win)
+        tk.Label(frame, text="经营说明", font=PIXEL_FONT, fg="#ffcc66", bg=MENU_BG).pack(anchor=tk.W)
+        # 田园小场景
+        deco = tk.Canvas(frame, width=GUIDE_TEXT_WRAP, height=52, bg=MENU_BG, highlightthickness=0)
+        deco.pack(anchor=tk.W, pady=(4, 8))
+        deco.create_rectangle(0, 28, GUIDE_TEXT_WRAP, 52, fill="#2a3a28", outline="")
+        deco.create_oval(GUIDE_TEXT_WRAP - 48, 4, GUIDE_TEXT_WRAP - 20, 32, fill="#ffe8a0", outline="#ccb060")
+        for i in range(6):
+            deco.create_rectangle(16 + i * 48, 18, 36 + i * 48, 40, fill="#6a9a4a", outline="#4a7a30")
+            deco.create_oval(18 + i * 48, 10, 34 + i * 48, 24, fill="#88cc66", outline="#5a9a40")
+        deco.create_text(12, 44, text="少字多画面", fill="#c8e898", font=("Courier New", 9), anchor="w")
+        tk.Label(
+            frame,
+            text=home_farm.FARM_GUIDE_BODY,
+            font=("Courier New", 9),
+            fg="#c8d8e8",
+            bg=MENU_BG,
+            justify=tk.LEFT,
+            wraplength=GUIDE_TEXT_WRAP,
+        ).pack(anchor=tk.W, pady=(0, 6))
+        grid = tk.Frame(frame, bg=MENU_BG)
+        grid.pack(fill=tk.X)
+        for i, (_icon, title, line) in enumerate(home_farm.FARM_GUIDE_SECTIONS):
+            card = tk.Frame(grid, bg="#243528", padx=6, pady=4, highlightbackground="#3a5040", highlightthickness=1)
+            card.grid(row=i // 2, column=i % 2, sticky=tk.EW, padx=2, pady=2)
+            tk.Label(card, text=title, font=("Courier New", 9, "bold"), fg="#c8e898", bg="#243528").pack(anchor=tk.W)
+            tk.Label(card, text=line, font=("Courier New", 8), fg="#a8c0a0", bg="#243528").pack(anchor=tk.W)
+        grid.columnconfigure(0, weight=1)
+        grid.columnconfigure(1, weight=1)
+        tk.Button(frame, text="知道了", font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG, command=win.destroy).pack(
+            anchor=tk.E, pady=(10, 0)
+        )
+        _finalize_guide_panel_layout(win, scroll_wrap, frame)
+        self._place_panel_popup(win)
+
+    def _home_rebuild_edit_mode_row(self) -> None:
+        host = getattr(self, "_home_edit_mode_host", None)
+        if host is None or not host.winfo_exists():
+            return
+        for w in host.winfo_children():
+            w.destroy()
+        self._home_edit_mode_btns = {}
+        zone = str((self._home_layout or {}).get("zone") or "indoor")
+        if zone != "outdoor":
+            return
+        tk.Label(host, text="室外", font=("Courier New", 9), fg="#8899aa", bg=MENU_BG).pack(side=tk.LEFT)
+        for mode, label in (("decorate", "布置"), ("farm", "经营")):
+            btn = tk.Button(
+                host,
+                text=label,
+                font=PIXEL_FONT,
+                bg=MENU_BG,
+                fg=MENU_FG,
+                command=lambda m=mode: self._home_set_edit_mode(m),
+            )
+            btn.pack(side=tk.LEFT, padx=(6, 0))
+            self._home_edit_mode_btns[mode] = btn
+        cur = getattr(self, "_home_edit_mode", "decorate")
+        for m, btn in self._home_edit_mode_btns.items():
+            on = m == cur
+            btn.config(bg=MENU_ACTIVE if on else MENU_BG, relief=tk.SUNKEN if on else tk.RAISED)
+
+    def _home_rebuild_farm_panel(self) -> None:
+        host = getattr(self, "_home_farm_host", None)
+        if host is None or not host.winfo_exists():
+            return
+        for w in host.winfo_children():
+            w.destroy()
+        self._home_farm_tool_btns = {}
+        zone = str((self._home_layout or {}).get("zone") or "indoor")
+        if zone != "outdoor" or getattr(self, "_home_edit_mode", "decorate") != "farm":
+            return
+        self._ensure_home_farm_grid()
+        panel = tk.Frame(host, bg="#1e2a22", padx=6, pady=4)
+        panel.pack(fill=tk.X)
+        # 工具：单独一行，避免和操作键挤在一起显示不全
+        row_tools = tk.Frame(panel, bg="#1e2a22")
+        row_tools.pack(fill=tk.X, pady=(0, 4))
+        tool_meta = (
+            ("till", "锄", "1", "#8a6848"),
+            ("plant", "种", "2", "#4a8a3a"),
+            ("water", "水", "3", "#3a7aaa"),
+            ("harvest", "收", "4", "#aa8833"),
+            ("chop", "砍", "5", "#6a4a28"),
+            ("fish", "钓", "6", "#2a6a9a"),
+            ("pick", "采", "7", "#9a4a78"),
+        )
+        for tool, mark, key, accent in tool_meta:
+            cell = tk.Frame(row_tools, bg="#243528", padx=1, pady=2)
+            cell.pack(side=tk.LEFT, padx=(0, 3))
+            icon = tk.Canvas(cell, width=26, height=20, bg=accent, highlightthickness=0)
+            icon.pack()
+            icon.create_text(13, 10, text=mark, fill="#ffffff", font=("Courier New", 9, "bold"))
+            btn = tk.Button(
+                cell,
+                text=key,
+                font=("Courier New", 8),
+                bg=MENU_BG,
+                fg=MENU_FG,
+                width=2,
+                command=lambda t=tool: self._home_set_farm_tool(t),
+            )
+            btn.pack()
+            self._home_farm_tool_btns[tool] = btn
+        # 操作键单独一行均分宽度，避免「合成/商店/说明」被裁切
+        row_actions = tk.Frame(panel, bg="#1e2a22")
+        row_actions.pack(fill=tk.X, pady=(0, 2))
+        for col in range(4):
+            row_actions.columnconfigure(col, weight=1, uniform="farm_act")
+        for col, (text, cmd, bg) in enumerate(
+            (
+                ("确定", self._home_farm_use_at_pet, "#445566"),
+                ("合成", self._open_home_craft, MENU_ACTIVE),
+                ("商店", self._open_home_farm_shop, "#445566"),
+                ("说明", self._open_home_farm_guide, "#3a4a38"),
+            )
+        ):
+            tk.Button(
+                row_actions,
+                text=text,
+                font=("Courier New", 8),
+                bg=bg,
+                fg=MENU_FG,
+                padx=2,
+                command=cmd,
+            ).grid(row=0, column=col, sticky="ew", padx=(0, 3 if col < 3 else 0))
+        tk.Label(
+            panel,
+            text="数字选工具 → Enter/空格执行",
+            font=("Courier New", 8),
+            fg="#a8c888",
+            bg="#1e2a22",
+            anchor="w",
+        ).pack(fill=tk.X, pady=(0, 2))
+        row_seeds = tk.Frame(panel, bg="#1e2a22")
+        row_seeds.pack(fill=tk.X)
+        tk.Label(row_seeds, text="种子", font=("Courier New", 9), fg="#c8e898", bg="#1e2a22").pack(side=tk.LEFT)
+        items = self.wallet.get("items") or {}
+        seed_colors = {"seed_wheat": "#c8b070", "seed_berry": "#c06080", "seed_corn": "#e0c040"}
+        for seed, label in (
+            ("seed_wheat", "麦"),
+            ("seed_berry", "莓"),
+            ("seed_corn", "玉"),
+        ):
+            n = int(items.get(seed, 0))
+            cell = tk.Frame(row_seeds, bg="#243528", padx=2, pady=1)
+            cell.pack(side=tk.LEFT, padx=(4, 0))
+            sw = tk.Canvas(cell, width=16, height=16, bg=seed_colors.get(seed, "#888"), highlightthickness=0)
+            sw.pack(side=tk.LEFT, padx=(0, 2))
+            sw.create_oval(3, 3, 13, 13, fill="#fff8e0", outline="")
+            btn = tk.Button(
+                cell,
+                text=f"{label}{n}",
+                font=("Courier New", 8),
+                bg=MENU_BG,
+                fg=MENU_FG,
+                command=lambda s=seed: self._home_set_farm_seed(s),
+            )
+            btn.pack(side=tk.LEFT)
+            self._home_farm_tool_btns[f"seed:{seed}"] = btn
+        hint = home_farm.FARM_TOOL_HINTS.get(getattr(self, "_home_farm_tool", "plant"), "")
+        tk.Label(
+            row_seeds,
+            text=hint,
+            font=("Courier New", 8),
+            fg="#88aa88",
+            bg="#1e2a22",
+            wraplength=200,
+            justify=tk.LEFT,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        self._home_sync_farm_tool_highlight()
+        # 内容变高后刷新左侧滚动区域
+        try:
+            wrap = getattr(self, "_home_scroll_wrap", None)
+            canvas = getattr(self, "_home_scroll_canvas", None)
+            if wrap is not None and canvas is not None and canvas.winfo_exists():
+                wrap.update_idletasks()
+                canvas.configure(scrollregion=canvas.bbox("all"))
+        except Exception:
+            pass
+
+    def _home_set_farm_tool(self, tool: str) -> None:
+        self._home_farm_tool = tool
+        self._home_rebuild_farm_panel()
+        self._home_update_status()
+        self._home_redraw()
+
+    def _home_set_farm_seed(self, seed: str) -> None:
+        self._home_farm_seed = seed
+        self._home_farm_tool = "plant"
+        self._home_sync_farm_tool_highlight()
+        self._home_update_status()
+
+    def _home_sync_farm_tool_highlight(self) -> None:
+        tool = getattr(self, "_home_farm_tool", "plant")
+        seed = getattr(self, "_home_farm_seed", "seed_wheat")
+        for k, btn in getattr(self, "_home_farm_tool_btns", {}).items():
+            if not btn.winfo_exists():
+                continue
+            if k.startswith("seed:"):
+                on = k == f"seed:{seed}" and tool == "plant"
+            else:
+                on = k == tool
+            btn.config(bg=MENU_ACTIVE if on else MENU_BG, relief=tk.SUNKEN if on else tk.RAISED)
+
+    def _schedule_home_farm_tick(self) -> None:
+        self._cancel_home_farm_tick()
+
+        def tick() -> None:
+            self._home_farm_tick_job = None
+            if getattr(self, "_home_edit_mode", "") != "farm":
+                return
+            layout = self._home_layout
+            if layout and isinstance(layout.get("farm"), list):
+                home_farm.advance_farm(layout["farm"])
+                tiles = layout.get("outdoor_tiles") or []
+                regrow = layout.setdefault("tree_regrow", [])
+                if isinstance(regrow, list) and tiles:
+                    n = home_farm.process_tree_regrow(
+                        tiles,
+                        regrow,
+                        cell_kind=home_room.cell_kind,
+                        try_place=home_room.try_place,
+                    )
+                    if n:
+                        self._show_toast(f"有 {n} 棵树重新长出来了", "#88cc88", duration_ms=1600)
+                self._home_fish_tick()
+                try:
+                    home_room.save_layout(HOME_LAYOUT_FILE, layout)
+                except Exception:
+                    pass
+            if self.home_win and self.home_win.winfo_exists():
+                self._home_redraw()
+                self._home_farm_tick_job = self.root.after(2000, tick)
+
+        self._home_farm_tick_job = self.root.after(2000, tick)
+
+    def _cancel_home_farm_tick(self) -> None:
+        job = getattr(self, "_home_farm_tick_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+        self._home_farm_tick_job = None
+
+    def _home_farm_use_at_pet(self) -> None:
+        if not self._home_layout:
+            return
+        gx = int(self._home_layout.get("pet_x") or 0)
+        gy = int(self._home_layout.get("pet_y") or 0)
+        if self._home_farm_act_at(gx, gy):
+            self._home_redraw()
+
+    def _home_farm_act_at(self, gx: int, gy: int, *, force_till: bool = False) -> bool:
+        if not self._home_layout:
+            return False
+        # 钓鱼进行中：任意点一下当作「收杆」
+        fish = getattr(self, "_home_fish", None)
+        if fish and str(fish.get("phase") or "") in ("wait", "bite"):
+            return self._home_fish_try_catch()
+
+        farm = self._ensure_home_farm_grid()
+        tiles = self._home_layout.get("outdoor_tiles") or self._home_layout.get("tiles") or []
+        tool = "till" if force_till else getattr(self, "_home_farm_tool", "plant")
+        kind = home_room.cell_kind(tiles, gx, gy)
+
+        # 采花：允许点在阻挡格上（站旁边操作）
+        # 砍树 / 钓鱼：点目标四周可站立的格子（不点树/水面本身）
+        if tool == "pick":
+            self._home_move_near_for_tool(gx, gy, kind)
+        elif tool == "chop":
+            if kind == "tree":
+                self._show_toast("请点在树四周的格子上砍树", "#ff8866", duration_ms=1400)
+                return False
+            if home_room.cell_blocks(tiles, gx, gy):
+                self._show_toast("此处无法站立砍树", "#ff8866", duration_ms=1200)
+                return False
+            ox = int(self._home_layout.get("pet_x") or 0)
+            oy = int(self._home_layout.get("pet_y") or 0)
+            if (ox, oy) != (gx, gy):
+                self._home_layout["pet_x"] = gx
+                self._home_layout["pet_y"] = gy
+                self._home_pet_dir = self._home_dir_from_delta(gx - ox, gy - oy)
+                self._home_pose = "walk"
+        elif tool == "fish":
+            if kind == "water":
+                self._show_toast("请点在水面四周的格子上钓鱼", "#ff8866", duration_ms=1400)
+                return False
+            if home_room.cell_blocks(tiles, gx, gy):
+                self._show_toast("此处无法站立钓鱼", "#ff8866", duration_ms=1200)
+                return False
+            ox = int(self._home_layout.get("pet_x") or 0)
+            oy = int(self._home_layout.get("pet_y") or 0)
+            if (ox, oy) != (gx, gy):
+                self._home_layout["pet_x"] = gx
+                self._home_layout["pet_y"] = gy
+                self._home_pet_dir = self._home_dir_from_delta(gx - ox, gy - oy)
+                self._home_pose = "walk"
+        elif not home_farm.can_farm_at(tiles, gx, gy, home_room.cell_blocks):
+            self._show_toast("此处有阻挡，无法经营", "#ff8866", duration_ms=1200)
+            return False
+        else:
+            if not home_room.cell_blocks(tiles, gx, gy):
+                ox = int(self._home_layout.get("pet_x") or 0)
+                oy = int(self._home_layout.get("pet_y") or 0)
+                if (ox, oy) != (gx, gy):
+                    self._home_layout["pet_x"] = gx
+                    self._home_layout["pet_y"] = gy
+                    self._home_pet_dir = self._home_dir_from_delta(gx - ox, gy - oy)
+                    self._home_pose = "walk"
+
+        ok, msg = False, ""
+        if tool == "till":
+            till_hits = self._home_layout.setdefault("till_hits", {})
+            if not isinstance(till_hits, dict):
+                till_hits = {}
+                self._home_layout["till_hits"] = till_hits
+            ok, msg = home_farm.try_till(
+                farm,
+                tiles,
+                gx,
+                gy,
+                till_hits=till_hits,
+                cell_kind=home_room.cell_kind,
+                try_place=home_room.try_place,
+                clear_at=home_room.clear_furniture_at,
+            )
+        elif tool == "plant":
+            ok, msg = home_farm.try_plant(
+                farm,
+                self.wallet,
+                tiles,
+                gx,
+                gy,
+                getattr(self, "_home_farm_seed", "seed_wheat"),
+                cell_kind=home_room.cell_kind,
+            )
+        elif tool == "water":
+            ok, msg = home_farm.try_water(farm, gx, gy)
+        elif tool == "harvest":
+            ok, msg = home_farm.try_harvest(farm, self.wallet, gx, gy)
+        elif tool == "chop":
+            chop_jobs = self._home_layout.setdefault("chop_jobs", {})
+            tree_regrow = self._home_layout.setdefault("tree_regrow", [])
+            if not isinstance(chop_jobs, dict):
+                chop_jobs = {}
+                self._home_layout["chop_jobs"] = chop_jobs
+            if not isinstance(tree_regrow, list):
+                tree_regrow = []
+                self._home_layout["tree_regrow"] = tree_regrow
+            tree = home_farm.find_adjacent_tree(
+                tiles, gx, gy, home_room.cell_kind, chop_jobs=chop_jobs
+            )
+            if tree is None:
+                self._show_toast("旁边没有树，无法砍树", "#ff8866", duration_ms=1400)
+                return False
+            tx, ty = tree
+            self._home_pet_dir = self._home_dir_from_delta(tx - gx, ty - gy)
+            ok, msg, extra = home_farm.try_chop_start_or_hit(
+                tiles,
+                self.wallet,
+                tx,
+                ty,
+                chop_jobs=chop_jobs,
+                tree_regrow=tree_regrow,
+                cell_kind=home_room.cell_kind,
+                clear_at=home_room.clear_furniture_at,
+                try_place=home_room.try_place,
+                rng=random,
+            )
+            if ok:
+                gx, gy = tx, ty
+            if extra and extra.get("dice"):
+                self._show_toast(f"掷出 {extra['dice']} 点！", "#ffcc66", duration_ms=1400)
+        elif tool == "fish":
+            return self._home_farm_fish_start(gx, gy)
+        elif tool == "pick":
+            # 室内花瓶插/拔花 / 室外采花
+            zone = str(self._home_layout.get("zone") or "outdoor")
+            if zone == "indoor":
+                indoor = self._home_layout.get("indoor_tiles") or tiles
+                if home_room.vase_is_filled(indoor, gx, gy):
+                    ok, msg = home_farm.try_take_flower_from_vase(
+                        indoor,
+                        self.wallet,
+                        gx,
+                        gy,
+                        cell_kind=home_room.cell_kind,
+                        vase_filled=home_room.vase_is_filled,
+                        empty_vase=home_room.empty_vase_at,
+                        vase_color=str(self._home_layout.get("furn_color") or home_room.HOME_FURN_DEFAULT),
+                    )
+                else:
+                    ok, msg = home_farm.try_put_flower_in_vase(
+                        indoor,
+                        self.wallet,
+                        gx,
+                        gy,
+                        cell_kind=home_room.cell_kind,
+                        make_filled_vase=home_room.fill_vase_at,
+                        vase_filled=home_room.vase_is_filled,
+                    )
+            else:
+                ok, msg = home_farm.try_pick_flower(
+                    tiles,
+                    self.wallet,
+                    gx,
+                    gy,
+                    cell_kind=home_room.cell_kind,
+                    clear_at=home_room.clear_furniture_at,
+                    try_place=home_room.try_place,
+                )
+        if ok:
+            self._persist_wallet()
+            self._home_rebuild_farm_panel()
+            self._home_play_farm_tool_fx(tool, gx, gy)
+            try:
+                home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+            except Exception:
+                pass
+            if self.panel_win and self.panel_win.winfo_exists() and self.panel_backpack_open:
+                self._refresh_panel_backpack()
+            if tool == "plant":
+                self._note_achievement_flag("farm_plant")
+            elif tool == "harvest":
+                self._note_achievement_flag("farm_harvest")
+            elif tool == "chop" and ("木材" in (msg or "") or "树倒了" in (msg or "")):
+                self._note_achievement_flag("farm_chop")
+            if msg:
+                self._show_toast(msg, "#88ffcc", duration_ms=1400)
+        elif msg:
+            self._show_toast(msg, "#ff8866", duration_ms=1400)
+        return ok
+
+    def _home_move_near_for_tool(self, gx: int, gy: int, kind: str | None) -> None:
+        """对水面/树等阻挡格：站到相邻可走格。"""
+        if not self._home_layout:
+            return
+        tiles = self._home_layout.get("outdoor_tiles") or self._home_layout.get("tiles") or []
+        ox = int(self._home_layout.get("pet_x") or 0)
+        oy = int(self._home_layout.get("pet_y") or 0)
+        if abs(ox - gx) + abs(oy - gy) <= 1 and not home_room.cell_blocks(tiles, ox, oy):
+            return
+        candidates = [(gx + dx, gy + dy) for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0), (0, 0))]
+        for nx, ny in candidates:
+            if home_farm.can_farm_at(tiles, nx, ny, home_room.cell_blocks) or (
+                0 <= ny < len(tiles) and 0 <= nx < len(tiles[0]) and not home_room.cell_blocks(tiles, nx, ny)
+            ):
+                if (nx, ny) == (gx, gy) and kind in ("water", "tree"):
+                    continue
+                self._home_layout["pet_x"] = nx
+                self._home_layout["pet_y"] = ny
+                self._home_pet_dir = self._home_dir_from_delta(nx - ox, ny - oy)
+                self._home_pose = "walk"
+                return
+
+    def _home_farm_fish_start(self, gx: int, gy: int) -> bool:
+        tiles = (self._home_layout or {}).get("outdoor_tiles") or (self._home_layout or {}).get("tiles") or []
+        if home_room.cell_kind(tiles, gx, gy) == "water":
+            self._show_toast("请点在水面四周的格子上钓鱼", "#ff8866", duration_ms=1400)
+            return False
+        if home_room.cell_blocks(tiles, gx, gy):
+            self._show_toast("此处无法站立钓鱼", "#ff8866", duration_ms=1200)
+            return False
+        water = home_farm.find_adjacent_water(tiles, gx, gy, home_room.cell_kind)
+        if water is None:
+            self._show_toast("旁边没有水面，无法钓鱼", "#ff8866", duration_ms=1400)
+            return False
+        wx, wy = water
+        # 面向水面
+        ox = int((self._home_layout or {}).get("pet_x") or gx)
+        oy = int((self._home_layout or {}).get("pet_y") or gy)
+        if (ox, oy) != (gx, gy) and self._home_layout is not None:
+            self._home_layout["pet_x"] = gx
+            self._home_layout["pet_y"] = gy
+        self._home_pet_dir = self._home_dir_from_delta(wx - gx, wy - gy)
+        wait = random.uniform(1.6, 4.2)
+        now = time.time()
+        self._home_fish = {
+            "x": int(wx),
+            "y": int(wy),
+            "shore_x": int(gx),
+            "shore_y": int(gy),
+            "phase": "wait",
+            "bite_at": now + wait,
+            "window_end": 0.0,
+        }
+        self._home_play_farm_tool_fx("fish", wx, wy)
+        self._show_toast("抛竿……等待上钩（上钩时再点一下/空格）", "#88ccff", duration_ms=2200)
+        return True
+
+    def _home_fish_tick(self) -> None:
+        fish = getattr(self, "_home_fish", None)
+        if not fish:
+            return
+        now = time.time()
+        phase = str(fish.get("phase") or "")
+        if phase == "wait" and now >= float(fish.get("bite_at") or 0):
+            fish["phase"] = "bite"
+            fish["window_end"] = now + 0.95
+            self._show_toast("上钩了！！快按！", "#ffe088", duration_ms=900)
+            self._home_redraw()
+        elif phase == "bite" and now > float(fish.get("window_end") or 0):
+            self._home_fish = None
+            self._show_toast("跑掉了……", "#ff8866", duration_ms=1400)
+            self._home_redraw()
+
+    def _home_fish_try_catch(self) -> bool:
+        fish = getattr(self, "_home_fish", None)
+        if not fish:
+            return False
+        now = time.time()
+        phase = str(fish.get("phase") or "")
+        gx, gy = int(fish.get("x") or 0), int(fish.get("y") or 0)
+        self._home_fish = None
+        if phase != "bite" or now > float(fish.get("window_end") or 0):
+            self._show_toast("还没上钩 / 错过了时机", "#ff8866", duration_ms=1400)
+            return False
+        ok, msg, kind = home_farm.roll_fish_result(random)
+        if kind == "fish":
+            items = self.wallet.setdefault("items", {})
+            items["fish"] = int(items.get("fish", 0)) + 1
+            self._persist_wallet()
+        elif kind == "coin":
+            self.grant_coins(2, reason="钓到金币！", toast=False)
+        self._home_play_farm_tool_fx("fish", gx, gy)
+        self._home_rebuild_farm_panel()
+        self._show_toast(msg, "#88ffcc" if ok else "#ff8866", duration_ms=1600)
+        if ok:
+            self._note_achievement_flag("farm_fish")
+        return ok
+
+    def _home_play_farm_tool_fx(self, tool: str, gx: int, gy: int) -> None:
+        """小人动作 + 格子特效（不同工具不同画面）+ 对应音效。"""
+        sfx_key = {
+            "till": "till",
+            "plant": "plant",
+            "water": "water",
+            "harvest": "harvest",
+            "chop": "chop",
+            "fish": "fish",
+            "pick": "pick",
+        }.get(tool)
+        if sfx_key:
+            _play_ui_sfx(sfx_key, volume=0.52)
+        job = getattr(self, "_home_farm_fx_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+        # 取消长睡姿任务，改用短农活姿势
+        if self._home_pose_job:
+            try:
+                self.root.after_cancel(self._home_pose_job)
+            except Exception:
+                pass
+            self._home_pose_job = None
+        self._home_farm_fx = {
+            "tool": tool,
+            "x": int(gx),
+            "y": int(gy),
+            "phase": 0,
+            "until": int(time.time() * 1000) + 520,
+        }
+        # 播种/收获蹲一下；锄地/浇水保持站立挥动感
+        self._home_pose = "squat" if tool in ("plant", "harvest") else "walk"
+        self._home_redraw()
+
+        def tick(phase: int = 1) -> None:
+            self._home_farm_fx_job = None
+            fx = getattr(self, "_home_farm_fx", None)
+            if not fx:
+                return
+            if phase < 3 and int(time.time() * 1000) < int(fx.get("until") or 0):
+                fx["phase"] = phase
+                self._home_redraw()
+                self._home_farm_fx_job = self.root.after(140, lambda: tick(phase + 1))
+                return
+            self._home_farm_fx = None
+            if self._home_pose in ("squat", "walk"):
+                self._home_pose = "stand"
+            self._home_redraw()
+
+        self._home_farm_fx_job = self.root.after(120, lambda: tick(1))
+
+    def _open_home_farm_shop(self) -> None:
+        _play_ui_sfx("shop", volume=0.58)
+        parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
+        win = tk.Toplevel(parent)
+        win.title("经营商店")
+        self._apply_window_layer(win)
+        win.configure(bg="#1e2830")
+        frame = tk.Frame(win, bg="#1e2830", padx=12, pady=10)
+        frame.pack()
+        banner = tk.Canvas(frame, width=320, height=44, bg="#1e2830", highlightthickness=0)
+        banner.pack(anchor=tk.W, pady=(0, 6))
+        banner.create_rectangle(0, 20, 320, 44, fill="#3a3020", outline="")
+        banner.create_oval(12, 6, 36, 30, fill="#ffcc66", outline="#cc9933")
+        banner.create_text(48, 16, text="商店", fill=THEME_PINK, font=PIXEL_FONT, anchor="w")
+        banner.create_text(
+            48,
+            32,
+            text=f"金币 {int(self.wallet.get('coins') or 0)}",
+            fill="#ffcc66",
+            font=("Courier New", 9),
+            anchor="w",
+        )
+        buy_colors = {
+            "seed_wheat": "#c8b070",
+            "seed_berry": "#c06080",
+            "seed_corn": "#e0c040",
+            "wood": "#8a6848",
+        }
+        grid = tk.Frame(frame, bg="#1e2830")
+        grid.pack(fill=tk.X)
+        for i, (item_id, price) in enumerate(home_farm.SHOP_PRICES.items()):
+            label = home_farm.ITEM_LABELS.get(item_id, item_id)
+
+            def buy(iid=item_id, lab=label, p=price) -> None:
+                ok, msg = home_farm.buy_item(self.wallet, iid, 1)
+                if ok:
+                    self._persist_wallet()
+                    self._home_rebuild_farm_panel()
+                    self._home_update_status()
+                    self._show_toast(msg, "#88ffcc")
+                    try:
+                        win.destroy()
+                    except Exception:
+                        pass
+                    self._open_home_farm_shop()
+                else:
+                    self._show_toast(msg, "#ff8866")
+
+            card = tk.Frame(grid, bg="#2a3840", padx=6, pady=6, highlightbackground="#4a6070", highlightthickness=1)
+            card.grid(row=i // 2, column=i % 2, sticky=tk.EW, padx=3, pady=3)
+            sw = tk.Canvas(card, width=28, height=28, bg=buy_colors.get(item_id, "#556677"), highlightthickness=0)
+            sw.pack(side=tk.LEFT, padx=(0, 6))
+            sw.create_oval(6, 6, 22, 22, fill="#fff8e0", outline="")
+            mid = tk.Frame(card, bg="#2a3840")
+            mid.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            tk.Label(mid, text=label, font=("Courier New", 9), fg=MENU_FG, bg="#2a3840").pack(anchor=tk.W)
+            tk.Label(mid, text=f"{price} 币", font=("Courier New", 8), fg="#ffcc66", bg="#2a3840").pack(anchor=tk.W)
+            tk.Button(card, text="买", font=("Courier New", 8), bg=MENU_ACTIVE, fg=MENU_FG, command=buy).pack(
+                side=tk.RIGHT
+            )
+        grid.columnconfigure(0, weight=1)
+        grid.columnconfigure(1, weight=1)
+        # 售出
+        sell_host = tk.Frame(frame, bg="#1e2830")
+        sell_host.pack(fill=tk.X, pady=(8, 0))
+        tk.Label(sell_host, text="售出", font=("Courier New", 9), fg="#8899aa", bg="#1e2830").pack(anchor=tk.W)
+        for item_id, price in home_farm.SELL_PRICES.items():
+            have = int((self.wallet.get("items") or {}).get(item_id, 0))
+            if have <= 0:
+                continue
+            label = home_farm.ITEM_LABELS.get(item_id, item_id)
+
+            def sell(iid=item_id) -> None:
+                ok, msg = home_farm.sell_item(self.wallet, iid, 1)
+                if ok:
+                    _play_ui_sfx("money", volume=0.62)
+                    self._persist_wallet()
+                    self._home_rebuild_farm_panel()
+                    self._home_update_status()
+                    self._show_toast(msg, "#ffcc66")
+                    try:
+                        win.destroy()
+                    except Exception:
+                        pass
+                    self._open_home_farm_shop()
+                else:
+                    self._show_toast(msg, "#ff8866")
+
+            row = tk.Frame(sell_host, bg="#2a3840", padx=6, pady=3)
+            row.pack(fill=tk.X, pady=2)
+            tk.Label(
+                row,
+                text=f"{label} ×{have}",
+                font=("Courier New", 9),
+                fg=MENU_FG,
+                bg="#2a3840",
+            ).pack(side=tk.LEFT)
+            tk.Label(row, text=f"+{price}", font=("Courier New", 8), fg="#ffcc66", bg="#2a3840").pack(
+                side=tk.LEFT, padx=(8, 0)
+            )
+            tk.Button(row, text="卖", font=("Courier New", 8), bg="#553333", fg=MENU_FG, command=sell).pack(
+                side=tk.RIGHT
+            )
+        tk.Button(frame, text="关闭", command=win.destroy, font=PIXEL_FONT, bg="#555555", fg=MENU_FG).pack(pady=(8, 0))
+        self._place_panel_popup(win)
+
+    def _open_home_craft(self) -> None:
+        _play_ui_sfx("craft", volume=0.58)
+        parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
+        win = tk.Toplevel(parent)
+        win.title("合成台")
+        self._apply_window_layer(win)
+        win.configure(bg="#1e2830")
+        frame = tk.Frame(win, bg="#1e2830", padx=12, pady=10)
+        frame.pack()
+        # 工作台装饰画面
+        bench = tk.Canvas(frame, width=360, height=56, bg="#1e2830", highlightthickness=0)
+        bench.pack(anchor=tk.W, pady=(0, 6))
+        bench.create_rectangle(0, 28, 360, 56, fill="#5a4030", outline="#3a2818")
+        bench.create_rectangle(8, 18, 352, 30, fill="#8a6848", outline="#6a4830")
+        for i in range(6):
+            bench.create_rectangle(20 + i * 56, 8, 48 + i * 56, 22, fill="#6a8090", outline="#445566")
+        bench.create_text(180, 42, text="⚒ 合成台", fill="#ffe8c8", font=("Courier New", 10, "bold"))
+        bench.create_oval(300, 6, 318, 24, fill="#ffcc66", outline="#cc9933")  # 小灯
+        tk.Label(
+            frame,
+            text=home_farm.FARM_DISCLAIMER,
+            font=("Courier New", 8),
+            fg="#ffcc66",
+            bg="#1e2830",
+        ).pack(anchor=tk.W, pady=(0, 6))
+        crafted = self._home_layout.setdefault("crafted_furniture", []) if self._home_layout else []
+        tip_lbl = tk.Label(frame, text="", font=("Courier New", 9), fg="#88ffcc", bg="#1e2830")
+        tip_lbl.pack(anchor=tk.W)
+
+        for recipe in home_farm.CRAFT_RECIPES:
+            rid = recipe["id"]
+            can = home_farm.can_afford_recipe(self.wallet, recipe)
+            already = recipe["result"][0] == "furniture" and recipe["result"][1] in crafted
+            card = tk.Frame(frame, bg="#2a3840", padx=8, pady=6, highlightbackground="#4a6070", highlightthickness=1)
+            card.pack(fill=tk.X, pady=3)
+            mark = {"bread": "面", "berry_snack": "莓", "corn_food": "玉", "juice": "汁", "sofa": "沙", "shelf": "柜"}.get(
+                rid, "合"
+            )
+            left = tk.Frame(card, bg="#2a3840")
+            left.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            head = tk.Frame(left, bg="#2a3840")
+            head.pack(anchor=tk.W)
+            tk.Label(head, text=mark, font=("Courier New", 10, "bold"), fg="#ffe8a0", bg="#445566", width=3).pack(
+                side=tk.LEFT, padx=(0, 6)
+            )
+            tk.Label(
+                head,
+                text=str(recipe.get("label") or rid),
+                font=PIXEL_FONT,
+                fg="#e8f0ff" if can else "#667788",
+                bg="#2a3840",
+            ).pack(side=tk.LEFT)
+            costs = " · ".join(
+                f"{home_farm.ITEM_LABELS.get(k, k)}×{v}" for k, v in (recipe.get("costs") or {}).items()
+            )
+            tk.Label(
+                left,
+                text=f"{recipe.get('desc') or ''}\n材料：{costs}",
+                font=("Courier New", 8),
+                fg="#99aabb",
+                bg="#2a3840",
+                justify=tk.LEFT,
+            ).pack(anchor=tk.W, pady=(2, 0))
+            if already:
+                tk.Label(left, text="已解锁", font=("Courier New", 8), fg="#88ffcc", bg="#2a3840").pack(anchor=tk.W)
+
+            def do_craft(r=rid, card_ref=card) -> None:
+                if not self._home_layout:
+                    return
+                crafted_list = self._home_layout.setdefault("crafted_furniture", [])
+                ok, msg, payload = home_farm.try_craft(self.wallet, crafted_list, r)
+                if not ok:
+                    tip_lbl.config(text=msg, fg="#ff8866")
+                    self._show_toast(msg, "#ff8866")
+                    return
+                self._persist_wallet()
+                if payload and payload[0] == "food":
+                    self._add_food_to_inventory(payload[1], 1)
+                try:
+                    home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+                except Exception:
+                    pass
+                self._home_rebuild_brushes()
+                self._home_rebuild_farm_panel()
+                tip_lbl.config(text=f"✦ {msg}", fg="#88ffcc")
+                try:
+                    card_ref.configure(bg="#3a5848", highlightbackground="#88ffcc")
+                except Exception:
+                    pass
+                self._show_toast(msg, "#88ffcc")
+                self._note_achievement_flag("farm_craft")
+                # 闪一下再刷新列表
+                def refresh() -> None:
+                    try:
+                        win.destroy()
+                    except Exception:
+                        pass
+                    self._open_home_craft()
+
+                self.root.after(380, refresh)
+
+            state = tk.DISABLED if already else tk.NORMAL
+            tk.Button(
+                card,
+                text="合成",
+                font=("Courier New", 9),
+                bg=MENU_ACTIVE if can and not already else "#444455",
+                fg=MENU_FG,
+                state=state,
+                command=do_craft,
+            ).pack(side=tk.RIGHT, padx=(8, 0))
+        tk.Button(frame, text="关闭", command=win.destroy, font=PIXEL_FONT, bg="#555555", fg=MENU_FG).pack(
+            pady=(10, 0), anchor=tk.E
+        )
+        self._place_panel_popup(win)
+
+
+    def _home_bind_canvas_paint(self, canvas: tk.Canvas) -> None:
+        """左键铺放/拖画；右键上色或删除；拖右键连擦。"""
+
+        def on_press(event: tk.Event) -> None:
+            self._home_drag_last = None
+            right = int(getattr(event, "num", 1) or 1) == 3
+            self._home_paint_at_event(event, right=right, dragging=False)
+
+        def on_drag(event: tk.Event, *, erase: bool) -> None:
+            self._home_paint_at_event(event, right=erase, dragging=True, force_erase=erase)
+
+        def on_release(_event: tk.Event) -> None:
+            self._home_drag_last = None
+
+        canvas.bind("<Button-1>", on_press)
+        canvas.bind("<Button-3>", on_press)
+        canvas.bind("<B1-Motion>", lambda e: on_drag(e, erase=False))
+        canvas.bind("<B3-Motion>", lambda e: on_drag(e, erase=True))
+        canvas.bind("<ButtonRelease-1>", on_release)
+        canvas.bind("<ButtonRelease-3>", on_release)
+
+    def _home_event_cell(self, event: tk.Event) -> tuple[int, int] | None:
+        tile = home_room.HOME_TILE
+        wall = 18
+        gx = int(event.x // tile)
+        gy = int((event.y - wall) // tile)
+        if gy < 0 or not self._home_layout:
+            return None
+        cols = int(self._home_layout["cols"])
+        rows = int(self._home_layout["rows"])
+        if gx < 0 or gy < 0 or gx >= cols or gy >= rows:
+            return None
+        return gx, gy
+
+    def _home_paint_at_event(
+        self,
+        event: tk.Event,
+        *,
+        right: bool,
+        dragging: bool,
+        force_erase: bool = False,
+    ) -> None:
+        if not self._home_layout or self._home_pose in ("sleep", "squat"):
+            return
+        cell = self._home_event_cell(event)
+        if cell is None:
+            return
+        gx, gy = cell
+        if dragging and self._home_drag_last == (gx, gy):
+            return
+        self._home_drag_last = (gx, gy)
+
+        # 经营模式：种田操作（右键/拖右键=锄地）
+        if (
+            getattr(self, "_home_edit_mode", "decorate") == "farm"
+            and str(self._home_layout.get("zone") or "") == "outdoor"
+        ):
+            changed = self._home_farm_act_at(gx, gy, force_till=bool(force_erase or right))
+            if changed:
+                try:
+                    home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+                except Exception:
+                    pass
+                self._home_redraw()
+            return
+
+        brush = str(self._home_brush or "erase")
+        color = str(self._home_layout.get("furn_color") or home_room.HOME_FURN_DEFAULT)
+        changed = False
+        # 布置模式：点花瓶 — 有花则拔回背包；无花且有采下的花则插入
+        if (
+            not right
+            and not force_erase
+            and home_room.cell_kind(self._home_layout["tiles"], gx, gy) == "vase"
+        ):
+            tiles = self._home_layout["tiles"]
+            if home_room.vase_is_filled(tiles, gx, gy):
+                ok, msg = home_farm.try_take_flower_from_vase(
+                    tiles,
+                    self.wallet,
+                    gx,
+                    gy,
+                    cell_kind=home_room.cell_kind,
+                    vase_filled=home_room.vase_is_filled,
+                    empty_vase=home_room.empty_vase_at,
+                    vase_color=str(self._home_layout.get("furn_color") or home_room.HOME_FURN_DEFAULT),
+                )
+            elif int((self.wallet.get("items") or {}).get("flower_cut") or 0) > 0:
+                ok, msg = home_farm.try_put_flower_in_vase(
+                    tiles,
+                    self.wallet,
+                    gx,
+                    gy,
+                    cell_kind=home_room.cell_kind,
+                    make_filled_vase=home_room.fill_vase_at,
+                    vase_filled=home_room.vase_is_filled,
+                )
+            else:
+                self._show_toast("背包没有采下的花（室外经营·采）", "#ff8866", duration_ms=1600)
+                return
+            if ok:
+                self._persist_wallet()
+                self._show_toast(msg, "#88ffcc", duration_ms=1400)
+                self._home_redraw()
+                try:
+                    home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+                except Exception:
+                    pass
+                if self.panel_win and self.panel_win.winfo_exists() and self.panel_backpack_open:
+                    self._refresh_panel_backpack()
+            elif msg:
+                self._show_toast(msg, "#ff8866", duration_ms=1200)
+            return
+        if force_erase or (right and brush == "erase"):
+            changed = home_room.try_place(self._home_layout["tiles"], "erase", gx, gy)
+        elif right:
+            # 右键上色：选中背景笔刷时改该格背景色；否则改上层家具/地物色
+            if brush in home_room.BG_MATERIAL_KINDS:
+                changed = home_room.recolor_ground_at(self._home_layout["tiles"], gx, gy, color)
+            else:
+                changed = home_room.recolor_furniture_at(self._home_layout["tiles"], gx, gy, color)
+        else:
+            # 合成限定家具未解锁则不可放
+            crafted = self._home_layout.get("crafted_furniture") or []
+            if brush != "erase" and not home_farm.furniture_unlocked(brush, crafted):
+                self._show_toast("尚未解锁该家具（去经营·合成台）", "#ff8866", duration_ms=1800)
+                return
+            if (
+                str(self._home_layout.get("zone") or "") == "outdoor"
+                and home_room.is_outdoor_stack_prop(brush)
+            ):
+                meta = home_room.furniture_meta(brush)
+                fw = int(meta[2]) if meta else 1
+                fh = int(meta[3]) if meta else 1
+                missing = False
+                for dy in range(fh):
+                    for dx in range(fw):
+                        if not home_room.cell_ground_kind(self._home_layout["tiles"][gy + dy][gx + dx]):
+                            missing = True
+                            break
+                    if missing:
+                        break
+                if missing:
+                    self._show_toast("请先铺背景（草地/土地/水面/岩石）再放素材", "#ff8866", duration_ms=1800)
+                    return
+            changed = home_room.try_place(self._home_layout["tiles"], brush, gx, gy, color=color)
+            if not changed and home_room.is_outdoor_stack_prop(brush):
+                self._show_toast("请先铺背景再放素材", "#ff8866", duration_ms=1600)
+                return
+        if not changed and not right:
+            return
+        if changed:
+            self._home_nudge_pet_if_blocked()
+            self._home_redraw()
+            try:
+                home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+            except Exception:
+                pass
+
+    def _home_nudge_pet_if_blocked(self) -> None:
+        if not self._home_layout:
+            return
+        cols = int(self._home_layout["cols"])
+        rows = int(self._home_layout["rows"])
+        tiles = self._home_layout["tiles"]
+        px = int(self._home_layout["pet_x"])
+        py = int(self._home_layout["pet_y"])
+        if not home_room.cell_blocks(tiles, px, py):
+            return
+        for yy in range(rows):
+            for xx in range(cols):
+                if not home_room.cell_blocks(tiles, xx, yy):
+                    self._home_layout["pet_x"] = xx
+                    self._home_layout["pet_y"] = yy
+                    return
+
+    def _home_apply_grid_size(self) -> None:
+        if not self._home_layout:
+            return
+        try:
+            cols = int(str(self._home_cols_var.get()).strip())
+            rows = int(str(self._home_rows_var.get()).strip())
+        except Exception:
+            self._show_toast("格子宽高请填数字", "#ff8866")
+            return
+        cols, rows = home_room.clamp_grid_size(cols, rows)
+        self._home_cols_var.set(str(cols))
+        self._home_rows_var.set(str(rows))
+        if cols == int(self._home_layout.get("cols") or 0) and rows == int(self._home_layout.get("rows") or 0):
+            # 仍强制对齐数组尺寸
+            if (
+                len(self._home_layout.get("tiles") or []) == rows
+                and self._home_layout["tiles"]
+                and len(self._home_layout["tiles"][0]) == cols
+            ):
+                self._show_toast("格子尺寸未变", "#88ccff")
+                return
+        home_room.resize_layout(self._home_layout, cols, rows)
+        self._home_rebuild_room_canvas()
+        self._home_redraw()
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+        self._show_toast(f"房间格子：{cols}×{rows}", "#88ccff")
+
+    def _home_rebuild_room_canvas(self) -> None:
+        """按当前 cols/rows 重建编辑区 Canvas（尺寸变化后调用）。"""
+        layout = self._home_layout
+        frame = getattr(self, "_home_room_frame", None)
+        if not layout or frame is None or not frame.winfo_exists():
+            return
+        for w in frame.winfo_children():
+            w.destroy()
+        cols = int(layout["cols"])
+        rows = int(layout["rows"])
+        tile = home_room.HOME_TILE
+        canvas = tk.Canvas(
+            frame,
+            width=cols * tile,
+            height=rows * tile + 18,
+            bg=home_room.HOME_WALL,
+            highlightthickness=0,
+        )
+        canvas.pack()
+        self._home_canvas = canvas
+        self._home_bind_canvas_paint(canvas)
+
+
+    def _home_rebuild_room_row(self) -> None:
+        host = getattr(self, "_home_room_host", None)
+        if host is None or not host.winfo_exists() or not self._home_layout:
+            return
+        for w in host.winfo_children():
+            w.destroy()
+        self._home_room_btns = {}
+        days = self._companion_days()
+        max_rooms = self._home_max_rooms()
+        rooms = self._home_layout.get("rooms") if isinstance(self._home_layout.get("rooms"), list) else []
+        if not rooms:
+            home_room.sync_rooms_from_active(self._home_layout)
+            rooms = self._home_layout.get("rooms") or []
+        try:
+            active = int(self._home_layout.get("active_room") or 0)
+        except Exception:
+            active = 0
+        tk.Label(host, text="房间", font=("Courier New", 9), fg="#8899aa", bg=MENU_BG).pack(side=tk.LEFT)
+        for i, room in enumerate(rooms):
+            if i >= max_rooms:
+                break
+            name = str((room or {}).get("name") or f"房间{i + 1}")[:8]
+            on = i == active
+            btn = tk.Button(
+                host,
+                text=name,
+                font=("Courier New", 8),
+                bg=MENU_ACTIVE if on else MENU_BG,
+                fg=MENU_FG,
+                relief=tk.SUNKEN if on else tk.RAISED,
+                command=lambda idx=i: self._home_switch_room(idx),
+            )
+            btn.pack(side=tk.LEFT, padx=2)
+            self._home_room_btns[i] = btn
+        if len(rooms) < max_rooms:
+            tk.Button(
+                host,
+                text="+开房间",
+                font=("Courier New", 8),
+                bg="#445566",
+                fg=MENU_FG,
+                command=self._home_add_room,
+            ).pack(side=tk.LEFT, padx=(4, 0))
+        next_need = home_room.companion_days_for_next_room(max_rooms)
+        tip = f"相伴{days}天 · 可开{max_rooms}间"
+        if next_need:
+            tip += f"（满{next_need}天可再开）"
+        tk.Label(host, text=tip, font=("Courier New", 8), fg="#8899aa", bg=MENU_BG).pack(side=tk.RIGHT)
+
+    def _home_switch_room(self, index: int) -> None:
+        if not self._home_layout:
+            return
+        if index >= self._home_max_rooms():
+            self._show_toast("相伴天数还不够，暂时开不了这间", "#ff8866")
+            return
+        if not home_room.switch_room(self._home_layout, index):
+            return
+        self._home_pose = "stand"
+        self._home_rebuild_room_row()
+        self._home_rebuild_brushes()
+        self._home_redraw()
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+
+    def _home_add_room(self) -> None:
+        if not self._home_layout:
+            return
+        max_rooms = self._home_max_rooms()
+        if not home_room.add_room(self._home_layout, max_rooms=max_rooms):
+            next_need = home_room.companion_days_for_next_room(max_rooms)
+            if next_need:
+                self._show_toast(f"相伴满 {next_need} 天可再开一间（最多 {home_room.HOME_ROOMS_MAX}）", "#ff8866")
+            else:
+                self._show_toast(f"最多 {home_room.HOME_ROOMS_MAX} 间房间", "#ff8866")
+            return
+        name = self._ask_simple_name(
+            title="新房间",
+            prompt="给新房间起个名字",
+            default=f"房间{len(self._home_layout.get('rooms') or [])}",
+            confirm_text="创建",
+        )
+        if name:
+            home_room.rename_active_room(self._home_layout, name)
+        # 切到室内编辑新房间
+        home_room.switch_zone(self._home_layout, "indoor")
+        self._home_pose = "stand"
+        self._home_rebuild_room_row()
+        self._home_rebuild_brushes()
+        self._home_rebuild_bg_panel()
+        self._home_redraw()
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+        rooms = self._home_layout.get("rooms") or []
+        active = int(self._home_layout.get("active_room") or 0)
+        rname = "新房间"
+        if 0 <= active < len(rooms) and isinstance(rooms[active], dict):
+            rname = str(rooms[active].get("name") or rname)
+        self._show_toast(f"已开房间：{rname}", "#88ccff")
+
+    def _home_save_preset(self) -> None:
+        if not self._home_layout:
+            return
+        cur = str(self._home_layout.get("house_name") or "").strip() or "我的小屋"
+        name = self._ask_simple_name(
+            title="保存家园",
+            prompt="给这套布置起个名字（可再打开编辑）",
+            default=cur,
+            confirm_text="保存",
+        )
+        if not name:
+            return
+        self._home_layout["house_name"] = name
+        try:
+            path = home_room.save_home_preset(HOME_PRESETS_DIR, self._home_layout, name)
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception as exc:
+            self._show_toast(f"保存失败：{exc}", "#ff8866")
+            return
+        self._show_toast(f"已保存：{path.name}", "#88ffcc", duration_ms=2800)
+
+    def _home_open_preset(self) -> None:
+        presets = home_room.list_home_presets(HOME_PRESETS_DIR)
+        parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
+        if not presets:
+            # 也允许从外部 json 打开
+            path = filedialog.askopenfilename(
+                parent=parent,
+                title="打开家园文件",
+                filetypes=[("家园 JSON", "*.json"), ("全部", "*.*")],
+                initialdir=str(HOME_PRESETS_DIR if HOME_PRESETS_DIR.is_dir() else DATA_DIR),
+            )
+            if not path:
+                return
+            self._home_load_layout_path(Path(path))
+            return
+        win = tk.Toplevel(parent)
+        win.title("打开家园")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
+        frame.pack()
+        tk.Label(frame, text="选择已保存的家园", font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(anchor=tk.W)
+        list_host = tk.Frame(frame, bg=MENU_BG)
+        list_host.pack(fill=tk.BOTH, pady=(8, 0))
+
+        def load_one(p: Path) -> None:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            self._home_load_layout_path(p)
+
+        for item in presets[:24]:
+            row = tk.Frame(list_host, bg=MENU_BG)
+            row.pack(fill=tk.X, pady=1)
+            tk.Label(row, text=item["name"], font=("Courier New", 9), fg=MENU_FG, bg=MENU_BG, width=18, anchor=tk.W).pack(
+                side=tk.LEFT
+            )
+            tk.Button(
+                row,
+                text="打开编辑",
+                font=("Courier New", 8),
+                bg=MENU_ACTIVE,
+                fg=MENU_FG,
+                command=lambda p=item["path"]: load_one(p),
+            ).pack(side=tk.RIGHT)
+        tk.Button(
+            frame,
+            text="从文件…",
+            font=("Courier New", 8),
+            bg="#445566",
+            fg=MENU_FG,
+            command=lambda: (
+                win.destroy(),
+                self._home_open_preset_file(),
+            ),
+        ).pack(anchor=tk.W, pady=(8, 0))
+        self._place_panel_popup(win)
+
+    def _home_open_preset_file(self) -> None:
+        parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
+        path = filedialog.askopenfilename(
+            parent=parent,
+            title="打开家园文件",
+            filetypes=[("家园 JSON", "*.json"), ("全部", "*.*")],
+            initialdir=str(HOME_PRESETS_DIR if HOME_PRESETS_DIR.is_dir() else DATA_DIR),
+        )
+        if path:
+            self._home_load_layout_path(Path(path))
+
+    def _home_load_layout_path(self, path: Path) -> None:
+        try:
+            layout = home_room.load_layout(path)
+        except Exception as exc:
+            self._show_toast(f"打开失败：{exc}", "#ff8866")
+            return
+        self._home_setup_assets()
+        self._home_layout = layout
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+        self._home_pose = "stand"
+        try:
+            self._home_rebuild_room_row()
+            self._home_rebuild_brushes()
+            self._home_rebuild_bg_panel()
+            self._home_rebuild_farm_panel()
+            self._home_rebuild_edit_mode_row()
+            self._home_redraw()
+        except Exception:
+            pass
+        self._show_toast(f"已打开：{self._home_display_name()}", "#88ccff")
+
+    def _home_export_layout(self) -> None:
+        if not self._home_layout:
+            return
+        HOME_EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
+        default_name = f"home_{self._home_display_name()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        path = filedialog.asksaveasfilename(
+            parent=parent,
+            title="导出家园布置",
+            defaultextension=".json",
+            initialfile=default_name,
+            initialdir=str(HOME_EXPORTS_DIR),
+            filetypes=[("家园 JSON", "*.json")],
+        )
+        if not path:
+            return
+        try:
+            home_room.export_layout_copy(self._home_layout, Path(path))
+            self._show_toast(f"已导出：{Path(path).name}", "#88ffcc", duration_ms=2800)
+            try:
+                if sys.platform == "win32":
+                    os.startfile(str(Path(path).parent))  # noqa: S606
+            except Exception:
+                pass
+        except Exception as exc:
+            self._show_toast(f"导出失败：{exc}", "#ff8866")
+
+    def _export_pixel_file_dialog(
+        self,
+        cells: list[int],
+        palette: tuple[str | None, ...] | list,
+        *,
+        default_name: str,
+        parent: tk.Misc | None = None,
+    ) -> Path | None:
+        HOME_EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        path = filedialog.asksaveasfilename(
+            parent=parent or self.root,
+            title="导出像素画 PNG",
+            defaultextension=".png",
+            initialfile=default_name,
+            initialdir=str(HOME_EXPORTS_DIR),
+            filetypes=[("PNG 图片", "*.png")],
+        )
+        if not path:
+            return None
+        ok = home_room.export_pixel_png(list(cells), tuple(palette), Path(path), size=96)
+        if not ok:
+            self._show_toast("导出失败（画布可能是空的）", "#ff8866")
+            return None
+        self._show_toast(f"已导出：{Path(path).name}", "#88ffcc")
+        return Path(path)
+
+    def _open_creation_export_hub(self) -> None:
+        """统一导出：家园 / 像素画 / RPG 地图。"""
+        self._hide_main_menu()
+        parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
+        old = getattr(self, "creation_export_win", None)
+        if old and old.winfo_exists():
+            try:
+                old.lift()
+                old.focus_force()
+            except Exception:
+                pass
+            return
+        win = tk.Toplevel(parent)
+        self.creation_export_win = win
+        win.title("导出创作")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        frame = tk.Frame(win, bg=MENU_BG, padx=14, pady=12)
+        frame.pack()
+        banner = tk.Canvas(frame, width=360, height=40, bg=MENU_BG, highlightthickness=0)
+        banner.pack(anchor=tk.W)
+        banner.create_rectangle(0, 0, 360, 40, fill="#1a2438", outline="")
+        banner.create_text(12, 20, text="导出创作", fill=THEME_PINK, font=PIXEL_FONT, anchor="w")
+        banner.create_text(120, 20, text="点卡片导出对应文件", fill="#8899aa", font=("Courier New", 8), anchor="w")
+        tip = tk.Label(frame, text="", font=("Courier New", 9), fg="#88ffcc", bg=MENU_BG, wraplength=360, justify=tk.LEFT)
+        tip.pack(anchor=tk.W, pady=(6, 6))
+
+        def do_home() -> None:
+            if not self._home_layout:
+                self._home_setup_assets()
+                self._home_layout = home_room.load_layout(HOME_LAYOUT_FILE)
+            self._home_export_layout()
+
+        def do_user_paint() -> None:
+            src = HOME_PROPS_DIR / "user_paint.png"
+            if not src.is_file():
+                tip.config(text="还没有自创画，请先在家园「画素材」保存", fg="#ff8866")
+                return
+            HOME_EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+            dest = filedialog.asksaveasfilename(
+                parent=win,
+                title="导出自创画",
+                defaultextension=".png",
+                initialfile=f"user_paint_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                initialdir=str(HOME_EXPORTS_DIR),
+                filetypes=[("PNG", "*.png")],
+            )
+            if not dest:
+                return
+            try:
+                shutil.copy2(src, dest)
+                tip.config(text=f"已导出：{Path(dest).name}", fg="#88ffcc")
+            except Exception as exc:
+                tip.config(text=f"失败：{exc}", fg="#ff8866")
+
+        def do_gift() -> None:
+            src = HOME_PROPS_DIR / "gift_art.png"
+            if not src.is_file():
+                tip.config(text="还没有礼物画，请先在生日祝福里画并同步", fg="#ff8866")
+                return
+            HOME_EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+            dest = filedialog.asksaveasfilename(
+                parent=win,
+                title="导出礼物画",
+                defaultextension=".png",
+                initialfile=f"gift_art_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                initialdir=str(HOME_EXPORTS_DIR),
+                filetypes=[("PNG", "*.png")],
+            )
+            if not dest:
+                return
+            try:
+                shutil.copy2(src, dest)
+                tip.config(text=f"已导出：{Path(dest).name}", fg="#88ffcc")
+            except Exception as exc:
+                tip.config(text=f"失败：{exc}", fg="#ff8866")
+
+        def do_materials() -> None:
+            if not HOME_MATERIALS_DIR.is_dir():
+                tip.config(text="还没有命名素材", fg="#ff8866")
+                return
+            HOME_EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+            folder = HOME_EXPORTS_DIR / f"materials_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            folder.mkdir(parents=True, exist_ok=True)
+            n = 0
+            for p in HOME_MATERIALS_DIR.glob("*.png"):
+                try:
+                    shutil.copy2(p, folder / p.name)
+                    n += 1
+                except Exception:
+                    pass
+            if HOME_MATERIALS_INDEX.is_file():
+                try:
+                    shutil.copy2(HOME_MATERIALS_INDEX, folder / "home_materials.json")
+                except Exception:
+                    pass
+            tip.config(text=f"已导出 {n} 张素材到\n{folder}", fg="#88ffcc")
+            try:
+                if sys.platform == "win32":
+                    os.startfile(str(folder))  # noqa: S606
+            except Exception:
+                pass
+
+        def do_rpg_maps() -> None:
+            try:
+                rpg_root = resolve_bundled("Vpetgame", legacy=LEGACY_GAME_ROOT)
+                maps_dir = rpg_root / "maps"
+            except Exception:
+                tip.config(text="找不到 RPG 地图目录", fg="#ff8866")
+                return
+            diy = sorted(maps_dir.glob("diy_*.json")) if maps_dir.is_dir() else []
+            if not diy:
+                tip.config(text="还没有 DIY 地图（可在 RPG 编辑器里导出）", fg="#ff8866")
+                return
+            HOME_EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+            folder = HOME_EXPORTS_DIR / f"rpg_maps_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            folder.mkdir(parents=True, exist_ok=True)
+            for p in diy:
+                try:
+                    shutil.copy2(p, folder / p.name)
+                except Exception:
+                    pass
+            tip.config(text=f"已导出 {len(diy)} 张地图到\n{folder}", fg="#88ffcc")
+            try:
+                if sys.platform == "win32":
+                    os.startfile(str(folder))  # noqa: S606
+            except Exception:
+                pass
+
+        cards = tk.Frame(frame, bg=MENU_BG)
+        cards.pack(fill=tk.X)
+        export_items = (
+            ("家园", "JSON 布置", do_home, "#4a6a88"),
+            ("自创画", "PNG", do_user_paint, "#6a4a78"),
+            ("礼物画", "PNG", do_gift, "#884a68"),
+            ("素材库", "全部命名", do_materials, "#4a7860"),
+            ("RPG地图", "DIY JSON", do_rpg_maps, "#6a6840"),
+        )
+        for i, (title, sub, cmd, accent) in enumerate(export_items):
+            card = tk.Frame(cards, bg="#2a3448", padx=8, pady=8, highlightbackground=accent, highlightthickness=2)
+            card.grid(row=i // 2, column=i % 2, sticky=tk.EW, padx=3, pady=3)
+            sw = tk.Canvas(card, width=36, height=28, bg=accent, highlightthickness=0)
+            sw.pack(side=tk.LEFT, padx=(0, 8))
+            sw.create_text(18, 14, text=title[0], fill="#ffffff", font=("Courier New", 11, "bold"))
+            mid = tk.Frame(card, bg="#2a3448")
+            mid.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            tk.Label(mid, text=title, font=("Courier New", 9, "bold"), fg=MENU_FG, bg="#2a3448").pack(anchor=tk.W)
+            tk.Label(mid, text=sub, font=("Courier New", 8), fg="#8899aa", bg="#2a3448").pack(anchor=tk.W)
+            tk.Button(card, text="导出", font=("Courier New", 8), bg=MENU_ACTIVE, fg=MENU_FG, command=cmd).pack(
+                side=tk.RIGHT
+            )
+        cards.columnconfigure(0, weight=1)
+        cards.columnconfigure(1, weight=1)
+        tk.Button(frame, text="关闭", font=PIXEL_FONT, bg="#555555", fg=MENU_FG, command=win.destroy).pack(
+            anchor=tk.E, pady=(8, 0)
+        )
+        self._place_panel_popup(win)
+
+    def _home_rebuild_brushes(self) -> None:
+        host = self._home_brush_host
+        if host is None or not host.winfo_exists() or not self._home_layout:
+            return
+        for w in host.winfo_children():
+            w.destroy()
+        self._home_brush_btns = {}
+        zone = str(self._home_layout.get("zone") or "indoor")
+
+        def set_brush(kind: str) -> None:
+            self._home_brush = kind
+            self._home_sync_brush_highlight()
+
+        items = list(home_room.furniture_for_zone(zone))
+        # 「删除」置顶：先清上层素材，再清背景；地砖棋盘底保留
+        items.sort(key=lambda it: 0 if it[0] == "erase" else 1)
+        crafted = list((self._home_layout or {}).get("crafted_furniture") or [])
+        col = 0
+        row = 0
+        cols_per_row = 8
+        for kind, label, _s, _w, _h, _z in items:
+            if kind == "gift_art" and not (HOME_PROPS_DIR / "gift_art.png").is_file():
+                continue
+            if not home_farm.furniture_unlocked(kind, crafted):
+                continue
+            # 自创画始终显示：可先选笔刷再点「画素材」
+            btn = tk.Button(
+                host,
+                text=label,
+                font=("Courier New", 8),
+                bg="#553333" if kind == "erase" else MENU_BG,
+                fg=MENU_FG,
+                command=lambda k=kind: set_brush(k),
+            )
+            btn.grid(row=row, column=col, padx=1, pady=1, sticky=tk.W)
+            self._home_brush_btns[kind] = btn
+            col += 1
+            if col >= cols_per_row:
+                col = 0
+                row += 1
+        if self._home_brush not in self._home_brush_btns and self._home_brush not in home_room.BG_MATERIAL_KINDS:
+            self._home_brush = next(iter(self._home_brush_btns), "erase")
+        self._home_sync_brush_highlight()
+
+    def _open_home_pixel_painter(self) -> None:
+        """家园内像素画板：保存后成为可放置的「自创画」素材（同步 RPG）。"""
+        parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
+        old = getattr(self, "home_paint_win", None)
+        if old and old.winfo_exists():
+            try:
+                old.lift()
+                old.focus_force()
+            except Exception:
+                pass
+            return
+
+        win = tk.Toplevel(parent)
+        self.home_paint_win = win
+        win.title("画素材 · 命名后加入素材栏")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        win.resizable(True, True)
+        # 按内容自适应，避免被通用面板 400×480 裁掉色板/取色
+        setattr(win, "_panel_full_size", True)
+        frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
+        frame.pack(fill=tk.BOTH, expand=True)
+        tk.Label(frame, text="画素材", font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(anchor=tk.W)
+        # 画板顶饰
+        deco = tk.Canvas(frame, width=340, height=28, bg=MENU_BG, highlightthickness=0)
+        deco.pack(anchor=tk.W, pady=(2, 4))
+        for i, col in enumerate(("#ff6b9d", "#ff8855", "#ffdd66", "#88ff66", "#66ccff", "#cc88ff")):
+            deco.create_rectangle(8 + i * 28, 6, 30 + i * 28, 22, fill=col, outline="")
+        deco.create_text(190, 14, text="命名入库 · 点缩略图再编辑", fill="#8899aa", font=("Courier New", 8), anchor="w")
+
+        draft_path = DATA_DIR / "home_user_paint_draft.json"
+        cells = [0] * (GIFT_PIXEL_SIZE * GIFT_PIXEL_SIZE)
+        if draft_path.is_file():
+            try:
+                raw = json.loads(draft_path.read_text(encoding="utf-8"))
+                if isinstance(raw, list) and len(raw) >= len(cells):
+                    cells = [max(0, int(v or 0)) for v in raw[: len(cells)]]
+            except Exception:
+                pass
+
+        palette: list[str | None] = list(GIFT_PIXEL_PALETTE)
+        brush = tk.IntVar(value=1)
+        editing = {"id": None, "name": ""}
+        tip = tk.Label(frame, text="", font=("Courier New", 9), fg="#88ffcc", bg=MENU_BG)
+        tip.pack(anchor=tk.W)
+
+        lib_host = tk.Frame(frame, bg=MENU_BG)
+        lib_host.pack(fill=tk.X, pady=(0, 4))
+        tk.Label(lib_host, text="已保存", font=("Courier New", 9), fg="#8899aa", bg=MENU_BG).pack(side=tk.LEFT, anchor=tk.N)
+        cell_btns: list[tk.Label] = []
+
+        def refresh_board_colors() -> None:
+            for i, lbl in enumerate(cell_btns):
+                lbl.configure(bg=cell_color(cells[i] if i < len(cells) else 0))
+
+        def cell_color(idx: int) -> str:
+            c = palette[idx] if 0 <= idx < len(palette) else None
+            return c or "#1a2030"
+
+        def load_entry(entry: dict) -> None:
+            pair = home_room.material_cells_palette(entry)
+            if not pair:
+                tip.config(text="该作品没有可编辑草稿（仅 PNG）", fg="#ff8866")
+                return
+            loaded_cells, loaded_pal = pair
+            n = GIFT_PIXEL_SIZE * GIFT_PIXEL_SIZE
+            for i in range(n):
+                cells[i] = int(loaded_cells[i]) if i < len(loaded_cells) else 0
+            palette.clear()
+            palette.extend(loaded_pal if loaded_pal else list(GIFT_PIXEL_PALETTE))
+            while len(palette) < len(GIFT_PIXEL_PALETTE):
+                palette.append(GIFT_PIXEL_PALETTE[len(palette)])
+            editing["id"] = str(entry.get("id") or "")
+            editing["name"] = str(entry.get("name") or "")
+            refresh_board_colors()
+            tip.config(text=f"正在编辑：「{editing['name']}」· 再命名保存可覆盖或另存", fg="#88ccff")
+
+        def rebuild_library() -> None:
+            for w in list(lib_host.winfo_children())[1:]:
+                w.destroy()
+            items = home_room.load_materials_index(HOME_MATERIALS_INDEX)
+            wrap = tk.Frame(lib_host, bg=MENU_BG)
+            wrap.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            if not items:
+                tk.Label(wrap, text="（还没有，画完点命名保存）", font=("Courier New", 8), fg="#667788", bg=MENU_BG).pack(
+                    side=tk.LEFT
+                )
+                return
+            for entry in items[-12:]:
+                tk.Button(
+                    wrap,
+                    text=str(entry.get("name") or "?")[:8],
+                    font=("Courier New", 8),
+                    bg="#334455",
+                    fg=MENU_FG,
+                    command=lambda e=entry: load_entry(e),
+                ).pack(side=tk.LEFT, padx=1)
+
+        rebuild_library()
+
+        board = tk.Frame(frame, bg="#0e1218", padx=4, pady=4)
+        board.pack(anchor=tk.W)
+        painting = {"on": False}
+
+        def paint_at(i: int) -> None:
+            cells[i] = int(brush.get())
+            cell_btns[i].configure(bg=cell_color(cells[i]))
+
+        def on_press(i: int, _e=None) -> None:
+            painting["on"] = True
+            paint_at(i)
+
+        def on_enter(i: int, _e=None) -> None:
+            if painting["on"]:
+                paint_at(i)
+
+        def on_release(_e=None) -> None:
+            painting["on"] = False
+
+        grid = tk.Frame(board, bg="#0e1218")
+        grid.pack()
+        for y in range(GIFT_PIXEL_SIZE):
+            for x in range(GIFT_PIXEL_SIZE):
+                i = y * GIFT_PIXEL_SIZE + x
+                lbl = tk.Label(
+                    grid,
+                    width=2,
+                    height=1,
+                    bg=cell_color(cells[i]),
+                    relief=tk.FLAT,
+                    bd=0,
+                    cursor="hand2",
+                )
+                lbl.grid(row=y, column=x, padx=1, pady=1)
+                lbl.bind("<ButtonPress-1>", lambda e, ii=i: on_press(ii, e))
+                lbl.bind("<B1-Motion>", lambda e, ii=i: on_enter(ii, e))
+                lbl.bind("<Enter>", lambda e, ii=i: on_enter(ii, e))
+                cell_btns.append(lbl)
+        win.bind("<ButtonRelease-1>", on_release)
+
+        pal_host = tk.Frame(frame, bg=MENU_BG)
+        pal_host.pack(anchor=tk.W, pady=(6, 0))
+
+        def add_custom_color() -> None:
+            picked = self._ask_brush_color(win, title="自选画笔颜色")
+            if not picked:
+                return
+            if len(palette) < 24:
+                palette.append(picked)
+                brush.set(len(palette) - 1)
+            else:
+                palette[-1] = picked
+                brush.set(len(palette) - 1)
+            rebuild_home_palette()
+
+        def recolor_slot(pi: int) -> None:
+            if pi <= 0:
+                return
+            cur = palette[pi] if 0 <= pi < len(palette) else "#ff6b9d"
+            picked = self._ask_brush_color(win, title="替换此色", initial=cur if isinstance(cur, str) else None)
+            if not picked:
+                return
+            if 0 <= pi < len(palette):
+                palette[pi] = picked
+                brush.set(pi)
+                rebuild_home_palette()
+                refresh_board_colors()
+
+        def rebuild_home_palette() -> None:
+            self._fill_pixel_palette_host(
+                pal_host,
+                palette=palette,
+                brush=brush,
+                on_add_custom=add_custom_color,
+                on_recolor_slot=recolor_slot,
+                cols=8,
+            )
+
+        rebuild_home_palette()
+        tk.Label(
+            frame,
+            text="「+取色」在色板上方；双击色块可替换该色。",
+            font=("Courier New", 8),
+            fg="#778899",
+            bg=MENU_BG,
+        ).pack(anchor=tk.W, pady=(2, 0))
+
+        def clear_board() -> None:
+            for i in range(len(cells)):
+                cells[i] = 0
+                cell_btns[i].configure(bg=cell_color(0))
+            editing["id"] = None
+            editing["name"] = ""
+            tip.config(text="已新建空白画布", fg="#88ccff")
+
+        def save_paint(*, as_new: bool = False) -> None:
+            if not any(int(v or 0) > 0 for v in cells):
+                tip.config(text="先画几笔再保存哦", fg="#ff8866")
+                return
+            default = editing["name"] or "我的素材"
+            mat_name = self._ask_simple_name(
+                title="素材命名",
+                prompt="给这幅像素画起个名字（可保存多张）",
+                default=default,
+                confirm_text="保存到图库",
+            )
+            if not mat_name:
+                return
+            try:
+                mid = None if as_new else editing["id"]
+                entry = home_room.register_named_material(
+                    cells=list(cells),
+                    palette=tuple(palette),
+                    name=mat_name,
+                    materials_dir=HOME_MATERIALS_DIR,
+                    index_path=HOME_MATERIALS_INDEX,
+                    home_props=HOME_PROPS_DIR,
+                    rpg_assets=HOME_RPG_ASSETS_DIR,
+                    source="home",
+                    mat_id=mid,
+                    set_active_user=True,
+                )
+                if not entry:
+                    tip.config(text="保存失败", fg="#ff8866")
+                    return
+                editing["id"] = str(entry["id"])
+                editing["name"] = str(entry["name"])
+                draft_path.write_text(json.dumps(list(cells)), encoding="utf-8")
+                self._home_setup_assets()
+                self._home_rebuild_brushes()
+                kind = home_room.custom_kind(str(entry["id"]))
+                self._home_brush = kind
+                self._home_sync_brush_highlight()
+                self._home_redraw()
+                rebuild_library()
+                tip.config(text=f"已保存：「{entry['name']}」· 素材栏可放置", fg="#88ffcc")
+                self._show_toast(f"素材「{entry['name']}」已入库", THEME_PINK, duration_ms=2600)
+                self._note_achievement_flag("home_paint")
+            except Exception as exc:
+                tip.config(text=f"保存失败：{exc}", fg="#ff8866")
+
+        def export_paint() -> None:
+            if not any(int(v or 0) > 0 for v in cells):
+                tip.config(text="先画几笔再导出哦", fg="#ff8866")
+                return
+            path = self._export_pixel_file_dialog(
+                list(cells),
+                palette,
+                default_name=f"pixel_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                parent=win,
+            )
+            if path:
+                tip.config(text=f"已导出：{path.name}", fg="#88ffcc")
+
+        def close() -> None:
+            try:
+                draft_path.write_text(json.dumps(list(cells)), encoding="utf-8")
+            except Exception:
+                pass
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            self.home_paint_win = None
+
+        btn_row = tk.Frame(frame, bg=MENU_BG)
+        btn_row.pack(fill=tk.X, pady=(10, 0))
+        tk.Button(btn_row, text="新建", command=clear_board, font=("Courier New", 9), bg="#444455", fg=MENU_FG).pack(
+            side=tk.LEFT
+        )
+        tk.Button(btn_row, text="命名保存", command=lambda: save_paint(as_new=False), font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(
+            side=tk.LEFT, padx=(8, 0)
+        )
+        tk.Button(
+            btn_row, text="另存新图", command=lambda: save_paint(as_new=True), font=("Courier New", 9), bg="#445566", fg=MENU_FG
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        tk.Button(btn_row, text="导出文件", command=export_paint, font=("Courier New", 9), bg="#445566", fg=MENU_FG).pack(
+            side=tk.LEFT, padx=(8, 0)
+        )
+        tk.Button(btn_row, text="关闭", command=close, font=PIXEL_FONT, bg="#555555", fg=MENU_FG).pack(side=tk.RIGHT)
+        win.protocol("WM_DELETE_WINDOW", close)
+        self._place_panel_popup(win)
+
+    def _home_rebuild_bg_panel(self) -> None:
+        """背景区：室外显示草地/土地/水面/岩石（各一行选笔刷+独立改色）。"""
+        host = self._home_bg_host
+        if host is None or not host.winfo_exists() or not self._home_layout:
+            return
+        for w in host.winfo_children():
+            w.destroy()
+        self._home_bg_brush_btns = {}
+        zone = str(self._home_layout.get("zone") or "indoor")
+        if zone != "outdoor":
+            return
+        if not isinstance(self._home_layout.get("bg_colors"), dict):
+            self._home_layout["bg_colors"] = home_room.default_bg_colors()
+
+        def set_bg_brush(kind: str) -> None:
+            self._home_brush = kind
+            self._home_sync_brush_highlight()
+
+        for kind in home_room.BG_MATERIAL_KINDS:
+            row = tk.Frame(host, bg=MENU_BG)
+            row.pack(fill=tk.X, pady=1)
+            label = home_room.BG_MATERIAL_LABELS.get(kind, kind)
+            brush_btn = tk.Button(
+                row,
+                text=label,
+                font=("Courier New", 9),
+                bg=MENU_BG,
+                fg=MENU_FG,
+                command=lambda k=kind: set_bg_brush(k),
+            )
+            brush_btn.pack(side=tk.LEFT, padx=(0, 4))
+            self._home_bg_brush_btns[kind] = brush_btn
+            for name, col in home_room.BG_COLOR_PRESETS.get(kind, ()):
+                tk.Button(
+                    row,
+                    text=name,
+                    font=("Courier New", 8),
+                    bg=col,
+                    fg="#ffffff",
+                    command=lambda c=col, k=kind: self._home_set_bg_color(k, c),
+                ).pack(side=tk.LEFT, padx=1)
+            tk.Button(
+                row,
+                text="自选",
+                font=("Courier New", 8),
+                bg="#445566",
+                fg=MENU_FG,
+                command=lambda k=kind: self._home_pick_bg_color(k),
+            ).pack(side=tk.LEFT, padx=(4, 0))
+        tk.Label(
+            host,
+            text="预设=该种统一色 · 选背景笔刷右键=单格改色 · 先铺背景再放素材 · 删除先去素材",
+            font=("Courier New", 7),
+            fg="#8899aa",
+            bg=MENU_BG,
+            wraplength=360,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(2, 0))
+        self._home_sync_brush_highlight()
+
+    def _home_sync_brush_highlight(self) -> None:
+        kind = self._home_brush
+        for k, btn in self._home_brush_btns.items():
+            if not btn.winfo_exists():
+                continue
+            if k == "erase":
+                btn.config(bg="#884444" if k == kind else "#553333", relief=tk.SUNKEN if k == kind else tk.RAISED)
+            else:
+                btn.config(bg=MENU_ACTIVE if k == kind else MENU_BG, relief=tk.SUNKEN if k == kind else tk.RAISED)
+        for k, btn in self._home_bg_brush_btns.items():
+            if not btn.winfo_exists():
+                continue
+            btn.config(bg=MENU_ACTIVE if k == kind else MENU_BG, relief=tk.SUNKEN if k == kind else tk.RAISED)
+
+    def _home_set_floor_colors(self, a: str, b: str) -> None:
+        if not self._home_layout:
+            return
+        self._home_layout["floor_a"] = a
+        self._home_layout["floor_b"] = b
+        self._home_redraw()
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+
+    def _home_pick_floor(self, which: str) -> None:
+        if not self._home_layout:
+            return
+        cur = self._home_layout.get("floor_a" if which == "a" else "floor_b") or "#3d5a45"
+        picked = colorchooser.askcolor(color=cur, title=f"地砖颜色 {which.upper()}", parent=self.home_win)
+        if not picked or not picked[1]:
+            return
+        key = "floor_a" if which == "a" else "floor_b"
+        self._home_layout[key] = picked[1]
+        self._home_redraw()
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+
+    def _home_set_bg_color(self, kind: str, color: str) -> None:
+        if not self._home_layout or kind not in home_room.BG_MATERIAL_KINDS:
+            return
+        colors = self._home_layout.setdefault("bg_colors", home_room.default_bg_colors())
+        if not isinstance(colors, dict):
+            colors = home_room.default_bg_colors()
+            self._home_layout["bg_colors"] = colors
+        colors[kind] = color
+        home_room._FURN_PHOTO_CACHE.clear()
+        self._home_redraw()
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+
+    def _home_pick_bg_color(self, kind: str) -> None:
+        if not self._home_layout or kind not in home_room.BG_MATERIAL_KINDS:
+            return
+        label = home_room.BG_MATERIAL_LABELS.get(kind, kind)
+        cur = home_room.bg_color_for(self._home_layout, kind)
+        picked = colorchooser.askcolor(color=cur, title=f"{label}配色", parent=self.home_win)
+        if not picked or not picked[1]:
+            return
+        self._home_set_bg_color(kind, picked[1])
+
+    def _home_set_furn_color(self, color: str) -> None:
+        """只改画笔色并写盘；已放置家具颜色不变（右键上色才改单件）。"""
+        if not self._home_layout:
+            return
+        self._home_layout["furn_color"] = color
+        self._home_update_status()
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+        self._show_toast(f"画笔色：{color}", "#88ccff", duration_ms=1400)
+
+    def _home_pick_furn_color(self) -> None:
+        if not self._home_layout:
+            return
+        cur = self._home_layout.get("furn_color") or home_room.HOME_FURN_DEFAULT
+        picked = colorchooser.askcolor(color=cur, title="画笔色（放置/右键上色）", parent=self.home_win)
+        if not picked or not picked[1]:
+            return
+        self._home_set_furn_color(picked[1])
+
+    def _home_reset_layout(self) -> None:
+        zone = str((self._home_layout or {}).get("zone") or "indoor")
+        mode = str((self._home_layout or {}).get("move_mode") or "free")
+        self._home_layout = home_room.default_layout()
+        home_room.switch_zone(self._home_layout, zone)
+        self._home_layout["move_mode"] = mode
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+        if hasattr(self, "_home_cols_var"):
+            self._home_cols_var.set(str(self._home_layout["cols"]))
+            self._home_rows_var.set(str(self._home_layout["rows"]))
+        self._home_rebuild_room_canvas()
+        self._home_rebuild_edit_mode_row()
+        self._home_rebuild_farm_panel()
+        self._home_rebuild_brushes()
+        self._home_rebuild_bg_panel()
+        self._home_set_edit_mode("decorate", quiet=True)
+        for z, btn in self._home_zone_btns.items():
+            on = z == zone
+            btn.config(bg=MENU_ACTIVE if on else MENU_BG, relief=tk.SUNKEN if on else tk.RAISED)
+        for m, btn in self._home_mode_btns.items():
+            on = m == mode
+            btn.config(bg=MENU_ACTIVE if on else MENU_BG, relief=tk.SUNKEN if on else tk.RAISED)
+        self._home_pose = "stand"
+        self._home_redraw()
+        if mode == "free":
+            self._schedule_home_tick()
+        self._show_toast("家园已重置（石板地·天蓝家具；钱包保留）", "#88ccff")
+
+    def _home_dir_from_delta(self, dx: int, dy: int) -> str:
+        if dy < 0:
+            return "back"
+        if dy > 0:
+            return "front"
+        if dx < 0:
+            return "left"
+        if dx > 0:
+            return "right"
+        return self._home_pet_dir
+
+    def _home_try_move_pet(self, dx: int, dy: int, *, check_interact: bool = False) -> bool:
+        farm_busy = bool(getattr(self, "_home_farm_fx", None))
+        if not self._home_layout or (self._home_pose in ("sleep", "squat") and not farm_busy):
+            return False
+        if farm_busy and self._home_pose == "squat":
+            self._home_pose = "stand"
+            self._home_farm_fx = None
+        now = int(time.time() * 1000)
+        gate = int(getattr(self, "_home_move_gate_ms", 0) or 0)
+        if now < gate:
+            return False
+        tiles = self._home_layout["tiles"]
+        nx = int(self._home_layout["pet_x"]) + dx
+        ny = int(self._home_layout["pet_y"]) + dy
+        if home_room.cell_blocks(tiles, nx, ny):
+            return False
+        self._home_layout["pet_x"] = nx
+        self._home_layout["pet_y"] = ny
+        self._home_pet_dir = self._home_dir_from_delta(dx, dy)
+        self._home_walk_frame = 1 - int(self._home_walk_frame)
+        self._home_pose = "walk"
+        # 操控限速；自由运动由 HOME_WALK_MS 排程
+        if str(self._home_layout.get("move_mode") or "") == "control":
+            self._home_move_gate_ms = now + int(home_room.HOME_CONTROL_STEP_MS)
+        self._home_redraw()
+        self._home_check_furniture_interact()
+        return True
+
+    def _home_after_zone_change(self, z: str, *, keep_door_trigger: bool = False) -> None:
+        """切区后刷新笔刷/背景/经营面板与高亮。"""
+        if not self._home_layout:
+            return
+        for zz, btn in getattr(self, "_home_zone_btns", {}).items():
+            if not btn.winfo_exists():
+                continue
+            on = zz == z
+            btn.config(bg=MENU_ACTIVE if on else MENU_BG, relief=tk.SUNKEN if on else tk.RAISED)
+        self._home_brush = "plant" if z == "indoor" else "flower"
+        if z != "outdoor":
+            self._home_set_edit_mode("decorate", quiet=True)
+        self._home_rebuild_edit_mode_row()
+        self._home_rebuild_brushes()
+        self._home_rebuild_bg_panel()
+        self._home_rebuild_farm_panel()
+        self._home_pose = "stand"
+        if not keep_door_trigger:
+            self._home_last_trigger = ""
+        self._home_redraw()
+        self._home_update_status()
+        try:
+            home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+        except Exception:
+            pass
+
+    def _home_try_use_door(self, *, force: bool = False) -> bool:
+        """站在门格上切换室内外。force=按键触发（可重复）；行走触发靠 last_trigger 防抖。"""
+        if not self._home_layout:
+            return False
+        tiles = self._home_layout.get("tiles") or []
+        px = int(self._home_layout.get("pet_x") or 0)
+        py = int(self._home_layout.get("pet_y") or 0)
+        if not home_room.on_kinds(tiles, px, py, {"door"}):
+            return False
+        if not force and getattr(self, "_home_last_trigger", "") == "door":
+            return False
+        ok, msg = home_room.use_door(self._home_layout)
+        if not ok:
+            if msg:
+                self._show_toast(msg, "#ff8866", duration_ms=1400)
+            return False
+        # 落在对侧门上时保持 trigger=door，避免立刻弹回
+        self._home_last_trigger = "door"
+        z = str(self._home_layout.get("zone") or "indoor")
+        self._home_after_zone_change(z, keep_door_trigger=True)
+        if msg:
+            self._show_toast(msg, "#88ccff", duration_ms=1600)
+        return True
+
+    def _home_check_furniture_interact(self) -> None:
+        if not self._home_layout:
+            return
+        tiles = self._home_layout["tiles"]
+        px = int(self._home_layout["pet_x"])
+        py = int(self._home_layout["pet_y"])
+        # 门：室内外均可；站上自动切区（防抖）
+        if home_room.on_kinds(tiles, px, py, {"door"}):
+            if self._home_try_use_door(force=False):
+                return
+            self._home_last_trigger = "door"
+            return
+        zone = str(self._home_layout.get("zone") or "indoor")
+        if zone != "indoor":
+            self._home_last_trigger = ""
+            return
+        # 仅站在床/椅格子上才触发（含床的延伸格）
+        if home_room.on_kinds(tiles, px, py, {"bed"}):
+            if self._home_last_trigger != "bed":
+                self._home_last_trigger = "bed"
+                self._home_begin_pose("sleep", home_room.HOME_BED_SLEEP_MS)
+            return
+        if home_room.on_kinds(tiles, px, py, {"chair"}):
+            if self._home_last_trigger != "chair":
+                self._home_last_trigger = "chair"
+                self._home_begin_pose("squat", home_room.HOME_SQUAT_MS)
+            return
+        self._home_last_trigger = ""
+
+    def _home_begin_pose(self, pose: str, duration_ms: int) -> None:
+        if self._home_tick_job:
+            try:
+                self.root.after_cancel(self._home_tick_job)
+            except Exception:
+                pass
+            self._home_tick_job = None
+        if self._home_pose_job:
+            try:
+                self.root.after_cancel(self._home_pose_job)
+            except Exception:
+                pass
+        self._home_pose = pose
+        self._home_pose_until_ms = int(time.time() * 1000) + duration_ms
+        self._home_redraw()
+        tip = "在床上小憩…" if pose == "sleep" else "坐在椅子上…"
+        self._show_toast(tip, "#88ccff", duration_ms=min(2200, duration_ms))
+        self._home_pose_job = self.root.after(duration_ms, self._home_end_pose)
+
+    def _home_end_pose(self) -> None:
+        self._home_pose_job = None
+        self._home_pose = "stand"
+        self._home_last_trigger = ""
+        self._home_redraw()
+        if self._home_layout and self._home_layout.get("move_mode") == "free":
+            self._schedule_home_tick()
+
+    def _schedule_home_tick(self) -> None:
+        if self._home_tick_job:
+            try:
+                self.root.after_cancel(self._home_tick_job)
+            except Exception:
+                pass
+            self._home_tick_job = None
+        if not self._home_any_view_open():
+            return
+        if self._home_pose in ("sleep", "squat"):
+            return
+        self._home_tick_job = self.root.after(home_room.HOME_WALK_MS, self._home_free_step)
+
+    def _home_free_step(self) -> None:
+        self._home_tick_job = None
+        if not self._home_any_view_open() or not self._home_layout:
+            return
+        if self._home_layout.get("move_mode") != "free" or self._home_pose in ("sleep", "squat"):
+            return
+        dirs = [(0, -1), (0, 1), (-1, 0), (1, 0)]
+        random.shuffle(dirs)
+        moved = False
+        for dx, dy in dirs:
+            if self._home_try_move_pet(dx, dy):
+                moved = True
+                break
+        if not moved:
+            self._home_pose = "stand"
+            self._home_redraw()
+        self._schedule_home_tick()
+
+    def _home_pet_sprite_name(self) -> tuple[str, bool]:
+        pose = self._home_pose
+        if pose == "sleep":
+            return ("sleep2.jpg", False)
+        if pose == "squat":
+            return ("squat.jpg", False)
+        direction = self._home_pet_dir
+        frame = 1 + int(self._home_walk_frame)
+        if pose != "walk":
+            return ("stand.jpg", False)
+        if direction == "back":
+            return (f"walkback{frame}.jpg", False)
+        if direction == "left":
+            return (f"walkleft{frame}.jpg", False)
+        if direction == "right":
+            return (f"walkleft{frame}.jpg", True)
+        return (f"walkfront{frame}.jpg", False)
+
+    def _home_update_status(self) -> None:
+        if not self._home_status or not self._home_layout:
+            return
+        zone = "室外" if self._home_layout.get("zone") == "outdoor" else "室内"
+        mode = self._home_layout.get("move_mode") or "free"
+        if self._home_pose == "sleep":
+            tip = "睡眠中（约15秒）"
+        elif self._home_pose == "squat":
+            tip = "下蹲中"
+        elif mode == "free":
+            tip = "自由行走中"
+        else:
+            tip = "操控中（方向键/WASD）"
+        brush_meta = home_room.furniture_meta(self._home_brush)
+        brush_name = brush_meta[0] if brush_meta else self._home_brush
+        if self._home_brush == "erase":
+            brush_name = "删除"
+        brush_col = str(self._home_layout.get("furn_color") or home_room.HOME_FURN_DEFAULT)
+        desk = " · 已放桌面" if (self.home_desktop_win and self.home_desktop_win.winfo_exists()) else ""
+        coins = int(self.wallet.get("coins") or 0)
+        if getattr(self, "_home_edit_mode", "decorate") == "farm" and self._home_layout.get("zone") == "outdoor":
+            tool = getattr(self, "_home_farm_tool", "plant")
+            tlabel = home_farm.FARM_TOOL_LABELS.get(tool, tool)
+            seed = home_farm.ITEM_LABELS.get(getattr(self, "_home_farm_seed", ""), "")
+            bag = home_farm.item_summary(self.wallet, limit=4)
+            self._home_status.config(
+                text=f"经营 · 金币{coins} · {tlabel} · 种子:{seed} · 1–7选工具 → 确定/Enter执行 · {bag}{desk}"
+            )
+        else:
+            self._home_status.config(
+                text=f"{zone} · {tip} · 金币{coins} · 笔刷：{brush_name} · 画笔色：{brush_col} · 门可进出{desk}"
+            )
+
+    def _home_sync_desktop_geometry(self) -> None:
+        win = self.home_desktop_win
+        canvas = self._home_desktop_canvas
+        layout = self._home_layout
+        if not win or not canvas or not layout:
+            return
+        if not win.winfo_exists() or not canvas.winfo_exists():
+            return
+        cols = int(layout["cols"])
+        rows = int(layout["rows"])
+        tile = home_room.HOME_TILE
+        room_w = cols * tile
+        room_h = rows * tile + 18
+        bar_h = 22
+        canvas.config(width=room_w, height=room_h)
+        try:
+            x = int(win.winfo_x())
+            y = int(win.winfo_y())
+        except Exception:
+            x = int(layout.get("desktop_x") or 40)
+            y = int(layout.get("desktop_y") or 40)
+        win.geometry(f"{room_w}x{room_h + bar_h}+{x}+{y}")
+
+    def _home_paint_on_canvas(
+        self,
+        canvas: tk.Canvas,
+        photos: list[ImageTk.PhotoImage],
+        layout: dict,
+    ) -> None:
+        if not canvas.winfo_exists():
+            return
+        cols = int(layout["cols"])
+        rows = int(layout["rows"])
+        tile = home_room.HOME_TILE
+        wall = 18
+        room_w = cols * tile
+        floor_a = str(layout.get("floor_a") or home_room.HOME_FLOOR_A)
+        floor_b = str(layout.get("floor_b") or home_room.HOME_FLOOR_B)
+        brush_color = str(layout.get("furn_color") or home_room.HOME_FURN_DEFAULT)
+        zone = str(layout.get("zone") or "indoor")
+        # 室外底色用黑；背景素材单独铺，互不跟草地改色联动
+        if zone == "outdoor":
+            floor_a = home_room.OUTDOOR_BASE_COLOR
+            floor_b = home_room.OUTDOOR_BASE_COLOR_B
+        canvas.delete("all")
+        photos.clear()
+
+        wall_color = "#2a4050" if zone == "outdoor" else home_room.HOME_WALL
+        canvas.create_rectangle(0, 0, room_w, wall, fill=wall_color, outline="")
+        canvas.create_rectangle(0, wall - 3, room_w, wall, fill=home_room.HOME_WALL_TRIM, outline="")
+        tiles = layout["tiles"]
+        for y in range(rows):
+            for x in range(cols):
+                px = x * tile
+                py = wall + y * tile
+                fill = floor_a if (x + y) % 2 == 0 else floor_b
+                # 无描边：避免「放/删素材后仍留一圈黑框」的额外格子线
+                canvas.create_rectangle(px, py, px + tile, py + tile, fill=fill, outline="")
+
+        # 先铺背景层，再叠地物（抠底后透出黑底/背景）
+        def place_kind(kind: str, x: int, y: int, cell_furn: str, *, tint: str | None = None) -> None:
+            vary = (x * 131 + y * 10007 + abs(hash(cell_furn)) % 997) if kind == "flower" else None
+            photo = home_room.furniture_photo(kind, tile, cell_furn, tint_color=tint, vary_seed=vary)
+            if photo is None:
+                return
+            photos.append(photo)
+            meta = home_room.furniture_meta(kind)
+            fw = int(meta[2]) if meta else 1
+            fh = int(meta[3]) if meta else 1
+            # 底对齐：素材脚底落在所占格底边
+            cx = x * tile + (fw * tile) // 2
+            by = wall + (y + fh) * tile
+            canvas.create_image(cx, by, image=photo, anchor=tk.S)
+
+        # 背景层（含叠放格的 g）
+        for y in range(rows):
+            for x in range(cols):
+                cell = tiles[y][x]
+                gk = home_room.cell_ground_kind(cell)
+                if not gk:
+                    continue
+                # 延伸格也画背景，保证多格素材脚下有完整底
+                tint = home_room.cell_ground_tint(cell, layout)
+                place_kind(gk, x, y, brush_color, tint=tint)
+        # 上层素材锚点（地毯先于家具）
+        for pass_carpet in (True, False):
+            for y in range(rows):
+                for x in range(cols):
+                    cell = tiles[y][x]
+                    if not home_room.is_anchor(cell):
+                        continue
+                    pk = home_room.cell_prop_kind(cell)
+                    if pk:
+                        if pass_carpet:
+                            continue
+                        place_kind(pk, x, y, home_room.cell_color(cell, brush_color), tint=None)
+                        continue
+                    kind = home_room.cell_value_kind(cell)
+                    if not kind or kind in home_room.OUTDOOR_GROUND_KINDS:
+                        continue
+                    is_carpet = kind == "carpet"
+                    if pass_carpet != is_carpet:
+                        continue
+                    place_kind(kind, x, y, home_room.cell_color(cell, brush_color), tint=None)
+
+        # 室外农田叠层（经营/布置均可见作物）+ 进度条 / 装饰 / 工具特效
+        if zone == "outdoor":
+            farm = layout.get("farm")
+            farm_mode = getattr(self, "_home_edit_mode", "decorate") == "farm"
+            # 经营模式：可耕地淡框装饰
+            if farm_mode and isinstance(farm, list):
+                for y in range(min(rows, len(farm))):
+                    for x in range(min(cols, len(farm[y]) if isinstance(farm[y], list) else 0)):
+                        if home_farm.can_farm_at(tiles, x, y, home_room.cell_blocks):
+                            px = x * tile
+                            py = wall + y * tile
+                            canvas.create_rectangle(
+                                px + 1, py + 1, px + tile - 1, py + tile - 1,
+                                outline="#5a7a48", dash=(2, 2),
+                            )
+            if isinstance(farm, list):
+                for y in range(min(rows, len(farm))):
+                    row = farm[y]
+                    if not isinstance(row, list):
+                        continue
+                    for x in range(min(cols, len(row))):
+                        plot = row[x]
+                        if not plot:
+                            continue
+                        px = x * tile
+                        py = wall + y * tile
+                        col = home_farm.plot_color(plot)
+                        # 对应颜色小颗粒：画在土地方块正中心
+                        cx0 = px + tile // 2
+                        cy0 = py + tile // 2
+                        for ox, oy in ((0, 0), (-2, 1), (2, 1), (-1, -2), (1, -2)):
+                            canvas.create_rectangle(
+                                cx0 + ox - 1, cy0 + oy - 1, cx0 + ox + 1, cy0 + oy + 1,
+                                fill=col, outline="",
+                            )
+                        # 成长进度条
+                        prog = home_farm.plot_progress(plot)
+                        bar_w = max(2, int((tile - 8) * prog))
+                        bar_y0 = py + tile - 7
+                        canvas.create_rectangle(
+                            px + 4, bar_y0, px + tile - 4, bar_y0 + 4,
+                            fill="#1a2018", outline="",
+                        )
+                        boost = home_farm.plot_boost_active(plot)
+                        bar_col = (
+                            "#88ff66" if prog >= 1.0
+                            else ("#66eeff" if boost else ("#66ccff" if int(plot.get("water_count") or plot.get("watered") or 0) else "#e8c858"))
+                        )
+                        canvas.create_rectangle(
+                            px + 4, bar_y0, px + 4 + bar_w, bar_y0 + 4,
+                            fill=bar_col, outline="",
+                        )
+                        if home_farm.plot_ready(plot):
+                            canvas.create_text(
+                                px + tile // 2, py + tile // 2 - 2,
+                                text="★", fill="#fff8c8", font=("Courier New", 9, "bold"),
+                            )
+                        elif boost:
+                            canvas.create_oval(
+                                px + tile - 10, py + 4, px + tile - 4, py + 10,
+                                fill="#66aadd", outline="",
+                            )
+            # 工具动作特效
+            fx = getattr(self, "_home_farm_fx", None)
+            if fx and int(time.time() * 1000) < int(fx.get("until") or 0):
+                fx_x = int(fx.get("x") or 0)
+                fx_y = int(fx.get("y") or 0)
+                tool = str(fx.get("tool") or "")
+                phase = int(fx.get("phase") or 0)
+                cx = fx_x * tile + tile // 2
+                cy = wall + fx_y * tile + tile // 2
+                if tool == "till":
+                    # 只扬土，不叠「锄」字素材
+                    for i in range(4):
+                        ox = ((i + phase) % 4 - 1.5) * 4
+                        canvas.create_oval(
+                            cx + ox - 2, cy + 4 + (i % 2) * 3, cx + ox + 2, cy + 10 + (i % 2) * 3,
+                            fill="#8a6a3a", outline="",
+                        )
+                elif tool == "plant":
+                    for i in range(3):
+                        canvas.create_oval(
+                            cx - 6 + i * 5, cy - 2 - phase, cx - 2 + i * 5, cy + 2 - phase,
+                            fill="#88cc55", outline="",
+                        )
+                    canvas.create_text(cx, cy - 8, text="种", fill="#c8ff88", font=("Courier New", 8, "bold"))
+                elif tool == "water":
+                    for i in range(3):
+                        canvas.create_oval(
+                            cx - 4 + i * 4, cy - 10 - phase * 2, cx - 1 + i * 4, cy - 4 - phase * 2,
+                            fill="#66ccff", outline="",
+                        )
+                    canvas.create_text(cx, cy + 6, text="水", fill="#88ddff", font=("Courier New", 8, "bold"))
+                elif tool == "harvest":
+                    canvas.create_text(cx, cy - 4 - phase * 2, text="★", fill="#ffe088", font=("Courier New", 12, "bold"))
+                    canvas.create_text(cx, cy + 8, text="收", fill="#ffe088", font=("Courier New", 8, "bold"))
+                elif tool == "chop":
+                    canvas.create_line(cx - 8, cy - 6 - phase, cx + 8, cy + 4 + phase, fill="#c8a060", width=2)
+                    canvas.create_text(cx, cy - 10, text="砍", fill="#e8c888", font=("Courier New", 8, "bold"))
+                elif tool == "fish":
+                    canvas.create_line(cx, cy - 12, cx + 6, cy + 8, fill="#88ccff", width=1)
+                    canvas.create_oval(cx + 4, cy + 6, cx + 10, cy + 12, fill="#66aadd", outline="")
+                    canvas.create_text(cx, cy - 14, text="钓", fill="#88ddff", font=("Courier New", 8, "bold"))
+                elif tool == "pick":
+                    canvas.create_oval(cx - 3, cy - 6 - phase, cx + 3, cy - phase, fill="#ff88aa", outline="")
+                    canvas.create_text(cx, cy + 8, text="采", fill="#ff99bb", font=("Courier New", 8, "bold"))
+
+        pet_size = max(22, tile + 6)
+        fname, flip = self._home_pet_sprite_name()
+        try:
+            stand_name = _resolve_sprite_filename(fname)
+            rgba = _get_processed_canvas(stand_name, pet_size, _reference_scale(pet_size), flip=flip)
+            pet_photo = home_room.pet_photo_from_rgba(rgba, pet_size)
+        except Exception:
+            pet_photo = ImageTk.PhotoImage(Image.new("RGBA", (pet_size, pet_size), (200, 180, 220, 255)))
+        photos.append(pet_photo)
+        px = int(layout["pet_x"]) * tile + tile // 2
+        py = wall + int(layout["pet_y"]) * tile + tile - 2
+        canvas.create_image(px, py, image=pet_photo, anchor=tk.S)
+        # 戴花：与桌面宠同步，画在头顶
+        if self._wearing_flower():
+            fx = px - 3
+            fy = wall + int(layout["pet_y"]) * tile - max(8, pet_size // 5)
+            self._draw_pixel_flower(canvas, fx, fy, "#ff7799", px=max(2, tile // 10))
+            canvas.create_rectangle(px - 1, fy + 8, px + 1, fy + 14, fill="#44aa55", outline="")
+        # 小人头顶当前工具小标（经营模式，画在立绘之上）
+        if zone == "outdoor" and getattr(self, "_home_edit_mode", "decorate") == "farm":
+            tool = getattr(self, "_home_farm_tool", "plant")
+            mark = {
+                "till": "",
+                "plant": "种",
+                "water": "水",
+                "harvest": "收",
+                "chop": "砍",
+                "fish": "钓",
+                "pick": "采",
+            }.get(tool, "")
+            if mark:
+                canvas.create_text(
+                    px, wall + int(layout["pet_y"]) * tile - 6,
+                    text=mark, fill="#ffe8a0", font=("Courier New", 8, "bold"),
+                )
+
+    def _home_redraw(self) -> None:
+        layout = self._home_layout
+        if not layout:
+            return
+        if self._home_canvas and self._home_canvas.winfo_exists():
+            self._home_paint_on_canvas(self._home_canvas, self._home_photos, layout)
+        if self._home_desktop_canvas and self._home_desktop_canvas.winfo_exists():
+            self._home_sync_desktop_geometry()
+            self._home_paint_on_canvas(self._home_desktop_canvas, self._home_desktop_photos, layout)
+        self._home_update_status()
 
     def _open_my_menu(self) -> None:
         items: list[tuple[str, callable]] = [
             ("所属人", self._show_owner_info),
-            ("生日祝福 ▶", self._open_birthday_menu),
             ("日记", self._open_diary_manager),
             ("成就", self._open_achievements),
-            ("日程提醒", self._open_schedule_manager),
-            ("天气预报", self._open_weather_forecast),
+            ("回忆 ▶", self._open_memories_menu),
         ]
         if PET_ID_FEATURE:
             items.insert(0, ("桌宠编号", self._show_pet_id))
@@ -13217,7 +18832,7 @@ class DesktopPet:
                 ("设定日期", self._open_owner_birthday_settings),
                 ("赠送礼物", self._open_gift_settings),
             ],
-            offset_x=180,
+            offset_x=360,
         )
 
     def _maybe_prompt_owner_name(self) -> None:
@@ -13305,6 +18920,7 @@ class DesktopPet:
             # 首次取名完成后强制弹一次操作说明（忽略此前已看过的标记，避免旧包 seen_hints 挡住）
             self.root.after(600, self._show_first_run_guide_after_owner)
             self.root.after(1200, self._check_birthday_greetings)
+            # 欢迎词由 _check_birthday_greetings → _maybe_owner_launch_greeting 接上
 
         entry.bind("<Return>", confirm)
         tk.Button(
@@ -13345,9 +18961,140 @@ class DesktopPet:
         if not name:
             self._maybe_prompt_owner_name()
             return
-        set_at = str(self.pet_profile.get("owner_set_at") or "")
-        extra = f"\n登记于 {set_at}" if set_at else ""
-        self._show_toast(f"所属人\n{name}{extra}\n（仅可填写一次）", THEME_PINK, duration_ms=4200)
+        old = getattr(self, "owner_info_win", None)
+        if old and old.winfo_exists():
+            try:
+                old.lift()
+                old.focus_force()
+            except Exception:
+                pass
+            return
+
+        self._flush_mode_time(save=False)
+        set_at = str(self.pet_profile.get("owner_set_at") or "").strip()
+        days = self._companion_days()
+        stats = self.achievements.get("stats") or {}
+        mode_sec = stats.get("mode_seconds") if isinstance(stats.get("mode_seconds"), dict) else {}
+        listen_sec = float(stats.get("listen_seconds", 0) or 0)
+        music_sec = max(float(mode_sec.get("music", 0) or 0), listen_sec)
+        work_sec = float(mode_sec.get("work", 0) or 0)
+        follow_sec = float(mode_sec.get("follow", 0) or 0)
+        quiet_sec = float(mode_sec.get("quiet", 0) or 0)
+        free_sec = float(mode_sec.get("free", 0) or 0)
+        game_sec = float(mode_sec.get("game", 0) or 0)
+        stroll_sec = float(mode_sec.get("stroll", 0) or 0)
+        together_sec = music_sec + work_sec + follow_sec + quiet_sec + free_sec + game_sec + stroll_sec
+
+        win = tk.Toplevel(self.root)
+        self.owner_info_win = win
+        win.title("所属人")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        win.resizable(False, False)
+
+        def close() -> None:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            self.owner_info_win = None
+
+        win.protocol("WM_DELETE_WINDOW", close)
+        frame = tk.Frame(win, bg=MENU_BG, padx=14, pady=12)
+        frame.pack()
+        tk.Label(frame, text="所属人", font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(anchor=tk.W)
+        tk.Label(frame, text=name, font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(anchor=tk.W, pady=(4, 2))
+        if set_at:
+            show_at = set_at[:19].replace("T", " ")
+            tk.Label(
+                frame,
+                text=f"登记于 {show_at}",
+                font=("Courier New", 9),
+                fg="#8899aa",
+                bg=MENU_BG,
+            ).pack(anchor=tk.W)
+
+        summary = tk.Frame(frame, bg=MENU_BG)
+        summary.pack(fill=tk.X, pady=(10, 4))
+        tk.Label(
+            summary,
+            text=f"相伴 {days} 天",
+            font=PIXEL_FONT,
+            fg="#88ccff",
+            bg=MENU_BG,
+            cursor="hand2",
+        ).pack(anchor=tk.W)
+        tk.Label(
+            summary,
+            text=f"相伴时长：{_format_duration_zh(together_sec)}"
+            if together_sec > 0
+            else "相伴时长：还在累积中…",
+            font=("Courier New", 9),
+            fg="#aabbcc",
+            bg=MENU_BG,
+        ).pack(anchor=tk.W, pady=(4, 0))
+
+        detail_host = tk.Frame(frame, bg=MENU_BG)
+        detail_visible = {"on": False}
+
+        def toggle_detail(_event=None) -> None:
+            detail_visible["on"] = not detail_visible["on"]
+            if detail_visible["on"]:
+                detail_btn.config(text="收起详细 ▴")
+                detail_host.pack(fill=tk.X, pady=(8, 0))
+            else:
+                detail_btn.config(text="查看详细 · 一起听歌/工作 ▾")
+                detail_host.pack_forget()
+
+        detail_btn = tk.Label(
+            frame,
+            text="查看详细 · 一起听歌/工作 ▾",
+            font=("Courier New", 9),
+            fg=THEME_PINK,
+            bg=MENU_BG,
+            cursor="hand2",
+        )
+        detail_btn.pack(anchor=tk.W, pady=(8, 0))
+        detail_btn.bind("<Button-1>", toggle_detail)
+        summary.bind("<Button-1>", toggle_detail)
+        for child in summary.winfo_children():
+            child.bind("<Button-1>", toggle_detail)
+
+        rows = (
+            ("一起听歌", music_sec),
+            ("一起工作", work_sec),
+            ("一起跟随", follow_sec),
+            ("一起漫步", stroll_sec),
+            ("一起自由", free_sec),
+            ("一起睡眠", quiet_sec),
+            ("一起游戏", game_sec),
+        )
+        for label, sec in rows:
+            line = tk.Frame(detail_host, bg=MENU_BG)
+            line.pack(fill=tk.X, pady=1)
+            tk.Label(line, text=label, font=("Courier New", 9), fg="#ccddee", bg=MENU_BG, width=10, anchor=tk.W).pack(
+                side=tk.LEFT
+            )
+            tk.Label(
+                line,
+                text=_format_duration_zh(sec),
+                font=("Courier New", 9),
+                fg="#88ffcc",
+                bg=MENU_BG,
+                anchor=tk.W,
+            ).pack(side=tk.LEFT)
+
+        tk.Label(
+            frame,
+            text="昵称仅可填写一次",
+            font=("Courier New", 8),
+            fg="#667788",
+            bg=MENU_BG,
+        ).pack(anchor=tk.W, pady=(10, 0))
+        tk.Button(frame, text="关闭", command=close, font=PIXEL_FONT, bg="#555555", fg=MENU_FG).pack(
+            anchor=tk.E, pady=(10, 0)
+        )
+        self._place_panel_popup(win)
 
     def _open_owner_birthday_settings(self) -> None:
         self._hide_main_menu()
@@ -13463,19 +19210,84 @@ class DesktopPet:
         tip = tk.Label(frame, text="", font=("Courier New", 9), fg="#ff8866", bg=MENU_BG)
         tip.pack(anchor=tk.W, pady=(4, 0))
 
-        tk.Label(frame, text="像素画（可选）", font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(
+        tk.Label(frame, text="像素画", font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(
             anchor=tk.W, pady=(10, 4)
         )
+        tk.Label(
+            frame,
+            text="可画多张命名保存；点已保存可再编辑。「选用为礼物」后同步到家园/RPG「礼物画」。",
+            font=("Courier New", 8),
+            fg="#778899",
+            bg=MENU_BG,
+            justify=tk.LEFT,
+            wraplength=360,
+        ).pack(anchor=tk.W)
         cells = _normalize_gift_pixels(self.pet_profile.get("gift_pixels"))
+        # 允许追加自定义色到会话色板
+        palette: list[str | None] = list(GIFT_PIXEL_PALETTE)
+        extras = self.pet_profile.get("gift_palette_extra")
+        if isinstance(extras, list):
+            for c in extras:
+                if isinstance(c, str) and c.startswith("#") and len(palette) < 24:
+                    palette.append(c)
         brush = tk.IntVar(value=1)
+        editing = {"id": str(self.pet_profile.get("active_gift_art_id") or ""), "name": ""}
         board = tk.Frame(frame, bg="#0e1218", padx=4, pady=4)
+        # library row inserted before board below
+        gift_lib = tk.Frame(frame, bg=MENU_BG)
+        gift_lib.pack(anchor=tk.W, fill=tk.X, pady=(4, 2))
+        tk.Label(gift_lib, text="已保存", font=("Courier New", 8), fg="#8899aa", bg=MENU_BG).pack(side=tk.LEFT)
         board.pack(anchor=tk.W)
         cell_btns: list[tk.Label] = []
         painting = {"on": False}
+        pal_host = tk.Frame(frame, bg=MENU_BG)
 
         def cell_color(idx: int) -> str:
-            c = GIFT_PIXEL_PALETTE[idx] if 0 <= idx < len(GIFT_PIXEL_PALETTE) else None
+            c = palette[idx] if 0 <= idx < len(palette) else None
             return c or "#1a2030"
+
+        def refresh_gift_board() -> None:
+            for i, lbl in enumerate(cell_btns):
+                lbl.configure(bg=cell_color(cells[i] if i < len(cells) else 0))
+
+        def load_gift_entry(entry: dict) -> None:
+            pair = home_room.material_cells_palette(entry)
+            if not pair:
+                tip.config(text="该作品无可编辑数据", fg="#ff8866")
+                return
+            loaded_cells, loaded_pal = pair
+            n = GIFT_PIXEL_SIZE * GIFT_PIXEL_SIZE
+            for i in range(n):
+                cells[i] = int(loaded_cells[i]) if i < len(loaded_cells) else 0
+            palette.clear()
+            palette.extend(loaded_pal if loaded_pal else list(GIFT_PIXEL_PALETTE))
+            editing["id"] = str(entry.get("id") or "")
+            editing["name"] = str(entry.get("name") or "")
+            refresh_gift_board()
+            tip.config(text=f"已载入：「{editing['name']}」", fg="#88ccff")
+
+        def rebuild_gift_lib() -> None:
+            for w in list(gift_lib.winfo_children())[1:]:
+                w.destroy()
+            items = [
+                e
+                for e in home_room.load_materials_index(HOME_MATERIALS_INDEX)
+                if str(e.get("source") or "") in ("gift", "home", "rpg", "")
+            ]
+            if not items:
+                tk.Label(gift_lib, text="（暂无）", font=("Courier New", 8), fg="#667788", bg=MENU_BG).pack(side=tk.LEFT)
+                return
+            for entry in items[-10:]:
+                tk.Button(
+                    gift_lib,
+                    text=str(entry.get("name") or "?")[:8],
+                    font=("Courier New", 8),
+                    bg="#334455",
+                    fg=MENU_FG,
+                    command=lambda e=entry: load_gift_entry(e),
+                ).pack(side=tk.LEFT, padx=1)
+
+        rebuild_gift_lib()
 
         def paint_at(i: int) -> None:
             cells[i] = int(brush.get())
@@ -13513,35 +19325,207 @@ class DesktopPet:
                 cell_btns.append(lbl)
         win.bind("<ButtonRelease-1>", on_release)
 
-        pal = tk.Frame(frame, bg=MENU_BG)
-        pal.pack(anchor=tk.W, pady=(6, 0))
-        tk.Label(pal, text="颜色", font=("Courier New", 9), fg="#8899aa", bg=MENU_BG).pack(side=tk.LEFT)
-        for pi, col in enumerate(GIFT_PIXEL_PALETTE):
-            bg = col or "#1a2030"
-            txt = "橡皮" if pi == 0 else " "
-            tk.Radiobutton(
-                pal,
-                text=txt,
-                variable=brush,
-                value=pi,
-                indicatoron=False,
-                width=4 if pi == 0 else 2,
-                font=("Courier New", 8),
-                bg=bg,
-                fg="#ffffff" if pi != 4 else "#222222",
-                selectcolor=bg,
-                activebackground=bg,
-                relief=tk.RAISED,
-            ).pack(side=tk.LEFT, padx=2)
+        def rebuild_palette_ui() -> None:
+            def add_custom_color() -> None:
+                picked = self._ask_brush_color(win, title="自选画笔颜色")
+                if not picked:
+                    return
+                if len(palette) < 24:
+                    palette.append(picked)
+                    brush.set(len(palette) - 1)
+                else:
+                    palette[-1] = picked
+                    brush.set(len(palette) - 1)
+                rebuild_palette_ui()
+
+            def recolor_slot(pi: int) -> None:
+                if pi <= 0:
+                    return
+                cur = palette[pi] if 0 <= pi < len(palette) else "#ff6b9d"
+                picked = self._ask_brush_color(win, title="替换此色", initial=cur if isinstance(cur, str) else None)
+                if not picked:
+                    return
+                if 0 <= pi < len(palette):
+                    palette[pi] = picked
+                    brush.set(pi)
+                    rebuild_palette_ui()
+                    refresh_gift_board()
+
+            self._fill_pixel_palette_host(
+                pal_host,
+                palette=palette,
+                brush=brush,
+                on_add_custom=add_custom_color,
+                on_recolor_slot=recolor_slot,
+                cols=8,
+            )
+
+        pal_host.pack(anchor=tk.W, pady=(6, 0))
+        rebuild_palette_ui()
+        tk.Label(
+            frame,
+            text="「+取色」在色板上方；双击色块可替换该色。",
+            font=("Courier New", 8),
+            fg="#778899",
+            bg=MENU_BG,
+        ).pack(anchor=tk.W, pady=(2, 0))
 
         def clear_board() -> None:
             for i in range(len(cells)):
                 cells[i] = 0
                 cell_btns[i].configure(bg=cell_color(0))
+            editing["id"] = ""
+            editing["name"] = ""
+            tip.config(text="已新建空白画布", fg="#88ccff")
+
+        def sync_gift_art_to_world(*, silent: bool = False) -> str:
+            """把当前画板导出到家园 props 与 RPG assets；返回提示文案。"""
+            painted = list(cells)
+            if not _gift_pixels_has_paint(painted):
+                return "先在画板上涂几笔再同步哦"
+            try:
+                ok_export = home_room.export_gift_art(
+                    painted,
+                    tuple(palette),
+                    home_props=HOME_PROPS_DIR,
+                    rpg_assets=HOME_RPG_ASSETS_DIR,
+                )
+                if not ok_export:
+                    return "导出失败，请再试一次"
+                self._home_setup_assets()
+                stats = self.achievements.setdefault("stats", {})
+                stats["gift_art_exported"] = True
+                stats["pixel_gift"] = True
+                _save_achievements(self.achievements)
+                self._check_achievements(source="gift")
+                # 刷新已开家园的素材栏
+                if self._home_layout is not None:
+                    try:
+                        self._home_rebuild_brushes()
+                        self._home_redraw()
+                    except Exception:
+                        pass
+                nice, reason = home_room.gift_art_quality(painted, tuple(palette))
+                if silent:
+                    return reason if nice else "已同步到家园/RPG「礼物画」"
+                return reason if nice else "已同步到家园/RPG「礼物画」素材"
+            except Exception:
+                return "素材导出失败"
+
+        def name_save_gift(*, as_new: bool = False) -> None:
+            if not _gift_pixels_has_paint(list(cells)):
+                tip.config(text="先画几笔再命名保存哦", fg="#ff8866")
+                return
+            mat_name = self._ask_simple_name(
+                title="礼物画命名",
+                prompt="给这幅礼物像素画起个名字（可保存多张）",
+                default=editing["name"] or "礼物画",
+                confirm_text="保存到图库",
+            )
+            if not mat_name:
+                return
+            mid = None if as_new else (editing["id"] or None)
+            entry = home_room.register_named_material(
+                cells=list(cells),
+                palette=tuple(palette),
+                name=mat_name,
+                materials_dir=HOME_MATERIALS_DIR,
+                index_path=HOME_MATERIALS_INDEX,
+                home_props=HOME_PROPS_DIR,
+                rpg_assets=HOME_RPG_ASSETS_DIR,
+                source="gift",
+                mat_id=mid,
+                set_active_user=False,
+                set_active_gift=True,
+            )
+            if not entry:
+                tip.config(text="保存失败", fg="#ff8866")
+                return
+            editing["id"] = str(entry["id"])
+            editing["name"] = str(entry["name"])
+            self.pet_profile["gift_pixels"] = list(cells)
+            self.pet_profile["active_gift_art_id"] = editing["id"]
+            self.pet_profile["gift_palette_extra"] = [c for c in palette[len(GIFT_PIXEL_PALETTE) :] if c]
+            try:
+                _save_pet_profile(self.pet_profile)
+            except Exception:
+                pass
+            self._home_setup_assets()
+            if self._home_layout is not None:
+                try:
+                    self._home_rebuild_brushes()
+                except Exception:
+                    pass
+            rebuild_gift_lib()
+            tip.config(text=f"已保存礼物画：「{entry['name']}」", fg="#88ffcc")
+            self._show_toast(f"礼物画「{entry['name']}」已入库", THEME_PINK)
+
+        def sync_only() -> None:
+            # 同步时也落盘当前画板，避免只同步丢草稿
+            self.pet_profile["gift_pixels"] = list(cells)
+            self.pet_profile["gift_palette_extra"] = [c for c in palette[len(GIFT_PIXEL_PALETTE) :] if c]
+            if editing["id"]:
+                self.pet_profile["active_gift_art_id"] = editing["id"]
+            try:
+                _save_pet_profile(self.pet_profile)
+            except Exception:
+                pass
+            msg = sync_gift_art_to_world()
+            tip.config(text=msg, fg="#88ffcc" if "失败" not in msg and "先在" not in msg else "#ff8866")
+            if "失败" not in msg and "先在" not in msg:
+                self._show_toast(msg, THEME_PINK, duration_ms=2800)
+
+        btn_row = tk.Frame(frame, bg=MENU_BG)
+        btn_row.pack(fill=tk.X, pady=(6, 0))
+        tk.Button(
+            btn_row, text="新建", command=clear_board, font=("Courier New", 9), bg="#444455", fg=MENU_FG
+        ).pack(side=tk.LEFT)
+        tk.Button(
+            btn_row,
+            text="命名保存",
+            command=lambda: name_save_gift(as_new=False),
+            font=("Courier New", 9),
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        tk.Button(
+            btn_row,
+            text="另存新图",
+            command=lambda: name_save_gift(as_new=True),
+            font=("Courier New", 9),
+            bg="#445566",
+            fg=MENU_FG,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        tk.Button(
+            btn_row,
+            text="选用为礼物",
+            command=sync_only,
+            font=("Courier New", 9),
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        def export_gift_png() -> None:
+            if not any(int(v or 0) > 0 for v in cells):
+                tip.config(text="先画几笔再导出哦", fg="#ff8866")
+                return
+            path = self._export_pixel_file_dialog(
+                list(cells),
+                palette,
+                default_name=f"gift_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                parent=win,
+            )
+            if path:
+                tip.config(text=f"已导出：{path.name}", fg="#88ffcc")
 
         tk.Button(
-            frame, text="清空画板", command=clear_board, font=("Courier New", 9), bg="#444455", fg=MENU_FG
-        ).pack(anchor=tk.W, pady=(6, 0))
+            btn_row,
+            text="导出",
+            command=export_gift_png,
+            font=("Courier New", 9),
+            bg="#445566",
+            fg=MENU_FG,
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
         def save() -> None:
             gift = entry.get().strip()[:40]
@@ -13551,17 +19535,27 @@ class DesktopPet:
             self.pet_profile["gift_text"] = gift
             painted = list(cells)
             self.pet_profile["gift_pixels"] = painted
+            # 自定义色写入配置，便于下次还原显示
+            self.pet_profile["gift_palette_extra"] = [c for c in palette[len(GIFT_PIXEL_PALETTE) :] if c]
+            if editing.get("id"):
+                self.pet_profile["active_gift_art_id"] = editing["id"]
             _save_pet_profile(self.pet_profile)
             stats = self.achievements.setdefault("stats", {})
             stats["gift_ready"] = True
+            art_msg = ""
             if _gift_pixels_has_paint(painted):
                 stats["pixel_gift"] = True
+                art_msg = " · " + sync_gift_art_to_world(silent=True)
             _save_achievements(self.achievements)
             self._check_achievements(source="gift")
             win.destroy()
             self.gift_win = None
             extra = "（还有像素画）" if _gift_pixels_has_paint(painted) else ""
-            self._show_toast(f"已赠送「{gift}」{extra}，先藏好～等生日拆！", THEME_PINK, duration_ms=3200)
+            self._show_toast(
+                f"已赠送「{gift}」{extra}{art_msg}",
+                THEME_PINK,
+                duration_ms=4200,
+            )
             if _gift_pixels_has_paint(painted):
                 self.root.after(200, self._show_gift_pixel_fx)
             self.root.after(400, self._check_birthday_greetings)
@@ -13689,6 +19683,7 @@ class DesktopPet:
                     self.pet_profile["last_pet_bday_nudge_ymd"] = today
 
         if not pending:
+            self._maybe_owner_launch_greeting()
             return
         _save_pet_profile(self.pet_profile)
         if show_gift_art:
@@ -13697,7 +19692,10 @@ class DesktopPet:
         def show_at(idx: int) -> None:
             if idx >= len(pending) or not self._alive():
                 return
-            nxt = (lambda i=idx + 1: self.root.after(500, lambda: show_at(i))) if idx + 1 < len(pending) else None
+            if idx + 1 < len(pending):
+                nxt = lambda i=idx + 1: self.root.after(500, lambda: show_at(i))
+            else:
+                nxt = lambda: self.root.after(600, self._maybe_owner_launch_greeting)
             self._show_speech_dialog(
                 pending[idx],
                 auto_hide_ms=12000,
@@ -13707,18 +19705,72 @@ class DesktopPet:
 
         show_at(0)
 
+    def _parse_profile_time(self, raw: str) -> datetime | None:
+        text = str(raw or "").strip()
+        if not text:
+            return None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(text, fmt)
+            except Exception:
+                continue
+        return None
+
+    def _maybe_owner_launch_greeting(self) -> None:
+        """首次认主：所属人+欢迎词；太久没打开：好想你之类。"""
+        if not self._alive() or self._closing or not self._startup_ready:
+            return
+        if getattr(self, "owner_name_win", None) and self.owner_name_win.winfo_exists():
+            return
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            # 避免叠在生日祝福上；稍后再试一次
+            self.root.after(1200, self._maybe_owner_launch_greeting)
+            return
+        owner = _owner_display_name(self.pet_profile)
+        if not owner:
+            return
+        now = datetime.now()
+        line: str | None = None
+        welcome_done = bool(self.pet_profile.get("owner_welcome_done"))
+        if not welcome_done:
+            line = random.choice(OWNER_WELCOME_LINES).format(name=owner)
+            self.pet_profile["owner_welcome_done"] = True
+        else:
+            last = self._parse_profile_time(str(self.pet_profile.get("last_launch_at") or ""))
+            if last is None:
+                last = self._parse_profile_time(str(self.pet_profile.get("owner_set_at") or ""))
+            if last is None:
+                last = self._parse_profile_time(str(self.pet_profile.get("created") or ""))
+            if last is not None:
+                gap = (now - last).total_seconds()
+                if gap >= OWNER_MISS_AFTER_SEC:
+                    line = random.choice(OWNER_MISS_LINES).format(name=owner)
+        self.pet_profile["last_launch_at"] = now.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            _save_pet_profile(self.pet_profile)
+        except Exception:
+            pass
+        if not line:
+            return
+        self._show_speech_dialog(line, auto_hide_ms=4200, color=THEME_PINK)
+
     def _open_achievements(self) -> None:
         self._hide_main_menu()
+        try:
+            self._flush_mode_time(save=False)
+            self._check_achievements(source="panel")
+        except Exception:
+            pass
         old = self.achievements_win
         if old and old.winfo_exists():
-            old.lift()
-            return
+            old.destroy()
+            self.achievements_win = None
         win = tk.Toplevel(self.root)
         self.achievements_win = win
         win.title("成就")
         self._apply_window_layer(win)
         win.configure(bg=MENU_BG)
-        _, frame = _pack_fixed_scroll_panel(win, width=360, height=420)
+        _, frame = _pack_fixed_scroll_panel(win, width=380, height=460)
         tk.Label(frame, text="成就", font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(anchor=tk.W, pady=(0, 6))
         unlocked = self.achievements.get("unlocked") or {}
         got = sum(1 for a in ACHIEVEMENT_DEFS if a["id"] in unlocked)
@@ -13729,30 +19781,43 @@ class DesktopPet:
             fg="#8899aa",
             bg=MENU_BG,
         ).pack(anchor=tk.W, pady=(0, 8))
+        groups: dict[str, list[dict[str, str]]] = {}
         for ach in ACHIEVEMENT_DEFS:
-            done = ach["id"] in unlocked
-            row_bg = "#1e2838" if done else "#161822"
-            row = tk.Frame(frame, bg=row_bg, padx=6, pady=5)
-            row.pack(fill=tk.X, pady=2)
-            mark = "★" if done else "·"
-            fg = "#ffcc66" if done else "#667788"
-            tk.Label(row, text=mark, font=PIXEL_FONT, fg=fg, bg=row_bg, width=2).pack(side=tk.LEFT)
-            col = tk.Frame(row, bg=row_bg)
-            col.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            tk.Label(col, text=ach["title"], font=PIXEL_FONT, fg=THEME_PINK if done else "#99aabb", bg=row_bg).pack(
-                anchor=tk.W
-            )
-            tk.Label(col, text=ach["desc"], font=("Courier New", 9), fg="#8899aa", bg=row_bg, wraplength=280).pack(
-                anchor=tk.W
-            )
-            if done:
-                tk.Label(
-                    col,
-                    text=f"解锁于 {unlocked.get(ach['id'], '')}",
-                    font=("Courier New", 8),
-                    fg="#667788",
-                    bg=row_bg,
-                ).pack(anchor=tk.W)
+            cat = str(ach.get("cat") or "其他")
+            groups.setdefault(cat, []).append(ach)
+        for cat, items in groups.items():
+            cat_got = sum(1 for a in items if a["id"] in unlocked)
+            tk.Label(
+                frame,
+                text=f"▸ {cat}  {cat_got}/{len(items)}",
+                font=PIXEL_FONT,
+                fg="#88ccff",
+                bg=MENU_BG,
+            ).pack(anchor=tk.W, pady=(10, 4))
+            for ach in items:
+                done = ach["id"] in unlocked
+                row_bg = "#1e2838" if done else "#161822"
+                row = tk.Frame(frame, bg=row_bg, padx=6, pady=5)
+                row.pack(fill=tk.X, pady=2)
+                mark = "★" if done else "·"
+                fg = "#ffcc66" if done else "#667788"
+                tk.Label(row, text=mark, font=PIXEL_FONT, fg=fg, bg=row_bg, width=2).pack(side=tk.LEFT)
+                col = tk.Frame(row, bg=row_bg)
+                col.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                tk.Label(col, text=ach["title"], font=PIXEL_FONT, fg=THEME_PINK if done else "#99aabb", bg=row_bg).pack(
+                    anchor=tk.W
+                )
+                tk.Label(col, text=ach["desc"], font=("Courier New", 9), fg="#8899aa", bg=row_bg, wraplength=300).pack(
+                    anchor=tk.W
+                )
+                if done:
+                    tk.Label(
+                        col,
+                        text=f"解锁于 {unlocked.get(ach['id'], '')}",
+                        font=("Courier New", 8),
+                        fg="#667788",
+                        bg=row_bg,
+                    ).pack(anchor=tk.W)
         self._place_panel_popup(win)
 
     def _show_pet_id(self) -> None:
@@ -14227,6 +20292,7 @@ class DesktopPet:
         self.gallery_win.title("画廊")
         self._apply_window_layer(self.gallery_win)
         self.gallery_win.configure(bg=MENU_BG)
+        self._note_achievement_flag("memory_open")
         gh = GALLERY_PREVIEW_SIZE + GALLERY_SCROLL_H + 110
         _fit_panel_wh(self.gallery_win, GALLERY_WIN_W, gh)
 
@@ -14378,36 +20444,54 @@ class DesktopPet:
             self._place_panel_popup(self.gallery_win)
             return
 
+        # 先占位出窗，缩略图分批加载，避免一次卡死
+        placeholders: list[tuple[dict, tk.Frame, tk.Frame]] = []
         for i, group in enumerate(groups):
             row, col = divmod(i, GALLERY_COLS)
             cell = tk.Frame(grid_wrap, bg=MENU_BG, padx=3, pady=3)
             cell.grid(row=row, column=col, sticky=tk.N)
-            thumb_wrap = tk.Frame(cell, bg=MENU_BG)
+            thumb_wrap = tk.Frame(cell, bg=MENU_BG, width=GALLERY_THUMB_SIZE, height=GALLERY_THUMB_SIZE)
             thumb_wrap.pack()
-            thumb = _gallery_frame_photo(group, 0, GALLERY_THUMB_SIZE)
-            if thumb is None:
-                continue
-            self.gallery_photos.append(thumb)
-            thumb_lbl = tk.Label(thumb_wrap, image=thumb, bg=MENU_BG, cursor="hand2")
-            thumb_lbl.image = thumb
-            thumb_lbl.pack()
-            file_count = len(group.get("files") or ())
-            if file_count > 1:
-                tk.Label(
-                    thumb_wrap,
-                    text=f"×{file_count}",
-                    font=("Courier New", 8),
-                    fg="#ffffff",
-                    bg="#4488ff",
-                    padx=2,
-                ).place(relx=1.0, rely=1.0, anchor=tk.SE)
-            thumb_lbl.bind("<Button-1>", lambda _e, g=group: show_group(g, 0))
+            thumb_wrap.pack_propagate(False)
+            tk.Label(thumb_wrap, text="…", font=PIXEL_FONT, fg="#667788", bg=MENU_BG).place(
+                relx=0.5, rely=0.5, anchor=tk.CENTER
+            )
             tk.Label(cell, text=str(group["title"]), font=("Courier New", 9), fg=MENU_FG, bg=MENU_BG).pack(
                 pady=(2, 0)
             )
+            placeholders.append((group, cell, thumb_wrap))
 
-        show_group(groups[0], 0)
         self._place_panel_popup(self.gallery_win)
+        self.root.after(GALLERY_THUMB_STEP_MS, lambda: show_group(groups[0], 0))
+
+        def load_thumb_at(idx: int = 0) -> None:
+            if self._closing or not self.gallery_win or not self.gallery_win.winfo_exists():
+                return
+            if idx >= len(placeholders):
+                return
+            group, cell, thumb_wrap = placeholders[idx]
+            thumb = _gallery_frame_photo(group, 0, GALLERY_THUMB_SIZE)
+            if thumb is not None:
+                for w in thumb_wrap.winfo_children():
+                    w.destroy()
+                self.gallery_photos.append(thumb)
+                thumb_lbl = tk.Label(thumb_wrap, image=thumb, bg=MENU_BG, cursor="hand2")
+                thumb_lbl.image = thumb
+                thumb_lbl.pack()
+                file_count = len(group.get("files") or ())
+                if file_count > 1:
+                    tk.Label(
+                        thumb_wrap,
+                        text=f"×{file_count}",
+                        font=("Courier New", 8),
+                        fg="#ffffff",
+                        bg="#4488ff",
+                        padx=2,
+                    ).place(relx=1.0, rely=1.0, anchor=tk.SE)
+                thumb_lbl.bind("<Button-1>", lambda _e, g=group: show_group(g, 0))
+            self.root.after(GALLERY_THUMB_STEP_MS, lambda i=idx + 1: load_thumb_at(i))
+
+        self.root.after(GALLERY_THUMB_STEP_MS, lambda: load_thumb_at(0))
 
     def _stop_phonograph_playback(self) -> None:
         if self.phonograph_play_job:
@@ -14429,12 +20513,33 @@ class DesktopPet:
             self._start_bg_music()
         else:
             self.phonograph_paused_music = False
-        self._refresh_phonograph_list_if_open()
+        self._update_phonograph_play_ui()
 
     def _refresh_phonograph_list_if_open(self) -> None:
         refresh = getattr(self, "_phonograph_refresh", None)
         if refresh and self.phonograph_win and self.phonograph_win.winfo_exists():
             refresh()
+
+    def _update_phonograph_play_ui(self) -> None:
+        """只改播放按钮/标题高亮，不重建整表。"""
+        if not self.phonograph_win or not self.phonograph_win.winfo_exists():
+            return
+        playing = self.phonograph_playing_id
+        for eid, btn in list(getattr(self, "_phonograph_play_btns", {}) or {}).items():
+            try:
+                if not btn.winfo_exists():
+                    continue
+                on = eid == playing
+                btn.config(text="■" if on else "▶", bg=MENU_ACTIVE if on else MENU_BG)
+            except Exception:
+                pass
+        for eid, lbl in list(getattr(self, "_phonograph_title_lbls", {}) or {}).items():
+            try:
+                if not lbl.winfo_exists():
+                    continue
+                lbl.config(fg=PIXEL_COLOR if eid == playing else MENU_FG)
+            except Exception:
+                pass
 
     def _phonograph_playback_done(self, entry_id: str, token: int) -> None:
         self.phonograph_play_job = None
@@ -14451,6 +20556,21 @@ class DesktopPet:
             self._stop_phonograph_playback()
             return
 
+        # 换曲时先停掉上一首，但不整表刷新
+        if self.phonograph_play_job:
+            try:
+                self.root.after_cancel(self.phonograph_play_job)
+            except Exception:
+                pass
+            self.phonograph_play_job = None
+        try:
+            import pygame
+
+            if pygame.mixer.get_init() and self.phonograph_playing_id:
+                pygame.mixer.music.stop()
+        except Exception:
+            pass
+
         self._stop_call_audio()
         self.phonograph_play_token += 1
         token = self.phonograph_play_token
@@ -14465,7 +20585,20 @@ class DesktopPet:
                 self._show_toast("找不到音频文件", "#ff8844")
                 self._stop_phonograph_playback()
                 return
-            duration_ms = _get_wav_duration_ms(Path(path))
+            play_path = Path(path)
+            # 列表可能只挂了源文件；播放时再转码
+            if play_path.suffix.lower() not in (".wav", ".wave"):
+                eid = str(entry.get("id", ""))
+                if eid.startswith("builtin:music:"):
+                    tid = eid.split(":", 2)[-1]
+                    converted = _ensure_music_track_wav(tid)
+                    if converted is not None:
+                        play_path = converted
+                else:
+                    converted = _ensure_audio_wav(play_path, play_path.with_suffix(".wav"))
+                    if converted is not None:
+                        play_path = converted
+            duration_ms = _get_wav_duration_ms(play_path)
             try:
                 import pygame
 
@@ -14476,7 +20609,7 @@ class DesktopPet:
                     self.phonograph_paused_music = True
                     pygame.mixer.music.stop()
                     self.bg_music_playing = False
-                pygame.mixer.music.load(str(path))
+                pygame.mixer.music.load(str(play_path))
                 pygame.mixer.music.set_volume(self._sound_scale(category))
                 pygame.mixer.music.play()
             except Exception:
@@ -14539,7 +20672,7 @@ class DesktopPet:
                 duration_ms + 180,
                 lambda eid=entry_id, tok=token: self._phonograph_playback_done(eid, tok),
             )
-        self._refresh_phonograph_list_if_open()
+        self._update_phonograph_play_ui()
 
     def _import_phonograph_audio(self, refresh) -> None:
         src = filedialog.askopenfilename(
@@ -14569,6 +20702,7 @@ class DesktopPet:
         entries = _load_phonograph_user()
         entries.insert(0, {"id": entry_id, "title": title, "filename": dst.name})
         _save_phonograph_user(entries)
+        _invalidate_phonograph_catalog_cache()
         self._show_toast(f"已收录：{title}", "#88ccff")
         refresh()
 
@@ -14582,6 +20716,7 @@ class DesktopPet:
         path = _resolve_phonograph_user_path(target)
         entries = [e for e in entries if e.get("id") != user_id]
         _save_phonograph_user(entries)
+        _invalidate_phonograph_catalog_cache()
         if path and path.is_file():
             try:
                 path.unlink()
@@ -14623,12 +20758,17 @@ class DesktopPet:
             self.phonograph_win.destroy()
             self.phonograph_win = None
             self._phonograph_refresh = None
+            self._phonograph_play_btns = {}
+            self._phonograph_title_lbls = {}
             return
 
         self.phonograph_win = tk.Toplevel(self.root)
+        self._phonograph_play_btns = {}
+        self._phonograph_title_lbls = {}
         self.phonograph_win.title("留声")
         self._apply_window_layer(self.phonograph_win)
         self.phonograph_win.configure(bg=MENU_BG)
+        self._note_achievement_flag("memory_open")
 
         _, outer = _pack_fixed_scroll_panel(self.phonograph_win)
         tk.Label(outer, text="留声", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
@@ -14659,7 +20799,7 @@ class DesktopPet:
             entry_id = str(entry.get("id", ""))
             playing = self.phonograph_playing_id == entry_id
             play_label = "■" if playing else "▶"
-            tk.Button(
+            play_btn = tk.Button(
                 line,
                 text=play_label,
                 width=2,
@@ -14667,9 +20807,12 @@ class DesktopPet:
                 font=PIXEL_FONT,
                 bg=MENU_ACTIVE if playing else MENU_BG,
                 fg=MENU_FG,
-            ).pack(side=tk.LEFT, padx=(0, 4))
+            )
+            play_btn.pack(side=tk.LEFT, padx=(0, 4))
+            if entry_id:
+                self._phonograph_play_btns[entry_id] = play_btn
             tag = _phonograph_entry_tag(entry)
-            tk.Label(
+            title_lbl = tk.Label(
                 line,
                 text=f"[{tag}] {entry.get('title', '')}",
                 font=PIXEL_FONT,
@@ -14677,7 +20820,10 @@ class DesktopPet:
                 bg=MENU_BG,
                 width=24,
                 anchor=tk.W,
-            ).pack(side=tk.LEFT)
+            )
+            title_lbl.pack(side=tk.LEFT)
+            if entry_id:
+                self._phonograph_title_lbls[entry_id] = title_lbl
             dur = self._format_phonograph_duration(entry)
             if dur:
                 tk.Label(line, text=dur, font=PIXEL_FONT, fg="#666666", bg=MENU_BG, width=5).pack(side=tk.LEFT)
@@ -14695,6 +20841,8 @@ class DesktopPet:
         def refresh_list() -> None:
             for w in list_wrap.winfo_children():
                 w.destroy()
+            self._phonograph_play_btns = {}
+            self._phonograph_title_lbls = {}
             catalog = _build_phonograph_catalog()
             if not catalog:
                 tk.Label(list_wrap, text="暂无音频，可点击下方导入", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(
@@ -14716,6 +20864,16 @@ class DesktopPet:
                     fg="#ffcc66",
                     bg=MENU_BG,
                 ).pack(anchor=tk.W, pady=(6, 2))
+                if cat_key == "voice":
+                    tk.Label(
+                        list_wrap,
+                        text="录音音量不统一、语速偏快；后续可能重录并扩展语音库。",
+                        font=("Courier New", 8),
+                        fg="#8899aa",
+                        bg=MENU_BG,
+                        wraplength=320,
+                        justify=tk.LEFT,
+                    ).pack(anchor=tk.W, pady=(0, 4))
                 for entry in entries:
                     _render_phonograph_entry(list_wrap, entry)
 
@@ -14745,7 +20903,7 @@ class DesktopPet:
                 ("画廊", self._open_gallery),
                 ("留声", self._open_phonograph),
             ],
-            offset_x=360,
+            offset_x=240,
         )
 
     def _open_panel_settings(self) -> None:
@@ -14775,39 +20933,116 @@ class DesktopPet:
         tk.Label(frame, text="系统设置", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
 
         size_row = tk.Frame(frame, bg=MENU_BG)
-        size_row.pack(fill=tk.X, pady=(8, 4))
+        size_row.pack(fill=tk.X, pady=(8, 2))
         tk.Label(size_row, text="桌宠大小", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        size_val = tk.Label(size_row, text=f"{self.display_size}px", font=PIXEL_FONT, fg="#88ccff", bg=MENU_BG)
+        size_val.pack(side=tk.RIGHT)
+        size_scale = tk.Scale(
+            frame,
+            from_=SIZE_MIN_PX,
+            to=SIZE_MAX_PX,
+            resolution=SIZE_STEP_PX,
+            orient=tk.HORIZONTAL,
+            length=280,
+            bg=MENU_BG,
+            fg=MENU_FG,
+            highlightthickness=0,
+            troughcolor="#334455",
+            showvalue=0,
+        )
+        size_scale.set(_snap_display_size(self.display_size))
+        size_scale.pack(fill=tk.X, pady=(0, 2))
+
+        def on_size_drag(_evt=None) -> None:
+            size_val.config(text=f"{_snap_display_size(int(size_scale.get()))}px")
+
+        def on_size_commit(_evt=None) -> None:
+            px = _snap_display_size(int(size_scale.get()))
+            size_val.config(text=f"{px}px")
+            size_scale.set(px)
+            if px != self.display_size:
+                self._set_display_size(px, refresh_settings=True)
+
+        size_scale.bind("<ButtonRelease-1>", on_size_commit)
+        size_scale.bind("<B1-Motion>", on_size_drag)
+        preset_row = tk.Frame(frame, bg=MENU_BG)
+        preset_row.pack(fill=tk.X, pady=(0, 6))
         for preset, px in SIZE_PRESETS.items():
             mark = " ✓" if self.display_size == px else ""
-
-            def set_size(p=preset) -> None:
-                # 与字体一致：点选后立即切尺寸；完成后刷新设置页勾选
-                self._set_size_preset(p, refresh_settings=True)
-
             tk.Button(
-                size_row, text=f"{preset}{mark}", command=set_size, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
+                preset_row,
+                text=f"{preset}{mark}",
+                command=lambda p=preset: self._set_size_preset(p, refresh_settings=True),
+                font=("Courier New", 8),
+                bg=MENU_ACTIVE,
+                fg=MENU_FG,
             ).pack(side=tk.LEFT, padx=2)
 
         font_row = tk.Frame(frame, bg=MENU_BG)
-        font_row.pack(fill=tk.X, pady=(4, 8))
+        font_row.pack(fill=tk.X, pady=(4, 2))
         tk.Label(font_row, text="字体大小", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
-        for preset, px in FONT_SIZE_PRESETS.items():
-            mark = " ✓" if self.font_size == px else ""
+        font_val = tk.Label(font_row, text=f"{self.font_size}", font=PIXEL_FONT, fg="#88ccff", bg=MENU_BG)
+        font_val.pack(side=tk.RIGHT)
+        font_scale = tk.Scale(
+            frame,
+            from_=8,
+            to=24,
+            resolution=1,
+            orient=tk.HORIZONTAL,
+            length=280,
+            bg=MENU_BG,
+            fg=MENU_FG,
+            highlightthickness=0,
+            troughcolor="#334455",
+            showvalue=0,
+        )
+        font_scale.set(self.font_size)
+        font_scale.pack(fill=tk.X, pady=(0, 6))
 
-            def set_font(p=preset, size=px) -> None:
-                self.font_size = size
-                _apply_font_size(size)
-                self.app_config["font_size"] = size
-                _save_app_config(self.app_config)
-                self._show_toast(f"字体已设为「{p}」", PIXEL_COLOR)
-                if self.panel_settings_win and self.panel_settings_win.winfo_exists():
-                    self.panel_settings_win.destroy()
-                    self.panel_settings_win = None
-                self._open_panel_settings()
+        def on_font_drag(_evt=None) -> None:
+            font_val.config(text=str(int(font_scale.get())))
 
-            tk.Button(
-                font_row, text=f"{preset}{mark}", command=set_font, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
-            ).pack(side=tk.LEFT, padx=2)
+        def on_font_commit(_evt=None) -> None:
+            size = max(8, min(24, int(font_scale.get())))
+            font_val.config(text=str(size))
+            if size == self.font_size:
+                return
+            self.font_size = size
+            _apply_font_size(size)
+            self.app_config["font_size"] = size
+            _save_app_config(self.app_config)
+            self._show_toast(f"字体大小：{size}", PIXEL_COLOR)
+            self._refresh_panel_settings_if_open()
+
+        font_scale.bind("<ButtonRelease-1>", on_font_commit)
+        font_scale.bind("<B1-Motion>", on_font_drag)
+
+        timer_row = tk.Frame(frame, bg=MENU_BG)
+        timer_row.pack(fill=tk.X, pady=(4, 2))
+        tk.Label(timer_row, text="时间显示", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        timers_on = self._timers_display_enabled()
+
+        def toggle_timers() -> None:
+            self._set_timers_display(not self._timers_display_enabled())
+            self._refresh_panel_settings_if_open()
+
+        tk.Button(
+            timer_row,
+            text=f"{'开 ✓' if timers_on else '关'}",
+            command=toggle_timers,
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE if timers_on else "#445566",
+            fg=MENU_FG,
+        ).pack(side=tk.RIGHT)
+        tk.Label(
+            frame,
+            text="开：睡眠/音乐/工作旁显示秒表或定时；结束时会提示本局/累计时长；工具菜单仍可单独开秒表/计时器",
+            font=("Courier New", 8),
+            fg="#8899aa",
+            bg=MENU_BG,
+            wraplength=320,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 6))
 
         tk.Label(frame, text="声音设置", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W, pady=(4, 0))
         tk.Button(
@@ -14820,7 +21055,7 @@ class DesktopPet:
         ).pack(anchor=tk.W, pady=4)
 
         voice_row = tk.Frame(frame, bg=MENU_BG)
-        voice_row.pack(fill=tk.X, pady=(4, 8))
+        voice_row.pack(fill=tk.X, pady=(4, 2))
         tk.Label(voice_row, text="语音模式", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
         voice_on = bool(self.app_config.get("voice_mode"))
 
@@ -14843,6 +21078,84 @@ class DesktopPet:
             bg=MENU_ACTIVE if not voice_on else MENU_BG,
             fg=MENU_FG,
         ).pack(side=tk.LEFT, padx=2)
+        tk.Label(
+            voice_row,
+            text="可解锁更多互动体验",
+            font=("Courier New", 8),
+            fg="#8899aa",
+            bg=MENU_BG,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        if voice_on:
+            cur_iv = int(self.app_config.get("voice_interval_ms", VOICE_GLOBAL_COOLDOWN_MS) or VOICE_GLOBAL_COOLDOWN_MS)
+            cur_iv = max(VOICE_COOLDOWN_MIN_MS, min(VOICE_COOLDOWN_MAX_MS, cur_iv))
+            iv_row = tk.Frame(frame, bg=MENU_BG)
+            iv_row.pack(fill=tk.X, pady=(2, 0))
+            tk.Label(iv_row, text="语音间隔", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+            iv_val = tk.Label(iv_row, text=f"{cur_iv // 1000}秒", font=PIXEL_FONT, fg="#88ccff", bg=MENU_BG)
+            iv_val.pack(side=tk.RIGHT)
+            iv_scale = tk.Scale(
+                frame,
+                from_=VOICE_COOLDOWN_MIN_MS // 1000,
+                to=VOICE_COOLDOWN_MAX_MS // 1000,
+                resolution=1,
+                orient=tk.HORIZONTAL,
+                length=280,
+                bg=MENU_BG,
+                fg=MENU_FG,
+                highlightthickness=0,
+                troughcolor="#334455",
+                showvalue=0,
+            )
+            iv_scale.set(cur_iv // 1000)
+            iv_scale.pack(fill=tk.X, pady=(0, 6))
+
+            def on_iv_drag(_evt=None) -> None:
+                iv_val.config(text=f"{int(iv_scale.get())}秒")
+
+            def on_iv_commit(_evt=None) -> None:
+                sec = max(VOICE_COOLDOWN_MIN_MS // 1000, min(VOICE_COOLDOWN_MAX_MS // 1000, int(iv_scale.get())))
+                iv_val.config(text=f"{sec}秒")
+                self._set_voice_interval_ms(sec * 1000, toast=True)
+
+            iv_scale.bind("<B1-Motion>", on_iv_drag)
+            iv_scale.bind("<ButtonRelease-1>", on_iv_commit)
+            tk.Label(
+                frame,
+                text="两次随机语音之间的最短间隔（场景语音不受此限）",
+                font=("Courier New", 8),
+                fg="#8899aa",
+                bg=MENU_BG,
+            ).pack(anchor=tk.W, pady=(0, 4))
+
+        border_row = tk.Frame(frame, bg=MENU_BG)
+        border_row.pack(fill=tk.X, pady=(4, 8))
+        tk.Label(border_row, text="立绘黑框", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        tk.Button(
+            border_row,
+            text="去黑框",
+            command=self._open_strip_black_stub,
+            font=PIXEL_FONT,
+            bg=MENU_BG,
+            fg=MENU_FG,
+        ).pack(side=tk.LEFT, padx=2)
+        tk.Button(
+            border_row,
+            text="不去黑框",
+            command=self._open_strip_black_stub,
+            font=PIXEL_FONT,
+            bg=MENU_BG,
+            fg=MENU_FG,
+        ).pack(side=tk.LEFT, padx=2)
+        tk.Label(
+            frame,
+            text="（功能尚未完成）",
+            font=("Courier New", 8),
+            fg="#8899aa",
+            bg=MENU_BG,
+            wraplength=340,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 4))
 
         if PET_ID_FEATURE:
             tk.Label(frame, text="桌宠编号", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(
@@ -14904,18 +21217,52 @@ class DesktopPet:
         diff_row = tk.Frame(frame, bg=MENU_BG)
         diff_row.pack(fill=tk.X, pady=(8, 0))
         tk.Label(diff_row, text="游戏难度", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        diff_val = tk.Label(
+            diff_row,
+            text=f"{self.difficulty} {int(round(getattr(self, 'difficulty_t', 0.5) * 100))}%",
+            font=PIXEL_FONT,
+            fg="#88ccff",
+            bg=MENU_BG,
+        )
+        diff_val.pack(side=tk.RIGHT)
+        diff_scale = tk.Scale(
+            frame,
+            from_=0,
+            to=100,
+            resolution=1,
+            orient=tk.HORIZONTAL,
+            length=280,
+            bg=MENU_BG,
+            fg=MENU_FG,
+            highlightthickness=0,
+            troughcolor="#334455",
+            showvalue=0,
+        )
+        diff_scale.set(int(round(getattr(self, "difficulty_t", 0.5) * 100)))
+        diff_scale.pack(fill=tk.X, pady=(0, 2))
+
+        def on_diff_drag(_evt=None) -> None:
+            t = max(0.0, min(1.0, int(diff_scale.get()) / 100.0))
+            diff_val.config(text=f"{_difficulty_label_for_t(t)} {int(round(t * 100))}%")
+
+        def on_diff_commit(_evt=None) -> None:
+            t = max(0.0, min(1.0, int(diff_scale.get()) / 100.0))
+            self._set_difficulty_t(t, toast=True)
+            diff_val.config(text=f"{self.difficulty} {int(round(self.difficulty_t * 100))}%")
+
+        diff_scale.bind("<B1-Motion>", on_diff_drag)
+        diff_scale.bind("<ButtonRelease-1>", on_diff_commit)
+        quick_diff = tk.Frame(frame, bg=MENU_BG)
+        quick_diff.pack(fill=tk.X, pady=(0, 4))
         for level in ("低", "中", "高"):
-            mark = " ✓" if self.difficulty == level else ""
-
-            def set_diff(l=level) -> None:
-                self._set_difficulty(l)
-                if self.panel_settings_win and self.panel_settings_win.winfo_exists():
-                    self.panel_settings_win.destroy()
-                    self.panel_settings_win = None
-                self._open_panel_settings()
-
+            mark = " ✓" if self.difficulty == level and abs(self.difficulty_t - DIFFICULTY_T_BY_NAME[level]) < 0.01 else ""
             tk.Button(
-                diff_row, text=f"{level}{mark}", command=set_diff, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG
+                quick_diff,
+                text=f"{level}{mark}",
+                command=lambda l=level: (self._set_difficulty(l), self._refresh_panel_settings_if_open()),
+                font=("Courier New", 8),
+                bg=MENU_ACTIVE,
+                fg=MENU_FG,
             ).pack(side=tk.LEFT, padx=2)
         self._place_panel_popup(self.panel_settings_win)
 
@@ -14941,17 +21288,17 @@ class DesktopPet:
         self._ensure_first_play_guide("rhyme", start, on_show=self._try_voice_laimu_open)
 
     def _begin_rhyme_fight(self) -> None:
-        """莱姆：双方先选招，再同时结算，然后进入下一回合。"""
+        """莱姆：选招 → 掷骰判定成败 → 同时结算。"""
         self._close_rhyme_fight(resume=False)
         state = {
             "player_hp": 100,
             "enemy_hp": 100,
             "player_max": 100,
             "enemy_max": 100,
-            "log": "第 1 回合 · 请选择攻击 / 防御 / 必杀",
+            "log": "第 1 回合 · 请选择攻击 / 防御 / 必杀（随后掷骰判定）",
             "over": False,
             "round": 1,
-            "phase": "choose",  # choose | resolve
+            "phase": "choose",  # choose | judge | resolve
             "special_ready_round": 1,
             "enemy_special_ready_round": 1,
             "jinmu": False,
@@ -15003,6 +21350,21 @@ class DesktopPet:
 
         phase_lbl = tk.Label(frame, text=f"第 1 回合 · 选招  [{self.difficulty}]", font=PIXEL_FONT, fg="#aaaaaa", bg=MENU_BG)
         phase_lbl.pack(anchor=tk.W)
+
+        dice_row = tk.Frame(frame, bg=MENU_BG)
+        dice_row.pack(fill=tk.X, pady=(4, 0))
+        die_size = 36
+        tk.Label(dice_row, text="你", font=("Courier New", 8), fg="#88ccff", bg=MENU_BG).pack(side=tk.LEFT)
+        player_die = tk.Canvas(dice_row, width=die_size, height=die_size, bg=MENU_BG, highlightthickness=0)
+        player_die.pack(side=tk.LEFT, padx=(2, 10))
+        _draw_pixel_die(player_die, die_size, 1)
+        tk.Label(dice_row, text="对手", font=("Courier New", 8), fg="#ff8844", bg=MENU_BG).pack(side=tk.LEFT)
+        enemy_die = tk.Canvas(dice_row, width=die_size, height=die_size, bg=MENU_BG, highlightthickness=0)
+        enemy_die.pack(side=tk.LEFT, padx=(2, 8))
+        _draw_pixel_die(enemy_die, die_size, 1)
+        dice_hint = tk.Label(dice_row, text="", font=("Courier New", 8), fg="#8899aa", bg=MENU_BG)
+        dice_hint.pack(side=tk.LEFT)
+
         log_label = tk.Label(frame, text="", font=PIXEL_FONT, fg="#cccccc", bg=MENU_BG, wraplength=320, justify=tk.LEFT)
         log_label.pack(anchor=tk.W, pady=(4, 8))
 
@@ -15035,10 +21397,28 @@ class DesktopPet:
         attack_btn = _make_action_btn(btn_row, "attack", "攻击", lambda: None, bg=MENU_ACTIVE, active="#3a4a66")
         block_btn = _make_action_btn(btn_row, "defense", "防御", lambda: None, bg="#2a3348", active="#3a4458")
         special_btn = _make_action_btn(btn_row, "special", "必杀", lambda: None, bg="#884444", active="#aa5555")
+        roll_btn = tk.Button(
+            btn_row,
+            text="掷骰判定",
+            command=lambda: None,
+            font=PIXEL_FONT,
+            bg="#5a4a88",
+            fg=MENU_FG,
+            activebackground="#6a5a98",
+            relief=tk.FLAT,
+            padx=8,
+            pady=2,
+            state=tk.DISABLED,
+        )
+        roll_btn.pack(side=tk.LEFT, padx=(10, 0))
 
         action_name = {"attack": "攻击", "defense": "防御", "special": "必杀"}
+        state["pending_player"] = ""
+        state["pending_enemy"] = ""
+        state["player_roll"] = 0
+        state["enemy_roll"] = 0
 
-        def set_buttons_enabled(enabled: bool) -> None:
+        def set_choose_buttons(enabled: bool) -> None:
             if not enabled:
                 for b in (attack_btn, block_btn, special_btn):
                     try:
@@ -15052,6 +21432,12 @@ class DesktopPet:
             except Exception:
                 pass
             refresh_special_btn()
+
+        def set_roll_enabled(enabled: bool) -> None:
+            try:
+                roll_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
+            except Exception:
+                pass
 
         def special_ready() -> bool:
             return int(state["round"]) >= int(state["special_ready_round"])
@@ -15088,21 +21474,39 @@ class DesktopPet:
             )
             player_hp_txt.config(text=str(int(state["player_hp"])))
             enemy_hp_txt.config(text=str(int(state["enemy_hp"])))
+            pr = int(state.get("player_roll") or 0)
+            er = int(state.get("enemy_roll") or 0)
+            if pr >= 1:
+                _draw_pixel_die(player_die, die_size, pr)
+            if er >= 1:
+                _draw_pixel_die(enemy_die, die_size, er)
             if state["jinmu"]:
                 phase_lbl.config(text=f"阶段 2 · 金目觉醒  [{self.difficulty}]", fg="#ff66aa")
                 you_name.config(text="金目 耐久", fg="#66b0ee")
+                dice_hint.config(text="")
+            elif state["phase"] == "judge":
+                phase_lbl.config(
+                    text=f"第 {state['round']} 回合 · 掷骰判定  [{self.difficulty}]",
+                    fg="#cc99ff",
+                )
+                you_name.config(text="你 耐久", fg="#88ccff")
+                pa = str(state.get("pending_player") or "attack")
+                need = _rhyme_dice_threshold(pa, getattr(self, "difficulty_t", 0.5))
+                dice_hint.config(text=f"你需 ≥{need}" if pa != "defense" else f"完美格挡 ≥{need}")
             elif state["phase"] == "resolve":
                 phase_lbl.config(
-                    text=f"第 {state['round']} 回合 · 同时结算  [{self.difficulty}]",
+                    text=f"第 {state['round']} 回合 · 结算  [{self.difficulty}]",
                     fg="#ffcc66",
                 )
                 you_name.config(text="你 耐久", fg="#88ccff")
+                dice_hint.config(text="")
             else:
                 phase_lbl.config(
                     text=f"第 {state['round']} 回合 · 选招  [{self.difficulty}]",
                     fg="#aaaaaa",
                 )
                 you_name.config(text="你 耐久", fg="#88ccff")
+                dice_hint.config(text="选招后掷骰判定成败")
             log_label.config(text=state["log"])
             refresh_special_btn()
 
@@ -15111,7 +21515,8 @@ class DesktopPet:
                 return
             state["over"] = True
             state["phase"] = "resolve"
-            set_buttons_enabled(False)
+            set_choose_buttons(False)
+            set_roll_enabled(False)
             if won:
                 self.mood = min(100, self.mood + (8 if state["jinmu"] else 5))
                 if state["jinmu"]:
@@ -15166,7 +21571,8 @@ class DesktopPet:
             state["jinmu_used"] = True
             state["jinmu"] = True
             state["phase"] = "resolve"
-            set_buttons_enabled(False)
+            set_choose_buttons(False)
+            set_roll_enabled(False)
             state["player_hp"] = max(45, int(state["player_max"] * 0.55))
             state["log"] = "耐久归零…第二人格·金目觉醒！"
             _draw_fight_fighter_icon(player_canvas, icon_size, side="jinmu")
@@ -15190,7 +21596,6 @@ class DesktopPet:
         def pick_enemy_action() -> str:
             rnd = int(state["round"])
             can_special = rnd >= int(state["enemy_special_ready_round"])
-            # 低血时更爱防御；偶尔必杀
             if can_special and state["enemy_hp"] <= 45 and random.random() < 0.45:
                 return "special"
             if state["player_hp"] >= 70 and state["enemy_hp"] <= 55 and random.random() < 0.35:
@@ -15201,34 +21606,50 @@ class DesktopPet:
                 return "special"
             return "attack"
 
-        def calc_outgoing(action: str, *, player: bool) -> tuple[int, str]:
-            """返回 (伤害, 描述片段)。防御为 0；必杀可能落空。"""
+        def calc_outgoing(action: str, *, player: bool, roll: int, perfect_block: bool = False) -> tuple[int, str]:
+            """返回 (伤害, 描述)。攻击/必杀需掷骰成功；6 点暴击。"""
+            del perfect_block
             mult = self._fight_player_mult if player else self._fight_enemy_mult
+            need = _rhyme_dice_threshold(action, getattr(self, "difficulty_t", 0.5))
             if action == "defense":
                 return 0, "防御"
+            if roll < need:
+                return 0, "必杀判定失败" if action == "special" else "攻击未中"
             if action == "special":
-                if random.random() < 0.28:
-                    return 0, "必杀落空"
-                return int(22 * mult), "必杀"
-            return int(12 * mult), "攻击"
+                dmg = int(22 * mult)
+                if roll >= 6:
+                    return int(dmg * 1.35), "必杀暴击"
+                return dmg, "必杀"
+            dmg = int(12 * mult)
+            if roll >= 6:
+                return int(dmg * 1.4), "攻击暴击"
+            return dmg, "攻击"
 
-        def apply_block(dmg: int, defender_action: str) -> tuple[int, bool]:
+        def apply_block(dmg: int, defender_action: str, *, defender_roll: int) -> tuple[int, str]:
             if dmg <= 0:
-                return 0, False
-            if defender_action == "defense":
-                return max(1, dmg // 3), True
-            return dmg, False
+                return 0, ""
+            if defender_action != "defense":
+                return dmg, ""
+            need = _rhyme_dice_threshold("defense", getattr(self, "difficulty_t", 0.5))
+            if defender_roll >= need:
+                return max(1, dmg // 5), "完美格挡"
+            return max(1, dmg // 3), "格挡"
 
         def begin_next_round() -> None:
             if state["over"] or state["jinmu"]:
                 return
             state["round"] = int(state["round"]) + 1
             state["phase"] = "choose"
+            state["pending_player"] = ""
+            state["pending_enemy"] = ""
+            state["player_roll"] = 0
+            state["enemy_roll"] = 0
             state["log"] = f"第 {state['round']} 回合 · 请选择攻击 / 防御 / 必杀"
-            set_buttons_enabled(True)
+            set_choose_buttons(True)
+            set_roll_enabled(False)
             refresh()
 
-        def resolve_round(player_action: str, enemy_action: str) -> None:
+        def resolve_round(player_action: str, enemy_action: str, p_roll: int, e_roll: int) -> None:
             if state["over"] or state["jinmu"]:
                 return
             if player_action == "special":
@@ -15236,33 +21657,36 @@ class DesktopPet:
             if enemy_action == "special":
                 state["enemy_special_ready_round"] = int(state["round"]) + RHYME_SPECIAL_COOLDOWN_ROUNDS
 
-            p_raw, p_tag = calc_outgoing(player_action, player=True)
-            e_raw, e_tag = calc_outgoing(enemy_action, player=False)
-            p_dmg, p_blocked = apply_block(p_raw, enemy_action)
-            e_dmg, e_blocked = apply_block(e_raw, player_action)
+            p_raw, p_tag = calc_outgoing(player_action, player=True, roll=p_roll)
+            e_raw, e_tag = calc_outgoing(enemy_action, player=False, roll=e_roll)
+            p_dmg, p_block = apply_block(p_raw, enemy_action, defender_roll=e_roll)
+            e_dmg, e_block = apply_block(e_raw, player_action, defender_roll=p_roll)
 
             state["enemy_hp"] = max(0, state["enemy_hp"] - p_dmg)
             state["player_hp"] = max(0, state["player_hp"] - e_dmg)
+            state["phase"] = "resolve"
 
             lines = [
-                f"第 {state['round']} 回合结算",
+                f"第 {state['round']} 回合结算  骰子 你{p_roll}｜对手{e_roll}",
                 f"你：{action_name.get(player_action, player_action)}｜对手：{action_name.get(enemy_action, enemy_action)}",
             ]
-            if player_action == "special" and p_tag == "必杀落空":
-                lines.append("你的必杀落空了！")
+            if player_action == "defense":
+                lines.append("你进入防御姿态" + (f"（{e_block}）" if e_block == "完美格挡" else ""))
+            elif p_tag in ("攻击未中", "必杀判定失败"):
+                lines.append(f"你的{action_name.get(player_action, player_action)}判定失败！")
             elif p_dmg > 0:
-                lines.append(f"你造成 {p_dmg} 伤害" + ("（被格挡）" if p_blocked else ""))
-            elif player_action == "defense":
-                lines.append("你进入防御姿态")
+                extra = f"（{p_block}）" if p_block else ""
+                lines.append(f"你{p_tag}造成 {p_dmg} 伤害{extra}")
             else:
                 lines.append("你本回合未造成伤害")
 
-            if enemy_action == "special" and e_tag == "必杀落空":
-                lines.append("对手必杀落空了！")
+            if enemy_action == "defense":
+                lines.append("对手进入防御姿态" + (f"（{p_block}）" if p_block == "完美格挡" else ""))
+            elif e_tag in ("攻击未中", "必杀判定失败"):
+                lines.append(f"对手{action_name.get(enemy_action, enemy_action)}判定失败！")
             elif e_dmg > 0:
-                lines.append(f"对手造成 {e_dmg} 伤害" + ("（被格挡）" if e_blocked else ""))
-            elif enemy_action == "defense":
-                lines.append("对手进入防御姿态")
+                extra = f"（{e_block}）" if e_block else ""
+                lines.append(f"对手{e_tag}造成 {e_dmg} 伤害{extra}")
             else:
                 lines.append("对手本回合未造成伤害")
 
@@ -15278,7 +21702,41 @@ class DesktopPet:
                 else:
                     self.rhyme_fight_job = self.root.after(700, lambda: end_fight(False))
                 return
-            self.rhyme_fight_job = self.root.after(1400, begin_next_round)
+            self.rhyme_fight_job = self.root.after(1600, begin_next_round)
+
+        def animate_dice_then_resolve() -> None:
+            if state["over"] or state["phase"] != "judge":
+                return
+            set_roll_enabled(False)
+            spins = {"i": 0}
+            final_p = random.randint(1, 6)
+            final_e = random.randint(1, 6)
+
+            def tick() -> None:
+                if state["over"] or not self.rhyme_fight_win or not self.rhyme_fight_win.winfo_exists():
+                    return
+                spins["i"] += 1
+                if spins["i"] < 8:
+                    _draw_pixel_die(player_die, die_size, random.randint(1, 6))
+                    _draw_pixel_die(enemy_die, die_size, random.randint(1, 6))
+                    state["log"] = "骰子转动中…"
+                    log_label.config(text=state["log"])
+                    self.rhyme_fight_job = self.root.after(55, tick)
+                    return
+                state["player_roll"] = final_p
+                state["enemy_roll"] = final_e
+                _draw_pixel_die(player_die, die_size, final_p)
+                _draw_pixel_die(enemy_die, die_size, final_e)
+                pa = str(state["pending_player"])
+                ea = str(state["pending_enemy"])
+                state["log"] = f"判定结果：你 {final_p} 点｜对手 {final_e} 点"
+                refresh()
+                self.rhyme_fight_job = self.root.after(
+                    500,
+                    lambda: resolve_round(pa, ea, final_p, final_e),
+                )
+
+            tick()
 
         def on_player_choose(action: str) -> None:
             if state["over"] or state["jinmu"] or state["phase"] != "choose":
@@ -15287,26 +21745,28 @@ class DesktopPet:
                 state["log"] = f"必杀冷却中（还需 {max(1, int(state['special_ready_round']) - int(state['round']))} 回合）"
                 refresh()
                 return
-            state["phase"] = "resolve"
-            set_buttons_enabled(False)
-            enemy_action = pick_enemy_action()
+            state["phase"] = "judge"
+            state["pending_player"] = action
+            state["pending_enemy"] = pick_enemy_action()
+            state["player_roll"] = 0
+            state["enemy_roll"] = 0
+            set_choose_buttons(False)
+            set_roll_enabled(True)
+            need = _rhyme_dice_threshold(action, getattr(self, "difficulty_t", 0.5))
+            tip = f"完美格挡需 ≥{need}" if action == "defense" else f"成功需 ≥{need}（6=暴击）"
             state["log"] = (
-                f"你选择了{action_name.get(action, action)}…\n"
-                "双方同时出手！"
+                f"你选择了{action_name.get(action, action)}！\n"
+                f"{tip}\n"
+                "点击「掷骰判定」"
             )
             refresh()
-
-            def do_resolve() -> None:
-                if state["over"] or not self.rhyme_fight_win or not self.rhyme_fight_win.winfo_exists():
-                    return
-                resolve_round(action, enemy_action)
-
-            self.rhyme_fight_job = self.root.after(650, do_resolve)
 
         attack_btn.config(command=lambda: on_player_choose("attack"))
         block_btn.config(command=lambda: on_player_choose("defense"))
         special_btn.config(command=lambda: on_player_choose("special"))
-        set_buttons_enabled(True)
+        roll_btn.config(command=animate_dice_then_resolve)
+        set_choose_buttons(True)
+        set_roll_enabled(False)
         refresh()
         self._place_panel_popup(self.rhyme_fight_win)
 
@@ -15410,10 +21870,14 @@ class DesktopPet:
                 self._refresh_panel()
             grade_colors = {g: c for g, _t, c in RHYTHM_GRADE_TIERS}
             grade_color = grade_colors.get(grade, "#88ccff")
+            coin_map = {"S": 12, "A": 8, "B": 5, "C": 3, "D": 1}
+            coin_gain = int(coin_map.get(grade, 1))
+            self.grant_coins(coin_gain, reason=f"音游 {grade} +{coin_gain}")
             subtitle = (
                 f"{track_title} · 准确率 {acc:.0f}%\n"
                 f"得分 {score}  最大连击 {max_combo}\n"
-                f"P {perfect}  G {great}  Good {good}  Miss {miss}"
+                f"P {perfect}  G {great}  Good {good}  Miss {miss}\n"
+                f"金币 +{coin_gain}"
             )
             self._show_game_clear(
                 title=f"评级 {grade}",
@@ -16434,9 +22898,12 @@ class DesktopPet:
             update_grade_ui()
             grade_colors = {g: c for g, _t, c in TYPING_GRADE_TIERS}
             grade_color = grade_colors.get(grade, "#88ccff")
+            coin_map = {"S": 10, "A": 7, "B": 5, "C": 3, "D": 1}
+            coin_gain = int(coin_map.get(grade, 1))
+            self.grant_coins(coin_gain, reason=f"打字 {grade} +{coin_gain}")
             self._show_game_clear(
                 title=f"得分 {state['score']}",
-                subtitle=f"{mode_title} · 打字练习",
+                subtitle=f"{mode_title} · 打字练习 · 金币 +{coin_gain}",
                 accent=grade_color,
                 hero_grade=grade,
                 hero_color=grade_color,
@@ -16745,6 +23212,7 @@ class DesktopPet:
         if opt == correct:
             self.mood = min(100, self.mood + 3)
             self._refresh_panel()
+            self.grant_coins(1, reason="背单词正确", toast=False)
             self._add_diary_entry(f"背单词正确：{item['word']}", auto=True)
             # 生词本复习答对：移出生词本
             if getattr(self, "_vocab_from_notebook", False):
@@ -16765,6 +23233,8 @@ class DesktopPet:
                 streak = current_streak
                 self._vocab_streak = 0
                 self._vocab_cancel_advance()
+                bonus = 5
+                self.grant_coins(bonus, reason=f"背单词连击 +{bonus}")
 
                 def after_streak_clear() -> None:
                     self._vocab_round_lock = False
@@ -16772,7 +23242,7 @@ class DesktopPet:
 
                 self._show_game_clear(
                     title="连击通关！",
-                    subtitle=f"{lang} · 连续答对 {streak} 题\n最新：{item['word']} = {correct}",
+                    subtitle=f"{lang} · 连续答对 {streak} 题\n最新：{item['word']} = {correct}\n金币 +{1 + bonus}",
                     accent="#88ddff",
                     on_done=after_streak_clear,
                 )
@@ -16891,9 +23361,19 @@ class DesktopPet:
         tk.Label(frame, text="致谢", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W, pady=(12, 4))
         if ABOUT_CREDITS:
             for name, work in ABOUT_CREDITS:
-                _pack_panel_caption(frame, f"{name}\n{work}", fg="#aaaaaa", pady=(0, 6))
+                # 一轮测试等角色类：角色在前、名单同行；个人贡献仍姓名在上
+                if work in ("一轮测试", "二轮测试", "三轮测试"):
+                    _pack_panel_caption(frame, f"{work}：{name}", fg="#aaaaaa", pady=(0, 6))
+                else:
+                    _pack_panel_caption(frame, f"{name}\n{work}", fg="#aaaaaa", pady=(0, 6))
         else:
             _pack_panel_caption(frame, "（暂无）", fg="#aaaaaa", pady=(0, 6))
+        _pack_panel_caption(
+            frame,
+            "社区投稿经审阅收录后，贡献者可按意愿加入本页致谢。",
+            fg="#8899aa",
+            pady=(4, 0),
+        )
         if PET_ID_FEATURE and self.pet_id is not None:
             _pack_panel_caption(frame, f"本机编号：{_format_pet_id(self.pet_id)}", fg="#aaaaaa", pady=(8, 0))
         build_stamp = _read_build_stamp()
@@ -17031,13 +23511,16 @@ class DesktopPet:
             "display_size": DEFAULT_SIZE,
             "display_preset": "中",
             "difficulty": "中",
+            "difficulty_t": 0.5,
             "rhythm_speed": "中",
             "rhythm_chart_diff": "中",
             "rhythm_auto": False,
             "weather_city": "北京",
             "seen_hints": {},
             "work_mode": {"show_props": True, "show_stack": True},
+            "show_timers": True,
             "voice_mode": False,
+            "voice_interval_ms": VOICE_GLOBAL_COOLDOWN_MS,
             "display_layer": "top",
             "pet_id_api_url": "",
             "pet_id_activation_code": "",
@@ -17057,14 +23540,18 @@ class DesktopPet:
             "machine_id": saved_mid,
             "owner_name": saved_owner,
             "owner_set_at": saved_owner_at,
+            "owner_welcome_done": bool(self.pet_profile.get("owner_welcome_done")) if saved_owner else False,
+            "last_launch_at": "",
             "bless_month": 0,
             "bless_day": 0,
             "bless_message": "",
             "gift_text": "",
             "gift_pixels": [0] * (GIFT_PIXEL_SIZE * GIFT_PIXEL_SIZE),
+            "active_gift_art_id": "",
             "last_owner_bday_ymd": "",
             "last_pet_bday_ymd": "",
             "last_pet_bday_nudge_ymd": "",
+            "wear_flower": False,
         }
         if PET_ID_FEATURE:
             self.pet_profile["pet_id"] = saved_id
@@ -17076,6 +23563,7 @@ class DesktopPet:
         self._birthday_checked_once = False
         self.font_size = 12
         self.difficulty = "中"
+        self.difficulty_t = 0.5
         self._mood_decay_counter = 0
         _apply_font_size(12)
         self._apply_difficulty_runtime()
@@ -17125,8 +23613,23 @@ class DesktopPet:
             [
                 ("动作 ▶", self._open_action_menu),
                 ("表情 ▶", self._open_expression_menu),
+                ("对话 ▶", self._open_dialog_menu),
+                ("工具 ▶", self._open_tools_menu),
             ],
             offset_x=120,
+        )
+
+    def _open_tools_menu(self) -> None:
+        sw_on = self._desk_clock_active("tool_sw")
+        self._show_sub_menu(
+            [
+                (f"秒表{' ✓' if sw_on else ''}", self._toggle_tool_stopwatch),
+                ("计时器 ▶", self._open_tool_timer_dialog),
+                ("日程提醒", self._open_schedule_manager),
+                ("天气预报", self._open_weather_forecast),
+                ("生日祝福 ▶", self._open_birthday_menu),
+            ],
+            offset_x=240,
         )
 
     def _close_panel(self) -> None:
@@ -17539,11 +24042,51 @@ class DesktopPet:
     def _draw_bar(self, canvas: tk.Canvas, value: int, color: str) -> None:
         _draw_panel_bar(canvas, value, color)
 
-    def _food_backpack_signature(self) -> tuple[tuple[str, int], ...]:
-        return tuple(sorted((k, v) for k, v in self.food_inventory.items() if v > 0))
+    def _food_backpack_signature(self) -> tuple:
+        food = tuple(sorted((k, v) for k, v in self.food_inventory.items() if v > 0))
+        items = (self.wallet.get("items") if isinstance(getattr(self, "wallet", None), dict) else None) or {}
+        mat = tuple(sorted((str(k), int(v)) for k, v in items.items() if int(v or 0) > 0))
+        return (food, mat, bool(self._wearing_flower()))
 
     def _food_backpack_total(self) -> int:
-        return sum(v for v in self.food_inventory.values() if v > 0)
+        food_n = sum(v for v in self.food_inventory.values() if v > 0)
+        items = (self.wallet.get("items") if isinstance(getattr(self, "wallet", None), dict) else None) or {}
+        mat_n = sum(int(v) for v in items.values() if int(v or 0) > 0)
+        return food_n + mat_n
+
+    def _draw_bag_material_icon(self, canvas: tk.Canvas, item_id: str, pad: int = 6) -> None:
+        """面板背包里经营物资的简易色块图标。"""
+        colors = {
+            "wood": ("#8a6848", "#c8a878"),
+            "fish": ("#3a7aaa", "#88ccee"),
+            "flower_cut": ("#c06080", "#ff88aa"),
+            "crop_wheat": ("#c8b070", "#f0e090"),
+            "crop_berry": ("#aa6688", "#ee5588"),
+            "crop_corn": ("#aaba44", "#ffe066"),
+            "seed_wheat": ("#a09060", "#e8d888"),
+            "seed_berry": ("#886070", "#cc6688"),
+            "seed_corn": ("#889944", "#ccdd55"),
+        }
+        a, b = colors.get(item_id, ("#6688aa", "#aaccff"))
+        canvas.create_rectangle(pad, pad, PANEL_FOOD_CANVAS - pad, PANEL_FOOD_CANVAS - pad, fill=a, outline=b, width=2)
+        mark = {
+            "wood": "木",
+            "fish": "鱼",
+            "flower_cut": "花",
+            "crop_wheat": "麦",
+            "crop_berry": "莓",
+            "crop_corn": "玉",
+            "seed_wheat": "种",
+            "seed_berry": "种",
+            "seed_corn": "种",
+        }.get(item_id, "物")
+        canvas.create_text(
+            PANEL_FOOD_CANVAS // 2,
+            PANEL_FOOD_CANVAS // 2,
+            text=mark,
+            fill="#ffffff",
+            font=("Courier New", 12, "bold"),
+        )
 
     def _update_panel_backpack_header(self) -> None:
         if not self.backpack_icon_canvas or not self.backpack_icon_canvas.winfo_exists():
@@ -17641,12 +24184,72 @@ class DesktopPet:
         for w in self.backpack_grid.winfo_children():
             w.destroy()
         col = 0
+        pad = max(2, (PANEL_FOOD_CANVAS - PANEL_FOOD_ICON_PX * 5) // 2)
+        # 经营物资与食物同栏（木头/粮食/鱼/花等）
+        bag_items = (self.wallet.get("items") if isinstance(getattr(self, "wallet", None), dict) else None) or {}
+        prefer = (
+            "wood",
+            "fish",
+            "flower_cut",
+            "crop_wheat",
+            "crop_berry",
+            "crop_corn",
+            "seed_wheat",
+            "seed_berry",
+            "seed_corn",
+        )
+        shown: set[str] = set()
+        for item_id in prefer:
+            count = max(0, int(bag_items.get(item_id, 0)))
+            shown.add(item_id)
+            label = home_farm.ITEM_LABELS.get(item_id, item_id)
+            wearing = item_id == "flower_cut" and self._wearing_flower()
+            if wearing:
+                count = count  # 库存为未戴数量；戴着时额外提示
+            cell = tk.Frame(self.backpack_grid, bg=PANEL_ITEM_BG, padx=4, pady=3)
+            cell.grid(row=col // PANEL_FOOD_COLS, column=col % PANEL_FOOD_COLS, sticky=tk.NW, padx=4, pady=3)
+            icon = tk.Canvas(cell, width=PANEL_FOOD_CANVAS, height=PANEL_FOOD_CANVAS, bg="#1e2640", highlightthickness=0)
+            icon.pack()
+            icon.create_rectangle(0, 0, PANEL_FOOD_CANVAS, PANEL_FOOD_CANVAS, fill="#1e2640", outline=THEME_BLUE_DEEP)
+            self._draw_bag_material_icon(icon, item_id)
+            name_fg = THEME_PINK if (count > 0 or wearing) else "#666688"
+            title = f"{label} ×{count}"
+            if wearing:
+                title = f"{label} ×{count} ·戴中"
+            tk.Label(cell, text=title, font=PIXEL_FONT, fg=name_fg, bg=PANEL_ITEM_BG).pack()
+            tip = "点击戴/摘花" if item_id == "flower_cut" else "经营物资"
+            tip_lbl = tk.Label(cell, text=tip, font=("Courier New", 9), fg="#888888", bg=PANEL_ITEM_BG)
+            tip_lbl.pack()
+            if item_id == "flower_cut":
+                def _bind_flower_click(widget: tk.Misc) -> None:
+                    widget.bind("<Button-1>", lambda _e: self._toggle_wear_flower(), add="+")
+                    try:
+                        widget.configure(cursor="hand2")
+                    except Exception:
+                        pass
+                    for child in widget.winfo_children():
+                        _bind_flower_click(child)
+
+                _bind_flower_click(cell)
+            col += 1
+        for item_id, count in sorted(bag_items.items()):
+            if item_id in shown or int(count or 0) <= 0:
+                continue
+            label = home_farm.ITEM_LABELS.get(item_id, str(item_id))
+            cell = tk.Frame(self.backpack_grid, bg=PANEL_ITEM_BG, padx=4, pady=3)
+            cell.grid(row=col // PANEL_FOOD_COLS, column=col % PANEL_FOOD_COLS, sticky=tk.NW, padx=4, pady=3)
+            icon = tk.Canvas(cell, width=PANEL_FOOD_CANVAS, height=PANEL_FOOD_CANVAS, bg="#1e2640", highlightthickness=0)
+            icon.pack()
+            icon.create_rectangle(0, 0, PANEL_FOOD_CANVAS, PANEL_FOOD_CANVAS, fill="#1e2640", outline=THEME_BLUE_DEEP)
+            self._draw_bag_material_icon(icon, str(item_id))
+            tk.Label(cell, text=f"{label} ×{int(count)}", font=PIXEL_FONT, fg=THEME_PINK, bg=PANEL_ITEM_BG).pack()
+            tk.Label(cell, text="经营物资", font=("Courier New", 9), fg="#888888", bg=PANEL_ITEM_BG).pack()
+            col += 1
         food_items = sorted(
             FOODS.items(),
             key=lambda item: (item[1]["mood"], item[1]["stamina"]),
             reverse=True,
         )
-        pad = max(2, (PANEL_FOOD_CANVAS - PANEL_FOOD_ICON_PX * 5) // 2)
         for food_id, info in food_items:
             count = max(0, int(self.food_inventory.get(food_id, 0)))
             # 全部种类都显示（含 ×0），避免「种类变少」观感
@@ -17760,7 +24363,7 @@ class DesktopPet:
         border.pack()
         inner = tk.Frame(border, bg="#111122", padx=10, pady=6)
         inner.pack()
-        tk.Label(inner, text=text, font=PIXEL_FONT, fg=color, bg="#111122").pack()
+        tk.Label(inner, text=text, font=PIXEL_FONT, fg=color, bg="#111122", justify=tk.LEFT, wraplength=320).pack()
 
         toast_y = max(0, self.y - 36)
         self._place_popup(self.toast_win, self.x + self.display_size + 8, toast_y)
@@ -17941,6 +24544,7 @@ class DesktopPet:
 
     def _show_wink_fx(self) -> None:
         self._hide_wink_fx()
+        self._hide_bixin_fx()
         pad = 20
         size = self.display_size + pad * 2
         self.wink_fx_win = tk.Toplevel(self.root)
@@ -17959,6 +24563,164 @@ class DesktopPet:
         self._animate_wink_fx()
         self._notify_bg_fx_change()
 
+    def _bixin_fx_pad(self) -> int:
+        return max(96, self.display_size // 2 + 24)
+
+    def _hide_bixin_fx(self) -> None:
+        self._bixin_fx_gen = int(getattr(self, "_bixin_fx_gen", 0)) + 1
+        if self.bixin_fx_job:
+            try:
+                self.root.after_cancel(self.bixin_fx_job)
+            except Exception:
+                pass
+            self.bixin_fx_job = None
+        if self.bixin_fx_win and self.bixin_fx_win.winfo_exists():
+            try:
+                self.bixin_fx_win.destroy()
+            except Exception:
+                pass
+        self.bixin_fx_win = None
+        self.bixin_fx_canvas = None
+        self._bixin_particles = []
+        self._notify_bg_fx_change()
+
+    def _place_bixin_fx(self) -> None:
+        if not self.bixin_fx_win or not self.bixin_fx_win.winfo_exists():
+            return
+        pad = self._bixin_fx_pad()
+        display_y = self.y + self.click_bounce_offset
+        self.bixin_fx_win.geometry(f"+{self.x - pad}+{display_y - pad}")
+        # 爱心在立绘前方，朝使用者放大
+        try:
+            self.root.lift()
+            self.bixin_fx_win.lift()
+        except Exception:
+            pass
+
+    def _show_bixin_fx(self) -> None:
+        self._hide_bixin_fx()
+        self._hide_like_fx()
+        self._hide_wink_fx()
+        self._hide_shy_fx()
+        pad = self._bixin_fx_pad()
+        size = self.display_size + pad * 2
+        self.bixin_fx_win = tk.Toplevel(self.root)
+        self.bixin_fx_win.overrideredirect(True)
+        self._apply_window_layer(self.bixin_fx_win)
+        self.bixin_fx_win.configure(bg="magenta")
+        self.bixin_fx_win.wm_attributes("-transparentcolor", "magenta")
+        self.bixin_fx_canvas = tk.Canvas(
+            self.bixin_fx_win, width=size, height=size, bg="magenta", highlightthickness=0
+        )
+        self.bixin_fx_canvas.pack()
+        try:
+            self._win32_set_click_through(self.bixin_fx_win, True)
+        except Exception:
+            pass
+        self.bixin_fx_phase = 0
+        self.bixin_fx_started_ms = int(time.time() * 1000)
+        self._bixin_particles = []
+        self._place_bixin_fx()
+        self._animate_bixin_fx()
+
+    def _animate_bixin_fx(self) -> None:
+        self.bixin_fx_job = None
+        gen = int(getattr(self, "_bixin_fx_gen", 0))
+        canvas = self.bixin_fx_canvas
+        if not canvas or not canvas.winfo_exists():
+            return
+        if self.action_name != "bixin" or self.state != "action":
+            self._hide_bixin_fx()
+            return
+        if int(time.time() * 1000) - int(self.bixin_fx_started_ms or 0) >= BIXIN_DURATION_MS:
+            self._hide_bixin_fx()
+            return
+        pad = self._bixin_fx_pad()
+        size = self.display_size + pad * 2
+        # 胸口偏右下出发，避开脸部；放大时往外侧飘
+        chest_x = pad + int(self.display_size * 0.64)
+        chest_y = pad + int(self.display_size * 0.55)
+        phase = int(self.bixin_fx_phase)
+        colors = ("#ff4d7a", "#ff6688", "#ff88aa", "#ff3366", "#ff99bb")
+        glow_colors = ("#ff99bb", "#ffc0d0", "#ffe0ea")
+        # 持续从胸口涌出
+        if phase % 3 == 0:
+            self._bixin_particles.append(
+                {
+                    "age": 0,
+                    "life": random.randint(34, 50),
+                    "ox": random.uniform(2, 16),
+                    "oy": random.uniform(0, 12),
+                    # 主要往右外侧飘，少往脸中间跑
+                    "vx": random.uniform(0.25, 0.95),
+                    "vy": random.uniform(-1.4, -0.2),
+                    "px0": 2,
+                    "px1": random.randint(14, max(18, self.display_size // 8)),
+                    "color": random.choice(colors),
+                    "glow": random.choice(glow_colors),
+                }
+            )
+        canvas.delete("all")
+        alive: list[dict] = []
+        for p in list(self._bixin_particles):
+            p["age"] = int(p.get("age", 0)) + 1
+            life = max(1, int(p.get("life", 40)))
+            t = min(1.0, p["age"] / life)
+            if t >= 1.0:
+                continue
+            # 越接近使用者越大（先慢后快）
+            grow = t * t
+            px0 = int(p.get("px0", 2))
+            px1 = int(p.get("px1", 18))
+            draw_px = max(2, int(round(px0 + (px1 - px0) * grow)))
+            x = (
+                chest_x
+                + float(p.get("ox", 0))
+                + float(p.get("vx", 0)) * p["age"] * 1.15
+                + grow * (18 + self.display_size * 0.06)
+            )
+            y = (
+                chest_y
+                + float(p.get("oy", 0))
+                + float(p.get("vy", 0)) * p["age"] * 1.05
+                - grow * (10 + self.display_size * 0.03)
+            )
+            cx, cy = int(x), int(y)
+            glow_px = max(draw_px + 1, int(draw_px * 1.35))
+            gw = glow_px * 3
+            dw = draw_px * 3
+            _draw_pixel_heart(
+                canvas,
+                cx - gw // 2,
+                cy - gw // 2,
+                px=glow_px,
+                color=str(p.get("glow") or "#ffc0d0"),
+            )
+            _draw_pixel_heart(
+                canvas,
+                cx - dw // 2,
+                cy - dw // 2,
+                px=draw_px,
+                color=str(p.get("color") or "#ff6688"),
+            )
+            # 靠近结束时加一圈更淡的大心，强化「扑向屏幕」感
+            if grow > 0.55:
+                ring = max(draw_px + 3, int(draw_px * 1.7))
+                rw = ring * 3
+                _draw_pixel_heart(
+                    canvas,
+                    cx - rw // 2,
+                    cy - rw // 2,
+                    px=ring,
+                    color="#ffdde8",
+                )
+            alive.append(p)
+        self._bixin_particles = alive[-18:]
+        self.bixin_fx_phase = phase + 1
+        self._place_bixin_fx()
+        if gen == getattr(self, "_bixin_fx_gen", 0):
+            self.bixin_fx_job = self.root.after(BIXIN_FX_MS, self._animate_bixin_fx)
+
     def _place_like_fx(self) -> None:
         if not self.like_fx_win or not self.like_fx_win.winfo_exists():
             return
@@ -17971,6 +24733,7 @@ class DesktopPet:
         self._hide_like_fx()
         self._hide_shy_fx()
         self._hide_wink_fx()
+        self._hide_bixin_fx()
         self._hide_follow_dizzy_fx()
         pad = 20
         size = self.display_size + pad * 2
@@ -18226,24 +24989,175 @@ class DesktopPet:
         self.companion_bar_enabled = not self.companion_bar_enabled
         if self.companion_bar_enabled:
             self._try_voice_companion_startup()
-            if not self.mini_pets:
-                self._show_companion_loading(lambda: self._spawn_mini_pet_impl(silent=True, skip_enter_anim=True))
-            else:
-                for entry in self.mini_pets:
-                    self._mini_pet_follow_tick(entry)
-                self._sync_mini_pet_music_waves()
-            self._show_toast("智能伴侣栏已开启", "#88ccff", duration_ms=1500)
-            self._show_once_hint("companion_bar", duration_ms=3500)
+            open_n = 0
             try:
                 stats = self.achievements.setdefault("stats", {})
+                open_n = int(stats.get("companion_open_count", 0) or 0) + 1
+                stats["companion_open_count"] = open_n
                 stats["companion_enabled"] = True
                 _save_achievements(self.achievements)
                 self._check_achievements(source="companion")
             except Exception:
-                pass
+                open_n = 1
+
+            def after_ready() -> None:
+                self.root.after(120, self._play_happy)
+                # 打开次数越多，越容易触发「爱心从苍叶飞向莲」
+                chance = min(0.18 + max(0, open_n - 1) * 0.16, 0.95)
+                if open_n >= 2 and random.random() < chance:
+                    hearts = min(3 + open_n // 2, 8)
+                    self.root.after(280, lambda h=hearts: self._play_companion_heart_transfer(heart_count=h))
+
+            if not self.mini_pets:
+                def after_spawn() -> None:
+                    self._spawn_mini_pet_impl(silent=True, skip_enter_anim=True)
+                    after_ready()
+
+                self._show_companion_loading(after_spawn)
+            else:
+                for entry in self.mini_pets:
+                    self._mini_pet_follow_tick(entry)
+                self._sync_mini_pet_music_waves()
+                after_ready()
+            self._show_toast("智能伴侣栏已开启", "#88ccff", duration_ms=1500)
+            self._show_once_hint("companion_bar", duration_ms=3500)
         else:
+            self._hide_companion_heart_transfer()
             self._destroy_all_mini_pets(animated=True)
             self._show_toast("智能伴侣栏已关闭", PIXEL_COLOR, duration_ms=1500)
+
+    def _hide_companion_heart_transfer(self) -> None:
+        self._companion_heart_gen = int(getattr(self, "_companion_heart_gen", 0)) + 1
+        if self._companion_heart_job:
+            try:
+                self.root.after_cancel(self._companion_heart_job)
+            except Exception:
+                pass
+            self._companion_heart_job = None
+        if self._companion_heart_win and self._companion_heart_win.winfo_exists():
+            try:
+                self._companion_heart_win.destroy()
+            except Exception:
+                pass
+        self._companion_heart_win = None
+        self._companion_heart_canvas = None
+
+    def _play_companion_heart_transfer(self, *, heart_count: int = 4) -> None:
+        """爱心从桌宠飞向智能伴侣（多次开启伴侣时概率提高）。"""
+        if self._closing or not self.companion_bar_enabled:
+            return
+        anchor = self._allmate_speech_anchor()
+        if anchor is None:
+            return
+        ax, ay, asz, abounce = anchor
+        sx = int(self.x + self.display_size // 2)
+        sy = int(self.y + self.click_bounce_offset + self.display_size // 3)
+        ex = int(ax + asz // 2)
+        ey = int(ay + abounce + asz // 3)
+
+        self._hide_companion_heart_transfer()
+        gen = int(self._companion_heart_gen)
+        # 大爱心需要更大飞行窗口与弧线空间
+        base_px = max(6, min(12, self.display_size // 14))
+        pad = max(72, base_px * 8)
+        left = min(sx, ex) - pad
+        top = min(sy, ey) - pad
+        right = max(sx, ex) + pad
+        bottom = max(sy, ey) + pad
+        width = max(160, right - left)
+        height = max(160, bottom - top)
+
+        win = tk.Toplevel(self.root)
+        self._companion_heart_win = win
+        win.overrideredirect(True)
+        self._apply_window_layer(win)
+        win.configure(bg="magenta")
+        try:
+            win.wm_attributes("-transparentcolor", "magenta")
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        canvas = tk.Canvas(win, width=width, height=height, bg="magenta", highlightthickness=0)
+        canvas.pack()
+        self._companion_heart_canvas = canvas
+        win.geometry(f"{width}x{height}+{left}+{top}")
+
+        colors = ("#ff4d7a", "#ff6688", "#ff88aa", "#ff3366", "#ff99bb", "#ffccdd")
+        glow_colors = ("#ff99bb", "#ffc0d0", "#ffe0ea")
+        n = max(3, min(10, int(heart_count)))
+        particles: list[dict] = []
+        for i in range(n):
+            px = base_px + random.choice((0, 0, 1, 2, 3))
+            particles.append(
+                {
+                    "t": -i * 0.07,
+                    "ox": random.uniform(-18, 18),
+                    "oy": random.uniform(-22, 12),
+                    "arc": random.uniform(-48, 48),
+                    "px": px,
+                    "color": random.choice(colors),
+                    "glow": random.choice(glow_colors),
+                }
+            )
+
+        steps = 26
+        state = {"i": 0}
+
+        def tick() -> None:
+            self._companion_heart_job = None
+            if gen != getattr(self, "_companion_heart_gen", 0):
+                return
+            if not canvas.winfo_exists() or not self.companion_bar_enabled:
+                self._hide_companion_heart_transfer()
+                return
+            canvas.delete("all")
+            progress = state["i"] / max(1, steps - 1)
+            for p in particles:
+                t = min(1.0, max(0.0, progress + p["t"]))
+                # 更明显的弧线：从桌宠到莲
+                x = sx + (ex - sx) * t + p["ox"] + p["arc"] * (4 * t * (1 - t))
+                y = sy + (ey - sy) * t + p["oy"] - abs(p["arc"]) * 0.55 * math.sin(math.pi * t)
+                px = int(p["px"])
+                # 轻微放大又缩小：中段最大
+                scale = 0.85 + 0.45 * math.sin(math.pi * t)
+                draw_px = max(5, int(round(px * scale)))
+                cx = int(x - left)
+                cy = int(y - top)
+                # 外发光（浅色大心垫底）
+                glow_px = max(draw_px + 2, int(draw_px * 1.35))
+                gw = glow_px * 3
+                dw = draw_px * 3
+                _draw_pixel_heart(
+                    canvas,
+                    cx - gw // 2,
+                    cy - gw // 2,
+                    px=glow_px,
+                    color=str(p["glow"]),
+                )
+                _draw_pixel_heart(
+                    canvas,
+                    cx - dw // 2,
+                    cy - dw // 2,
+                    px=draw_px,
+                    color=str(p["color"]),
+                )
+                # 高光点，让爱心更立体醒目
+                hl = max(2, draw_px // 3)
+                canvas.create_rectangle(
+                    cx - dw // 2 + hl,
+                    cy - dw // 2 + hl // 2,
+                    cx - dw // 2 + hl * 2,
+                    cy - dw // 2 + hl + hl // 2,
+                    fill="#fff5f8",
+                    outline="",
+                )
+            state["i"] += 1
+            if state["i"] >= steps:
+                self.root.after(220, self._hide_companion_heart_transfer)
+                return
+            self._companion_heart_job = self.root.after(48, tick)
+
+        tick()
 
     def _spawn_mini_pet(self, *, silent: bool = False) -> None:
         if not silent:
@@ -18976,6 +25890,28 @@ class DesktopPet:
     def _play_expression_like(self) -> None:
         self._play_like_or_wink("like", self.sprites.like)
 
+    def _play_expression_bixin(self) -> None:
+        """站姿比心：胸口涌出爱心并不断放大，传向屏幕前的使用者。"""
+        if self.dragging or self.state == "work" or self.music_sprite_mode:
+            return
+        self._interrupt_current_interaction()
+        self.state = "action"
+        self.action_name = "bixin"
+        self.bixin_fx_started_ms = int(time.time() * 1000)
+        self._interact_flair("bixin", banter=True)
+        self._play_expression_pop()
+        self._set_image(self.sprites.stand)
+        self._show_bixin_fx()
+        self._schedule_action_end(
+            action="bixin",
+            duration_ms=BIXIN_DURATION_MS,
+            callback=self._after_bixin_expression,
+        )
+
+    def _after_bixin_expression(self) -> None:
+        self._after_simple_expression()
+        self.root.after(720, lambda: self._maybe_meta_banter("bixin_end"))
+
     def _play_expression_wink(self, *, restore_free: bool = False) -> None:
         del restore_free
         self._play_like_or_wink("wink", self.sprites.wink)
@@ -19465,6 +26401,7 @@ class DesktopPet:
                 ("脸红", self._play_expression_shy),
                 ("wink", self._play_expression_wink),
                 ("点赞", self._play_expression_like),
+                ("比心", self._play_expression_bixin),
             ],
             offset_x=200,
         )
@@ -19873,35 +26810,449 @@ class DesktopPet:
         )
 
     def _open_system_menu(self) -> None:
+        """系统菜单：按「资料 / 设置 / 社区 / 其它」分组，减少扁平杂乱。"""
         self._show_sub_menu(
             [
-                ("回忆 ▶", self._open_memories_menu),
                 ("我的 ▶", self._open_my_menu),
                 ("设置 ▶", self._open_panel_settings),
-                ("对话 ▶", self._open_dialog_menu),
+                ("社区 ▶", self._open_community_menu),
                 ("重置", self._confirm_reset_settings),
-                ("关于", self._open_about),
-                ("操作说明", self._open_operation_guide),
-                ("问题反馈", self._open_feedback),
                 ("退出", self._on_close),
             ],
-            offset_x=240,
+            offset_x=180,
         )
+
+    def _open_community_menu(self) -> None:
+        self._show_sub_menu(
+            [
+                ("关于", self._open_about),
+                ("问题反馈", self._open_feedback),
+                ("投稿创意", self._open_creator_hub),
+                ("操作说明", self._open_operation_guide),
+            ],
+            offset_x=360,
+        )
+
+    def _open_creator_hub(self) -> None:
+        """创作者投稿：打包 DIY 地图 / 像素画 / 音频，走与反馈相同的渠道发给开发者。"""
+        self._hide_main_menu()
+        old = getattr(self, "creator_hub_win", None)
+        if old and old.winfo_exists():
+            try:
+                old.lift()
+                old.focus_force()
+            except Exception:
+                pass
+            if not self._hint_seen("creator_pack_intro"):
+                self.root.after(120, self._show_creator_pack_intro)
+            return
+        win = tk.Toplevel(self.root)
+        self.creator_hub_win = win
+        win.title("投稿创意")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        _, frame, scroll_wrap = _pack_guide_scroll_panel(win)
+        tk.Label(frame, text="投稿创意", font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(anchor=tk.W)
+        tk.Label(
+            frame,
+            text=(
+                "勾选模块后「打包投稿包」生成本地 zip，再打开反馈渠道自行附上。\n"
+                "也可按「投稿包说明」里的办法导出到本机后上传（大文件可发网盘链接）。\n"
+                "不含日记 / 日程 / 钱包 / AI 对话等私人数据。"
+            ),
+            font=("Courier New", 9),
+            fg=MENU_FG,
+            bg=MENU_BG,
+            justify=tk.LEFT,
+            wraplength=GUIDE_TEXT_WRAP,
+        ).pack(anchor=tk.W, pady=(8, 6))
+        tk.Button(
+            frame,
+            text="可打包内容说明",
+            font=("Courier New", 8),
+            bg="#3a4a5a",
+            fg=MENU_FG,
+            command=lambda: self._show_creator_pack_intro(force=True),
+        ).pack(anchor=tk.W, pady=(0, 8))
+
+        mod_box = tk.Frame(frame, bg="#2a3040", padx=8, pady=8)
+        mod_box.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(mod_box, text="打包模块", font=PIXEL_FONT, fg="#ffcc88", bg="#2a3040").pack(anchor=tk.W)
+        mod_vars: dict[str, tk.BooleanVar] = {}
+        for key, title, tip in CREATOR_PACK_MODULES:
+            var = tk.BooleanVar(value=True)
+            mod_vars[key] = var
+            row = tk.Frame(mod_box, bg="#2a3040")
+            row.pack(fill=tk.X, pady=1)
+            tk.Checkbutton(
+                row,
+                text=title,
+                variable=var,
+                font=("Courier New", 9),
+                fg=MENU_FG,
+                bg="#2a3040",
+                activebackground="#2a3040",
+                selectcolor="#1a2030",
+            ).pack(side=tk.LEFT)
+            tk.Label(row, text=tip, font=("Courier New", 8), fg="#8899aa", bg="#2a3040").pack(
+                side=tk.LEFT, padx=(8, 0)
+            )
+        only_new_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            mod_box,
+            text="仅打包新增 / 改动过的文件（推荐）",
+            variable=only_new_var,
+            font=("Courier New", 9),
+            fg="#88ffcc",
+            bg="#2a3040",
+            activebackground="#2a3040",
+            selectcolor="#1a2030",
+        ).pack(anchor=tk.W, pady=(6, 0))
+        sel_row = tk.Frame(mod_box, bg="#2a3040")
+        sel_row.pack(fill=tk.X, pady=(4, 0))
+
+        def select_all(on: bool) -> None:
+            for v in mod_vars.values():
+                v.set(on)
+
+        tk.Button(
+            sel_row, text="全选", font=("Courier New", 8), bg="#445566", fg=MENU_FG, command=lambda: select_all(True)
+        ).pack(side=tk.LEFT)
+        tk.Button(
+            sel_row, text="全不选", font=("Courier New", 8), bg="#445566", fg=MENU_FG, command=lambda: select_all(False)
+        ).pack(side=tk.LEFT, padx=(6, 0))
+
+        credit_box = tk.Frame(frame, bg="#2a3040", padx=8, pady=8)
+        credit_box.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(credit_box, text="致谢署名（可选）", font=PIXEL_FONT, fg="#ffcc88", bg="#2a3040").pack(anchor=tk.W)
+        name_row = tk.Frame(credit_box, bg="#2a3040")
+        name_row.pack(fill=tk.X, pady=(4, 0))
+        tk.Label(name_row, text="署名", font=("Courier New", 9), fg=MENU_FG, bg="#2a3040").pack(side=tk.LEFT)
+        owner_default = (
+            _owner_display_name(self.pet_profile)
+            or str(getattr(self, "owner_name", "") or "").strip()
+        )[:OWNER_NAME_MAX_LEN]
+        credit_name_var = tk.StringVar(value=owner_default)
+        tk.Entry(name_row, width=16, font=PIXEL_FONT, textvariable=credit_name_var).pack(side=tk.LEFT, padx=(6, 0))
+        tk.Label(
+            credit_box,
+            text="默认已填所属人昵称，可改。",
+            font=("Courier New", 8),
+            fg="#99aabb",
+            bg="#2a3040",
+        ).pack(anchor=tk.W, pady=(2, 0))
+        want_credit = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            credit_box,
+            text="希望作品被收录后加入致谢",
+            variable=want_credit,
+            font=("Courier New", 9),
+            fg=MENU_FG,
+            bg="#2a3040",
+            activebackground="#2a3040",
+            selectcolor="#1a2030",
+        ).pack(anchor=tk.W, pady=(4, 0))
+        status = tk.Label(
+            frame, text="", font=("Courier New", 9), fg="#88ccff", bg=MENU_BG, wraplength=GUIDE_TEXT_WRAP, justify=tk.LEFT
+        )
+        status.pack(anchor=tk.W, pady=(0, 6))
+
+        def selected_modules() -> list[str]:
+            return [k for k, v in mod_vars.items() if v.get()]
+
+        def run_pack() -> None:
+            mods = selected_modules()
+            if not mods:
+                status.config(text="请至少勾选一个模块", fg="#ff8866")
+                return
+            try:
+                path = self._pack_creator_submission(
+                    credit_name=credit_name_var.get().strip()[:24],
+                    want_credit=bool(want_credit.get()),
+                    modules=mods,
+                    only_new=bool(only_new_var.get()),
+                )
+            except Exception as exc:
+                status.config(text=f"打包失败：{exc}", fg="#ff8866")
+                return
+            if path is None:
+                status.config(
+                    text="没有可打包的文件（勾选模块下无内容，或「仅新增」时没有改动）",
+                    fg="#ff8866",
+                )
+                return
+            status.config(
+                text=f"已生成本地文件，请打开反馈渠道自行上传：\n{path}",
+                fg="#88ffcc",
+            )
+            self._show_toast("投稿包已生成", "#88ccff", duration_ms=2800)
+            try:
+                if sys.platform == "win32":
+                    os.startfile(str(path.parent))  # noqa: S606
+            except Exception:
+                pass
+
+        btn_row = tk.Frame(frame, bg=MENU_BG)
+        btn_row.pack(fill=tk.X, pady=(4, 4))
+        tk.Button(
+            btn_row,
+            text="打包投稿包",
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+            command=run_pack,
+        ).pack(side=tk.LEFT)
+        tk.Button(
+            btn_row,
+            text="打开反馈渠道",
+            font=PIXEL_FONT,
+            bg="#445566",
+            fg=MENU_FG,
+            command=self._open_feedback,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        if FEEDBACK_ISSUE_URL:
+            _pack_web_link(frame, "GitHub Issues", FEEDBACK_ISSUE_URL, prefix="· ")
+        if FEEDBACK_XHS_URL:
+            _pack_web_link(frame, "小红书", FEEDBACK_XHS_URL, prefix="· ")
+        if FEEDBACK_BILI_URL:
+            _pack_web_link(frame, "B站", FEEDBACK_BILI_URL, prefix="· ")
+        _pack_panel_caption(
+            frame,
+            "详细步骤见操作说明 →「导出与投稿」。大文件可先上网盘，再把链接发到反馈通道。",
+            fg="#8899aa",
+            pady=(10, 0),
+        )
+        _finalize_guide_panel_layout(win, scroll_wrap, frame)
+        self._place_panel_popup(win)
+        if not self._hint_seen("creator_pack_intro"):
+            self.root.after(180, self._show_creator_pack_intro)
+
+    def _show_creator_pack_intro(self, *, force: bool = False) -> None:
+        """首次（或手动）说明可打包内容。"""
+        if not force and self._hint_seen("creator_pack_intro"):
+            return
+        old = getattr(self, "creator_intro_win", None)
+        if old and old.winfo_exists():
+            try:
+                old.lift()
+                old.focus_force()
+            except Exception:
+                pass
+            return
+        parent = (
+            self.creator_hub_win
+            if (getattr(self, "creator_hub_win", None) and self.creator_hub_win.winfo_exists())
+            else self.root
+        )
+        win = tk.Toplevel(parent)
+        self.creator_intro_win = win
+        win.title("投稿包说明")
+        self._apply_window_layer(win)
+        win.configure(bg=MENU_BG)
+        _, frame, scroll_wrap = _pack_guide_scroll_panel(win, height=420)
+        tk.Label(frame, text="投稿包说明", font=PIXEL_FONT, fg=THEME_PINK, bg=MENU_BG).pack(anchor=tk.W)
+        tk.Label(
+            frame,
+            text=CREATOR_PACK_INTRO,
+            font=("Courier New", 9),
+            fg=MENU_FG,
+            bg=MENU_BG,
+            justify=tk.LEFT,
+            wraplength=GUIDE_TEXT_WRAP,
+        ).pack(anchor=tk.W, pady=(8, 10))
+
+        def close() -> None:
+            self._mark_hint_seen("creator_pack_intro")
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            self.creator_intro_win = None
+
+        tk.Button(frame, text="知道了", font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG, command=close).pack(
+            anchor=tk.E
+        )
+        win.protocol("WM_DELETE_WINDOW", close)
+        _finalize_guide_panel_layout(win, scroll_wrap, frame)
+        self._place_panel_popup(win)
+
+    def _collect_creator_submission_files(
+        self,
+        *,
+        modules: list[str] | tuple[str, ...] | None = None,
+        only_new: bool = False,
+    ) -> list[tuple[Path, str]]:
+        """收集可投稿文件：(绝对路径, zip 内相对路径)。"""
+        wanted = set(modules) if modules else {m[0] for m in CREATOR_PACK_MODULES}
+        out: list[tuple[Path, str]] = []
+        seen: set[str] = set()
+
+        def add(src: Path, arc: str) -> None:
+            try:
+                if not src.is_file():
+                    return
+                key = str(src.resolve()).lower()
+                if key in seen:
+                    return
+                seen.add(key)
+                out.append((src, arc.replace("\\", "/")))
+            except Exception:
+                pass
+
+        if "maps" in wanted:
+            try:
+                rpg_root = resolve_bundled("Vpetgame", legacy=LEGACY_GAME_ROOT)
+                maps_dir = rpg_root / "maps"
+                if maps_dir.is_dir():
+                    for p in sorted(maps_dir.glob("diy_*.json")):
+                        add(p, f"maps/{p.name}")
+            except Exception:
+                pass
+            if HOME_EXPORTS_DIR.is_dir():
+                for p in sorted(HOME_EXPORTS_DIR.glob("diy_*.json")):
+                    add(p, f"maps/exports/{p.name}")
+
+        if "pixel" in wanted:
+            for name in ("user_paint.png", "gift_art.png"):
+                add(HOME_PROPS_DIR / name, f"pixel/{name}")
+                add(HOME_RPG_ASSETS_DIR / name, f"pixel/rpg_{name}")
+            draft = DATA_DIR / "home_user_paint_draft.json"
+            add(draft, "pixel/home_user_paint_draft.json")
+            add(HOME_MATERIALS_INDEX, "pixel/home_materials.json")
+            if HOME_MATERIALS_DIR.is_dir():
+                for p in sorted(HOME_MATERIALS_DIR.glob("*.png")):
+                    add(p, f"pixel/materials/{p.name}")
+
+        if "homes" in wanted:
+            add(HOME_LAYOUT_FILE, "homes/home_layout.json")
+            if HOME_PRESETS_DIR.is_dir():
+                for p in sorted(HOME_PRESETS_DIR.glob("*.json")):
+                    add(p, f"homes/presets/{p.name}")
+
+        if "audio" in wanted:
+            if PHONOGRAPH_USER_DIR.is_dir():
+                for p in sorted(PHONOGRAPH_USER_DIR.rglob("*")):
+                    if p.is_file() and p.suffix.lower() in (".wav", ".mp3", ".ogg", ".flac", ".m4a"):
+                        rel = p.relative_to(PHONOGRAPH_USER_DIR)
+                        add(p, f"audio/{rel.as_posix()}")
+
+        if only_new:
+            prev = (self._load_creator_pack_state().get("files") or {})
+            filtered: list[tuple[Path, str]] = []
+            for src, arc in out:
+                fp = self._file_fingerprint(src)
+                old = prev.get(arc) if isinstance(prev, dict) else None
+                if not isinstance(old, dict) or old.get("mtime") != fp.get("mtime") or old.get("size") != fp.get("size"):
+                    filtered.append((src, arc))
+            return filtered
+        return out
+
+    def _creator_pack_state_path(self) -> Path:
+        return DATA_DIR / "creator_pack_state.json"
+
+    def _load_creator_pack_state(self) -> dict:
+        path = self._creator_pack_state_path()
+        if not path.is_file():
+            return {"files": {}}
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                files = raw.get("files") if isinstance(raw.get("files"), dict) else {}
+                return {"files": files}
+        except Exception:
+            pass
+        return {"files": {}}
+
+    def _save_creator_pack_state(self, files: list[tuple[Path, str]]) -> None:
+        state = self._load_creator_pack_state()
+        bucket = state.setdefault("files", {})
+        if not isinstance(bucket, dict):
+            bucket = {}
+            state["files"] = bucket
+        for src, arc in files:
+            fp = self._file_fingerprint(src)
+            if fp:
+                bucket[arc] = fp
+        try:
+            path = self._creator_pack_state_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _file_fingerprint(self, path: Path) -> dict:
+        try:
+            st = path.stat()
+            return {"mtime": int(st.st_mtime_ns), "size": int(st.st_size)}
+        except Exception:
+            return {}
+
+    def _pack_creator_submission(
+        self,
+        *,
+        credit_name: str = "",
+        want_credit: bool = False,
+        modules: list[str] | tuple[str, ...] | None = None,
+        only_new: bool = False,
+    ) -> Path | None:
+        files = self._collect_creator_submission_files(modules=modules, only_new=only_new)
+        if not files and only_new:
+            # 仅新增模式下没有改动 → 不生成空壳，提示用户
+            return None
+        export_dir = DATA_DIR / "exports"
+        export_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_path = export_dir / f"Vpet_creator_pack_{stamp}.zip"
+        credit_name = str(credit_name or "").strip()[:24]
+        contributor = {
+            "credit_name": credit_name,
+            "want_credit": bool(want_credit and credit_name),
+            "note": "若投稿被正式收录，开发者可依此将署名加入「关于 → 致谢」。",
+        }
+        mod_list = list(modules) if modules else [m[0] for m in CREATOR_PACK_MODULES]
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("README_投稿说明.txt", CREATOR_PACK_README)
+            zf.writestr("contributor.json", json.dumps(contributor, ensure_ascii=False, indent=2))
+            meta = {
+                "created_at": stamp,
+                "file_count": len(files),
+                "modules": mod_list,
+                "only_new": bool(only_new),
+                "note": "创作者投稿包；请随反馈渠道发送给开发者审阅。",
+                "contributor": contributor,
+                "files": [arc for _src, arc in files],
+            }
+            zf.writestr("manifest.json", json.dumps(meta, ensure_ascii=False, indent=2))
+            for src, arc in files:
+                try:
+                    zf.write(src, arcname=arc)
+                except Exception:
+                    pass
+        self._save_creator_pack_state(files)
+        try:
+            desk = Path.home() / "Desktop"
+            if not desk.is_dir():
+                desk = Path(os.path.expanduser("~")) / "Desktop"
+            if desk.is_dir():
+                shutil.copy2(zip_path, desk / zip_path.name)
+        except Exception:
+            pass
+        return zip_path
 
     def _open_dialog_menu(self) -> None:
         if self._vpet_voice_category_ready("email") and random.random() < 0.5:
             self._addon_voice_vpet("email")
         self._show_sub_menu(
             [
-                ("AI 对话", self._toggle_ai_chat),
+                ("AI 对话", self._open_ai_chat_stub),
                 ("普通对话 ▶", self._open_preset_dialog_menu),
             ],
-            offset_x=360,
+            offset_x=240,
         )
 
     def _open_preset_dialog_menu(self) -> None:
         items = [(q, lambda qq=q, ans=a: self._play_preset_dialog(qq, ans)) for q, a in PRESET_DIALOGS]
-        self._show_sub_menu(items, offset_x=480)
+        self._show_sub_menu(items, offset_x=360)
 
     def _play_preset_dialog(self, question: str, answers: tuple[str, ...]) -> None:
         self._hide_main_menu()
@@ -19921,9 +27272,11 @@ class DesktopPet:
     def _show_preset_dialog_answer(self, question: str, reply: str) -> None:
         self.preset_dialog_job = None
         text = (reply or "").strip() or "……"
+        # 打完后再多留一会儿，长回复按字数加长停留
+        hold_ms = max(6200, 2800 + len(text) * 45)
         self._show_speech_dialog(
             text,
-            auto_hide_ms=6200,
+            auto_hide_ms=hold_ms,
             typewriter_ms=TYPEWRITER_MS,
             use_border5=True,
         )
@@ -20264,9 +27617,14 @@ class DesktopPet:
 
     def _set_size_preset(self, preset: str, *, refresh_settings: bool = False) -> None:
         new_size = SIZE_PRESETS[preset]
+        self._set_display_size(new_size, refresh_settings=refresh_settings, preset_label=preset)
+
+    def _set_display_size(self, new_size: int, *, refresh_settings: bool = False, preset_label: str | None = None) -> None:
+        new_size = _snap_display_size(new_size)
         self._hide_main_menu()
         if new_size == self.display_size:
-            self._show_toast(f"当前已是「{preset}」尺寸", PIXEL_COLOR)
+            label = preset_label or f"{new_size}px"
+            self._show_toast(f"当前已是「{label}」尺寸", PIXEL_COLOR)
             if refresh_settings:
                 self._refresh_panel_settings_if_open()
             return
@@ -20277,7 +27635,8 @@ class DesktopPet:
         self._clear_all_action_fx()
         self.action_name = ""
         self.size_refresh_settings = bool(refresh_settings)
-        self._show_size_loading(preset, new_size)
+        label = preset_label or next((k for k, v in SIZE_PRESETS.items() if v == new_size), f"{new_size}px")
+        self._show_size_loading(label, new_size)
 
     def _refresh_panel_settings_if_open(self) -> None:
         if self.panel_settings_win and self.panel_settings_win.winfo_exists():
@@ -20289,6 +27648,7 @@ class DesktopPet:
             self._open_panel_settings()
 
     def _apply_size_preset(self, preset: str, new_size: int) -> None:
+        new_size = _snap_display_size(new_size)
         if new_size not in self._sprite_cache:
             # 正常应已异步就绪；兜底继续催发，延后应用
             self._ensure_sprite_cached(
@@ -20306,11 +27666,16 @@ class DesktopPet:
         self._apply_current_sprite()
         self._place_window()
         self._reposition_panel(force=True)
+        # 戴花窗随尺寸重建
+        if self._wearing_flower():
+            self._hide_head_flower()
+            self._show_head_flower()
         # Allmate 与主宠同帧一起缩放（加载期已并行预热）
         self._resync_mini_pets_size()
         if self.mode == "quiet" and self.state == "rest":
             self._show_sleep_zzz()
-        self._show_toast(f"尺寸已设为「{preset}」", PIXEL_COLOR)
+        toast_name = preset if preset in SIZE_PRESETS else f"{new_size}px"
+        self._show_toast(f"尺寸已设为「{toast_name}」", PIXEL_COLOR)
         if getattr(self, "size_refresh_settings", False):
             self.size_refresh_settings = False
             self._refresh_panel_settings_if_open()
@@ -20470,12 +27835,14 @@ class DesktopPet:
     def _on_press(self, event: tk.Event) -> None:
         if self._startup_busy():
             return
+        self._note_user_activity()
         self._hide_main_menu()
         if self.mode == "game":
             # 采集：默认可鼠标跟随；左键按住任意部位可改用拖动
             if self.game_dizzy:
                 return
             self.dragging = True
+            self._meta_edge_during_drag = False
             self.drag_x = event.x_root - self.x
             self.drag_y = event.y_root - self.y
             self.drag_track_x = event.x_root
@@ -20488,10 +27855,17 @@ class DesktopPet:
         # wink/like 卡住时：点一下强制恢复走动
         if (
             self.state == "action"
-            and self.action_name in ("wink", "like")
+            and self.action_name in ("wink", "like", "bixin")
             and not self._hit_drag_handle(event.x, event.y)
         ):
-            self._force_end_wink_like()
+            if self.action_name == "bixin":
+                self._clear_all_action_fx()
+                self._cancel_action_end()
+                self._cancel_action_defer()
+                self._add_interact_mood()
+                self._finish_expression()
+            else:
+                self._force_end_wink_like()
             self._play_click_bounce()
             return
         if self.state == "action" and self.action_name == "shy" and not self._hit_drag_handle(event.x, event.y):
@@ -20504,6 +27878,7 @@ class DesktopPet:
             if self.mode == "quiet" and self.state == "rest":
                 self._stop_rest_bobble()
             self.dragging = True
+            self._meta_edge_during_drag = False
             self.drag_x = event.x_root - self.x
             self.drag_y = event.y_root - self.y
             self.drag_track_x = event.x_root
@@ -20638,21 +28013,27 @@ class DesktopPet:
         self.x = event.x_root - self.drag_x
         self.y = event.y_root - self.drag_y
         self._clamp_position()
+        if self._is_at_screen_edge():
+            self._meta_edge_during_drag = True
         self._place_window(light=True)
         if self.state == "drag":
             direction = self._drag_move_dir(dx, dy)
             if direction:
                 self._track_drag_spin(direction)
-        if self.state == "work":
-            self._refresh_work_overlay()
+        # 工作态拖宠时旗在终点不动，禁止重建 overlay（会色键闪）
 
     def _on_release(self, _event: tk.Event) -> None:
         if not self.dragging:
             return
         had_move_anim = self.state == "drag"
+        edge_hit = bool(getattr(self, "_meta_edge_during_drag", False)) and self._is_at_screen_edge()
         self.dragging = False
+        self._meta_edge_during_drag = False
+        self._note_user_activity()
         self._stop_drag_move()
         self._end_drag_dizzy()
+        if edge_hit:
+            self.root.after(300, lambda: self._maybe_meta_banter("screen_edge"))
         if self.mode == "game":
             self.state = "game"
             self._set_image(self.sprites.stand)
@@ -20660,11 +28041,14 @@ class DesktopPet:
             return
         if self.state == "work":
             self._set_image(self.sprites.work_stand if not self.work_carrying else self._walk_sprites[self.direction][0])
-            self._refresh_work_overlay()
+            # 只刷新起点箱位置，不 destroy 旗面
+            self._update_work_start_box()
             if not self.work_animating:
                 self.work_animating = True
-                self._work_animate()
-            self._work_move_step()
+                if not getattr(self, "work_anim_job", None):
+                    self._work_animate()
+            if not getattr(self, "work_move_job", None):
+                self._work_move_step()
             self._place_window()
             return
         if self.mode == "quiet":
@@ -20882,15 +28266,35 @@ class DesktopPet:
         if getattr(self, "_finalize_close_done", False):
             return
         self._finalize_close_done = True
+        try:
+            self._flush_achievements_save()
+        except Exception:
+            pass
+        try:
+            self._cancel_work_loops()
+        except Exception:
+            pass
         self._hide_size_loading()
         self._hide_companion_loading()
         self._hide_happy_fx()
+        self._hide_head_flower()
         self._hide_food_fx()
         self._hide_rain_fx()
         self._hide_bulb_fx()
         self._hide_sleep_zzz()
         self._stop_game_mode()
         self._stop_work_mode()
+        try:
+            self._hide_work_overlay(destroy=True)
+        except Exception:
+            pass
+        if self.work_start_box_win is not None:
+            try:
+                if self.work_start_box_win.winfo_exists():
+                    self.work_start_box_win.destroy()
+            except Exception:
+                pass
+            self.work_start_box_win = None
         self._close_ai_chat()
         self._cancel_follow_chain()
         if self.schedule_win and self.schedule_win.winfo_exists():
@@ -20907,6 +28311,38 @@ class DesktopPet:
         self._close_panel()
         self._hide_speech_dialog()
         self._hide_voice_subtitle(destroy=True)
+        self._stop_peer_meet_poll()
+        try:
+            self._stop_meta_idle_poll()
+        except Exception:
+            pass
+        try:
+            self._stop_mode_time_tracking()
+        except Exception:
+            pass
+        try:
+            self._hide_all_desk_clocks()
+        except Exception:
+            pass
+        if self._home_layout is not None:
+            try:
+                if self.home_desktop_win and self.home_desktop_win.winfo_exists():
+                    self._home_layout["on_desktop"] = True
+                    self._home_layout["desktop_x"] = int(self.home_desktop_win.winfo_x())
+                    self._home_layout["desktop_y"] = int(self.home_desktop_win.winfo_y())
+                home_room.save_layout(HOME_LAYOUT_FILE, self._home_layout)
+            except Exception:
+                pass
+        try:
+            if self.home_desktop_win and self.home_desktop_win.winfo_exists():
+                self.home_desktop_win.destroy()
+        except Exception:
+            pass
+        try:
+            if self.home_win and self.home_win.winfo_exists():
+                self.home_win.destroy()
+        except Exception:
+            pass
         try:
             self.root.destroy()
         except Exception:
@@ -20978,11 +28414,11 @@ class DesktopPet:
     def _speech_label_content_size(self, text: str, *, wrap_w: int | None = None) -> tuple[int, int]:
         label = self.speech_label
         if not label or not label.winfo_exists():
+            if wrap_w is not None:
+                return _estimate_wrapped_label_size(text or "", wrap_w)
             lines = text.split("\n") if text else [""]
             max_line = max((len(line) for line in lines), default=1)
             est_w = max(80, max_line * 8)
-            if wrap_w is not None:
-                est_w = min(est_w, wrap_w)
             return est_w, max(16, len(lines) * 14)
         try:
             if wrap_w is not None:
@@ -20995,14 +28431,20 @@ class DesktopPet:
         req_w = max(1, label.winfo_reqwidth())
         req_h = max(1, label.winfo_reqheight())
         if wrap_w is not None:
-            return req_w, req_h
+            est_w, est_h = _estimate_wrapped_label_size(text or "", wrap_w)
+            # Tk 对中文 wrap 高度常偏低；取较大值并留一点底边余量
+            return max(req_w, est_w, min(wrap_w, req_w)), max(req_h, est_h) + 6
         act_w = label.winfo_width() if label.winfo_width() > 1 else 0
         act_h = label.winfo_height() if label.winfo_height() > 1 else 0
         return max(req_w, act_w), max(req_h, act_h)
 
     def _speech_border5_content_size(self, text: str) -> tuple[int, int]:
         wrap_w = SPEECH_BORDER2_TEXT_WRAP
-        content_w, content_h = self._speech_label_content_size(text, wrap_w=wrap_w)
+        # 打字机过程用 peak 锁全文尺寸；空串时按全文测高
+        measure = text if (text and str(text).strip()) else (getattr(self, "speech_full_text", "") or text or " ")
+        content_w, content_h = self._speech_label_content_size(measure, wrap_w=wrap_w)
+        if len(measure) > 12:
+            content_w = max(content_w, wrap_w)
         peak_w, peak_h = getattr(self, "_speech_border5_peak", (0, 0))
         content_w = max(content_w, peak_w)
         content_h = max(content_h, peak_h)
@@ -21027,15 +28469,41 @@ class DesktopPet:
                 self.speech_dialog.update_idletasks()
                 return self._place_speech_popup(self.speech_dialog)
             return False
+        content_w, content_h = self._speech_border5_content_size(text)
+        target_w, target_h, pad_l, pad_t, content_w, content_h = _speech_border2_target_size(content_w, content_h)
+        # 与合成边框同一套内边距，避免文字窗与内容底错位/裁切
+        c_pad_l, c_pad_t, c_pad_r, c_pad_b = _speech_border2_inner_pads(target_w, target_h)
+        pad_l, pad_t = c_pad_l, c_pad_t
+        inner_w = max(40, target_w - c_pad_l - c_pad_r)
+        inner_h = max(16, target_h - c_pad_t - c_pad_b)
+        measure = text if (text and str(text).strip()) else (getattr(self, "speech_full_text", "") or text or " ")
+        if inner_w < content_w - 2 or inner_h < content_h - 2:
+            measure_wrap = max(80, inner_w - SPEECH_TEXT_EDGE_SLACK)
+            _rw, need_h = self._speech_label_content_size(measure, wrap_w=measure_wrap)
+            content_w = inner_w
+            content_h = max(content_h, need_h)
+            peak_w, peak_h = getattr(self, "_speech_border5_peak", (0, 0))
+            self._speech_border5_peak = (max(peak_w, content_w), max(peak_h, content_h))
+            target_w, target_h, pad_l, pad_t, content_w, content_h = _speech_border2_target_size(
+                content_w, content_h
+            )
+            c_pad_l, c_pad_t, c_pad_r, c_pad_b = _speech_border2_inner_pads(target_w, target_h)
+            pad_l, pad_t = c_pad_l, c_pad_t
+            content_w = max(40, target_w - c_pad_l - c_pad_r)
+            content_h = max(content_h, target_h - c_pad_t - c_pad_b)
+        else:
+            content_w, content_h = inner_w, max(content_h, inner_h)
+        # wrap 比文字窗略窄，防止最右一字贴边被裁
+        wrap_for_label = max(80, content_w - SPEECH_TEXT_EDGE_SLACK)
         if self.speech_label and self.speech_label.winfo_exists():
             self.speech_label.config(
                 text=text,
                 fg=color,
                 bg=SPEECH_TEXT_BG,
-                wraplength=SPEECH_BORDER2_TEXT_WRAP,
+                wraplength=wrap_for_label,
+                padx=2,
+                pady=1,
             )
-        content_w, content_h = self._speech_border5_content_size(text)
-        target_w, target_h, pad_l, pad_t, content_w, content_h = _speech_border2_target_size(content_w, content_h)
         layout_sig = (target_w, target_h, pad_l, pad_t, content_w, content_h)
         # 尺寸未变时只改文字，避免打字机每字重合成边框
         if (
@@ -21127,7 +28595,9 @@ class DesktopPet:
             fg=color,
             bg=SPEECH_TEXT_BG,
             justify=tk.LEFT,
-            anchor=tk.W,
+            anchor=tk.NW,
+            padx=2,
+            pady=1,
         )
 
         self.speech_full_text = text
@@ -21138,9 +28608,11 @@ class DesktopPet:
         # 打字前用全文预热边框尺寸，整段只合成一次
         if use_border5 and text:
             try:
-                self.speech_label.config(wraplength=SPEECH_BORDER2_TEXT_WRAP)
-                peak = self._speech_label_content_size(text, wrap_w=SPEECH_BORDER2_TEXT_WRAP)
-                self._speech_border5_peak = peak
+                wrap_peak = max(80, SPEECH_BORDER2_TEXT_WRAP - SPEECH_TEXT_EDGE_SLACK)
+                self.speech_label.config(wraplength=wrap_peak)
+                peak = self._speech_label_content_size(text, wrap_w=wrap_peak)
+                # 预留全文换行宽度，避免布局时再挤窄
+                self._speech_border5_peak = (max(peak[0], SPEECH_BORDER2_TEXT_WRAP), peak[1])
             except Exception:
                 self._speech_border5_peak = (0, 0)
         # 系统对话（border5）与普通框都必须成窗；定位失败只夹屏，不得直接销毁
@@ -21271,6 +28743,122 @@ class DesktopPet:
         canvas.create_rectangle(x + petal, y + petal, x + petal * 2, y + petal * 2, fill=color, outline="")
         canvas.create_rectangle(x, y + petal * 2, x + petal, y + petal * 3, fill=color, outline="")
         canvas.create_rectangle(x + petal // 2, y + petal, x + petal + petal // 2, y + petal * 2, fill="#ffee88", outline="")
+
+    def _wearing_flower(self) -> bool:
+        return bool((self.pet_profile or {}).get("wear_flower"))
+
+    def _set_wear_flower(self, on: bool, *, toast: bool = True) -> bool:
+        """戴花 / 摘花；戴上消耗 1 朵采下的花，摘下归还。"""
+        on = bool(on)
+        wearing = self._wearing_flower()
+        if on == wearing:
+            if toast:
+                self._show_toast("已经戴着花了" if on else "头上没有花", "#88ccff", duration_ms=1400)
+            return False
+        items = self.wallet.setdefault("items", {})
+        if on:
+            have = int(items.get("flower_cut", 0))
+            if have <= 0:
+                if toast:
+                    self._show_toast("背包没有采下的花（家园室外·采）", "#ff8866", duration_ms=1800)
+                return False
+            items["flower_cut"] = have - 1
+            self.pet_profile["wear_flower"] = True
+            tip = "戴上了小花～"
+        else:
+            items["flower_cut"] = int(items.get("flower_cut", 0)) + 1
+            self.pet_profile["wear_flower"] = False
+            tip = "花已摘下，放回背包"
+        self._persist_wallet()
+        try:
+            _save_pet_profile(self.pet_profile)
+        except Exception:
+            pass
+        self._sync_head_flower()
+        if self._home_any_view_open():
+            self._home_redraw()
+        if self.panel_win and self.panel_win.winfo_exists() and self.panel_backpack_open:
+            self._refresh_panel_backpack()
+        if toast:
+            self._show_toast(tip, "#ff99bb", duration_ms=1600)
+        return True
+
+    def _toggle_wear_flower(self) -> None:
+        self._set_wear_flower(not self._wearing_flower())
+
+    def _sync_head_flower(self) -> None:
+        if self._closing:
+            self._hide_head_flower()
+            return
+        if self._wearing_flower():
+            self._show_head_flower()
+        else:
+            self._hide_head_flower()
+
+    def _hide_head_flower(self) -> None:
+        if self.head_flower_win and self.head_flower_win.winfo_exists():
+            try:
+                self.head_flower_win.destroy()
+            except Exception:
+                pass
+        self.head_flower_win = None
+        self.head_flower_canvas = None
+        self._head_flower_place_sig = None
+
+    def _show_head_flower(self) -> None:
+        if self.head_flower_win and self.head_flower_win.winfo_exists():
+            self._place_head_flower(force=True)
+            return
+        size = max(28, min(48, self.display_size // 3))
+        win = tk.Toplevel(self.root)
+        self.head_flower_win = win
+        win.overrideredirect(True)
+        self._apply_window_layer(win)
+        win.configure(bg="magenta")
+        try:
+            win.wm_attributes("-transparentcolor", "magenta")
+        except Exception:
+            pass
+        canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
+        canvas.pack()
+        self.head_flower_canvas = canvas
+        # 头顶小花：粉瓣 + 黄心 + 绿茎
+        cx, cy = size // 2, size // 2 - 2
+        px = max(2, size // 10)
+        self._draw_pixel_flower(canvas, cx - px // 2, cy - px * 2, "#ff7799", px=px)
+        canvas.create_rectangle(cx - 1, cy + px, cx + 1, cy + px * 3, fill="#44aa55", outline="")
+        self._head_flower_place_sig = None
+        self._place_head_flower(force=True)
+        try:
+            win.lift()
+        except Exception:
+            pass
+
+    def _place_head_flower(self, *, force: bool = False) -> None:
+        if not self._wearing_flower():
+            self._hide_head_flower()
+            return
+        if not self.head_flower_win or not self.head_flower_win.winfo_exists():
+            if self._wearing_flower():
+                self._show_head_flower()
+            return
+        try:
+            fw = max(1, int(self.head_flower_win.winfo_width()))
+            fh = max(1, int(self.head_flower_win.winfo_height()))
+        except Exception:
+            fw = fh = max(28, min(48, self.display_size // 3))
+        display_y = self.y + self.click_bounce_offset
+        # 偏头顶中央略上
+        ox = self.x + self.display_size // 2 - fw // 2
+        oy = display_y + max(2, self.display_size // 10) - fh // 2
+        sig = (ox, oy)
+        if not force and sig == getattr(self, "_head_flower_place_sig", None):
+            return
+        self._head_flower_place_sig = sig
+        try:
+            self.head_flower_win.geometry(f"+{ox}+{oy}")
+        except Exception:
+            pass
 
     def _show_happy_fx(self) -> None:
         self._hide_happy_fx()
@@ -21669,6 +29257,18 @@ class DesktopPet:
                 except Exception:
                     pass
             # 继续往下做 idle 恢复
+        # 工作环自愈：空壳 mode / 丢 after 链
+        if self.mode == "work" and self.state != "work" and not getattr(self, "_pending_work_start", False):
+            self.mode = "free"
+        elif self.mode == "work" and self.state == "work":
+            if not self.work_phase:
+                self.work_phase = "to_end" if self.work_carrying else "to_start"
+            if not getattr(self, "work_move_job", None):
+                self._work_move_step()
+            if not self.work_animating:
+                self.work_animating = True
+                self._work_animate()
+            return
         if self.mode not in ("free", "stroll"):
             return
         if self.state in ("work", "sleep", "game", "drag"):
@@ -21934,6 +29534,42 @@ class DesktopPet:
         self.sleep_zzz_win = None
         self.sleep_zzz_canvas = None
 
+    def _hide_sleep_end_button(self) -> None:
+        if self.sleep_end_btn_win and self.sleep_end_btn_win.winfo_exists():
+            self.sleep_end_btn_win.destroy()
+        self.sleep_end_btn_win = None
+
+    def _end_quiet_sleep(self) -> None:
+        self._hide_sleep_end_button()
+        self._enable_free()
+        self.root.after(480, lambda: self._maybe_meta_banter("sleep_end"))
+
+    def _sync_sleep_end_button(self) -> None:
+        if self.mode != "quiet" or self.state != "rest":
+            self._hide_sleep_end_button()
+            return
+        if not self.sleep_end_btn_win or not self.sleep_end_btn_win.winfo_exists():
+            self.sleep_end_btn_win = tk.Toplevel(self.root)
+            self.sleep_end_btn_win.overrideredirect(True)
+            self._apply_window_layer(self.sleep_end_btn_win)
+            self.sleep_end_btn_win.configure(bg=MENU_BG)
+            tk.Button(
+                self.sleep_end_btn_win,
+                text="结束",
+                command=self._end_quiet_sleep,
+                font=PIXEL_FONT,
+                bg="#664444",
+                fg=MENU_FG,
+                relief=tk.FLAT,
+                padx=6,
+                pady=2,
+                cursor="hand2",
+            ).pack()
+        display_y = self.y + self.click_bounce_offset
+        btn_x = self.x + self.display_size + 4
+        btn_y = display_y - 8
+        self.sleep_end_btn_win.geometry(f"+{btn_x}+{btn_y}")
+
     def _draw_pixel_z(self, canvas: tk.Canvas, x: int, y: int, size: int, color: str) -> None:
         s = size
         canvas.create_rectangle(x, y, x + s * 2, y + s, fill=color, outline="")
@@ -21963,7 +29599,13 @@ class DesktopPet:
         pad = 20
         display_y = self.y + self.click_bounce_offset
         self.sleep_zzz_win.geometry(f"+{self.x - pad}+{display_y - pad}")
+        self._sync_sleep_end_button()
         self.root.lift()
+        if self.sleep_end_btn_win and self.sleep_end_btn_win.winfo_exists():
+            try:
+                self.sleep_end_btn_win.lift()
+            except Exception:
+                pass
 
     def _should_show_zzz(self) -> bool:
         photo = getattr(self.label, "image", None)
@@ -22381,7 +30023,7 @@ class DesktopPet:
         self._show_sub_menu(
             [
                 ("自由", self._start_work_free),
-                ("自定义", self._open_work_custom_dialog),
+                ("自定义 ▶", self._open_work_custom_dialog),
             ],
             offset_x=240,
         )
@@ -22405,44 +30047,140 @@ class DesktopPet:
 
         frame = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
         frame.pack()
-        tk.Label(frame, text="自定义运送货物", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+        tk.Label(frame, text="自定义运送", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
         tk.Label(
             frame,
-            text=f"货物数 {WORK_TOTAL_SETTING_MIN}–{WORK_TOTAL_SETTING_MAX}；起点随机，终点可拖动（中途也能改）",
-            font=PIXEL_FONT,
+            text="箱数或时间，二选一；到了会自己停",
+            font=("Courier New", 8),
             fg="#aaaaaa",
             bg=MENU_BG,
-            wraplength=260,
+            wraplength=280,
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(4, 6))
-        entry_row = tk.Frame(frame, bg=MENU_BG)
-        entry_row.pack(fill=tk.X, pady=(0, 8))
-        tk.Label(entry_row, text="货物数", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
-        entry = tk.Entry(entry_row, width=8, font=PIXEL_FONT)
+
+        goal = tk.StringVar(value="boxes")
+        goal_row = tk.Frame(frame, bg=MENU_BG)
+        goal_row.pack(fill=tk.X, pady=(0, 6))
+        tk.Radiobutton(
+            goal_row,
+            text="按箱数",
+            variable=goal,
+            value="boxes",
+            font=PIXEL_FONT,
+            fg=MENU_FG,
+            bg=MENU_BG,
+            selectcolor=MENU_BG,
+            activebackground=MENU_BG,
+            command=lambda: refresh_goal(),
+        ).pack(side=tk.LEFT)
+        tk.Radiobutton(
+            goal_row,
+            text="按时间",
+            variable=goal,
+            value="time",
+            font=PIXEL_FONT,
+            fg=MENU_FG,
+            bg=MENU_BG,
+            selectcolor=MENU_BG,
+            activebackground=MENU_BG,
+            command=lambda: refresh_goal(),
+        ).pack(side=tk.LEFT, padx=(12, 0))
+
+        boxes_frame = tk.Frame(frame, bg=MENU_BG)
+        boxes_frame.pack(fill=tk.X, pady=(0, 4))
+        tk.Label(
+            boxes_frame,
+            text=f"货物数（{WORK_TOTAL_SETTING_MIN}–{WORK_TOTAL_SETTING_MAX}）",
+            font=("Courier New", 9),
+            fg=MENU_FG,
+            bg=MENU_BG,
+        ).pack(side=tk.LEFT)
+        entry = tk.Entry(boxes_frame, width=8, font=PIXEL_FONT)
         entry.pack(side=tk.LEFT, padx=(8, 0))
         entry.insert(0, str(WORK_BOX_TOTAL_DEFAULT))
 
-        def confirm() -> None:
-            raw = entry.get().strip()
-            try:
-                total = int(raw)
-            except ValueError:
-                self._show_toast("请输入有效货物数", "#ff4444")
-                return
-            total = max(WORK_TOTAL_SETTING_MIN, min(WORK_TOTAL_SETTING_MAX, total))
-            self._close_work_custom_dialog()
-            self._start_work_impl(total, flag_movable=True, kind="custom")
+        time_frame = tk.Frame(frame, bg=MENU_BG)
+        time_frame.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(time_frame, text="时长", font=("Courier New", 9), fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        mins = tk.Entry(time_frame, width=4, font=PIXEL_FONT)
+        mins.pack(side=tk.LEFT, padx=(6, 2))
+        mins.insert(0, "25")
+        tk.Label(time_frame, text="分", font=("Courier New", 8), fg="#8899aa", bg=MENU_BG).pack(side=tk.LEFT)
+        secs = tk.Entry(time_frame, width=4, font=PIXEL_FONT)
+        secs.pack(side=tk.LEFT, padx=(8, 2))
+        secs.insert(0, "0")
+        tk.Label(time_frame, text="秒", font=("Courier New", 8), fg="#8899aa", bg=MENU_BG).pack(side=tk.LEFT)
 
+        def refresh_goal() -> None:
+            by_boxes = goal.get() == "boxes"
+            for w in (entry,):
+                w.configure(state=tk.NORMAL if by_boxes else tk.DISABLED)
+            for w in (mins, secs):
+                w.configure(state=tk.DISABLED if by_boxes else tk.NORMAL)
+            boxes_fg = MENU_FG if by_boxes else "#556677"
+            time_fg = MENU_FG if not by_boxes else "#556677"
+            for child in boxes_frame.winfo_children():
+                if isinstance(child, tk.Label):
+                    child.configure(fg=boxes_fg)
+            for child in time_frame.winfo_children():
+                if isinstance(child, tk.Label):
+                    child.configure(fg=time_fg if child.cget("text") == "时长" else "#8899aa" if not by_boxes else "#556677")
+
+        def confirm() -> None:
+            if goal.get() == "boxes":
+                raw = entry.get().strip()
+                try:
+                    total = int(raw)
+                except ValueError:
+                    self._show_toast("请输入有效货物数", "#ff4444")
+                    return
+                total = max(WORK_TOTAL_SETTING_MIN, min(WORK_TOTAL_SETTING_MAX, total))
+                self._close_work_custom_dialog()
+                self._begin_work_boot_busy()
+                self._start_work_impl(
+                    total,
+                    flag_movable=True,
+                    continuous=False,
+                    kind="custom",
+                    timer_kind="stopwatch",
+                    timer_duration_ms=0,
+                )
+                return
+            try:
+                m = max(0, int(mins.get().strip() or "0"))
+                s = max(0, min(59, int(secs.get().strip() or "0")))
+            except ValueError:
+                self._show_toast("请输入有效时长", "#ff4444")
+                return
+            dur_ms = (m * 60 + s) * 1000
+            if dur_ms < 1000:
+                self._show_toast("定时至少 1 秒", "#ff4444")
+                return
+            self._close_work_custom_dialog()
+            # 按时间：持续运送直到定时到（无结束键，到点自动停）
+            self._begin_work_boot_busy()
+            self._start_work_impl(
+                WORK_BOX_TOTAL_DEFAULT,
+                flag_movable=True,
+                continuous=True,
+                kind="custom",
+                timer_kind="countdown",
+                timer_duration_ms=dur_ms,
+            )
+
+        refresh_goal()
         tk.Button(frame, text="开始", command=confirm, font=PIXEL_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(anchor=tk.E)
         entry.bind("<Return>", lambda _e: confirm())
         entry.focus_set()
         self._place_panel_popup(win)
 
     def _start_work_free(self) -> None:
+        """模式/互动「自由」= 持续运输（搬走再生，点「结束」停止）。"""
         self._hide_main_menu()
-        total = random.randint(WORK_TOTAL_MIN, WORK_TOTAL_MAX)
-        # 自由：数量/起点/终点均随机；终点旗可拖，便于调整堆积
-        self._start_work_impl(total, flag_movable=True, kind="free")
+        if self.mode == "work":
+            self._end_continuous_work()
+            return
+        self._enable_work()
 
     def _start_work_impl(
         self,
@@ -22451,14 +30189,36 @@ class DesktopPet:
         flag_movable: bool,
         continuous: bool = False,
         kind: str = "free",
-    ) -> None:
-        if self.dragging or self.state in ("work", "sleep"):
-            return
-        self._ensure_mode_exclusive_cleanup("work")
-        self._interrupt_current_interaction()
-        if self.mode == "game":
-            self._stop_game_mode()
-            self.mode = "free"
+        timer_kind: str = "stopwatch",
+        timer_duration_ms: int = 0,
+        prepared: bool = False,
+    ) -> bool:
+        if self.dragging:
+            return False
+        self._begin_work_boot_busy()
+        if self.state == "sleep":
+            self._wake_from_sleep()
+        # 先停环并清工作态，避免 interrupt 再 leave_mode 把 mode=work 打成 free
+        self._cancel_work_loops()
+        self.work_animating = False
+        if self.state == "work":
+            self._stop_work_mode(leave_mode=False)
+            self.state = "stand"
+            self._begin_work_boot_busy()
+            prepared = False
+        if not prepared:
+            self._ensure_mode_exclusive_cleanup("work")
+            self._interrupt_current_interaction()
+            if self.mode == "game":
+                self._stop_game_mode()
+                self.mode = "free"
+        else:
+            # 模式切换已清场：只停走动，避免再拆一遍特效窗
+            self.interaction_token += 1
+            self._cancel_idle_chain()
+            if self.mode == "game":
+                self._stop_game_mode()
+                self.mode = "free"
 
         self._hide_main_menu()
         if not continuous:
@@ -22491,6 +30251,7 @@ class DesktopPet:
             self.work_end_y = margin if self.work_start_y > (margin + max_y) // 2 else max_y
 
         self.work_continuous = continuous
+        self.work_session_kind = str(kind or "")
         self.work_total = max(WORK_TOTAL_SETTING_MIN, min(WORK_TOTAL_SETTING_MAX, int(total)))
         self.work_flag_movable = bool(flag_movable)
         self.work_delivered = 0
@@ -22505,33 +30266,83 @@ class DesktopPet:
         self.work_phase = "to_start"
         self.work_use_work_sprites = False
         self.work_flag_dragging = False
+        self._work_timer_kind = "countdown" if timer_kind == "countdown" else "stopwatch"
+        self._work_timer_duration_ms = int(timer_duration_ms) if self._work_timer_kind == "countdown" else 0
+        self._work_session_start_ms = int(time.time() * 1000)
 
+        # 模式菜单与互动菜单入口统一进入工作模式，结束后再切回自由
+        self.mode = "work"
         self.state = "work"
         self.walk_frame = 0
         self.x = self.work_start_x
         self.y = self.work_start_y
         self._set_image(self.sprites.work_stand)
         self._place_window()
-        self._sync_work_overlay()
-        if continuous or kind == "continuous":
-            tip = "工作模式：搬走再生，持续运送；可拖终点旗；点「结束」停止"
-            self._show_toast(tip, PIXEL_COLOR, duration_ms=2800)
-        elif kind == "custom":
-            self._show_toast(
-                f"自定义运送：{self.work_total} 箱（搬走再生，搬完结束）",
-                PIXEL_COLOR,
-                duration_ms=2400,
-            )
-        else:
-            self._show_toast(
-                f"自由运送：{self.work_total} 箱（搬走再生，搬完结束）",
-                PIXEL_COLOR,
-                duration_ms=2400,
-            )
-        self._work_move_step()
-        if not self.work_animating:
-            self.work_animating = True
-            self._work_animate()
+        self._note_mode_for_achievement("work")
+
+        # 旗/箱色键窗与时钟分帧创建，先让「耐心等待」画出来，减轻进入卡顿感
+        self._work_boot_token += 1
+        boot_tok = self._work_boot_token
+        tip_continuous = continuous or kind == "continuous"
+        tip_kind = kind
+
+        def boot_props(expected: int = boot_tok) -> None:
+            self._work_boot_job = None
+            if expected != self._work_boot_token or self.state != "work" or self._closing:
+                self._end_work_boot_busy()
+                return
+            self._sync_work_overlay()
+            self._work_boot_job = self.root.after(1, lambda: boot_finish(expected))
+
+        def boot_finish(expected: int = boot_tok) -> None:
+            self._work_boot_job = None
+            if expected != self._work_boot_token or self.state != "work" or self._closing:
+                self._end_work_boot_busy()
+                return
+            try:
+                if self._timers_display_enabled() or self._work_timer_kind == "countdown":
+                    if self._work_timer_kind == "countdown" and self._work_timer_duration_ms > 0:
+                        self._start_desk_clock(
+                            "work",
+                            kind="countdown",
+                            title="工作·定时",
+                            duration_ms=self._work_timer_duration_ms,
+                            force=True,
+                            on_done=self._on_work_countdown_done,
+                        )
+                    elif self._timers_display_enabled():
+                        self._start_desk_clock("work", kind="stopwatch", title="工作")
+                if tip_continuous:
+                    if tip_kind == "custom" and self._work_timer_kind == "countdown" and self._work_timer_duration_ms > 0:
+                        tip = (
+                            f"定时运送：{desktop_clock.format_duration_cn(self._work_timer_duration_ms / 1000)}"
+                            " · 到点歇工"
+                        )
+                    else:
+                        tip = "自由运送 · 旗可拖 · 旁有「结束」"
+                    self._show_toast(tip, PIXEL_COLOR, duration_ms=2800)
+                elif tip_kind == "custom":
+                    self._show_toast(
+                        f"运送 {self.work_total} 箱 · 搬完歇工",
+                        PIXEL_COLOR,
+                        duration_ms=2400,
+                    )
+                else:
+                    self._show_toast(
+                        f"运送 {self.work_total} 箱",
+                        PIXEL_COLOR,
+                        duration_ms=2400,
+                    )
+                # 启动移动与换帧（与原先一致）
+                self._work_move_step()
+                if not self.work_animating:
+                    self.work_animating = True
+                    self._work_animate()
+            finally:
+                self._end_work_boot_busy()
+
+        self._work_boot_job = self.root.after(1, boot_props)
+        return True
 
     def _maybe_work_mode_banter(self, *, force: bool = False) -> None:
         if not self.work_continuous and not force:
@@ -22678,10 +30489,16 @@ class DesktopPet:
         self.work_end_btn_win = None
 
     def _end_continuous_work(self) -> None:
-        self._enable_free()
+        self._exit_work_to_free(reason="done", celebrate=False)
 
     def _sync_work_end_button(self, overlay_x: int, overlay_y: int, flag_x: int, flag_y: int) -> None:
-        if not (self.work_continuous and self.state == "work"):
+        # 仅「自由」持续运送显示结束；自定义（箱数/时间）到量自动结束，不显示结束键
+        show = (
+            self.work_continuous
+            and self.state == "work"
+            and getattr(self, "work_session_kind", "") != "custom"
+        )
+        if not show:
             self._hide_work_end_button()
             return
         if not self.work_end_btn_win or not self.work_end_btn_win.winfo_exists():
@@ -22701,8 +30518,15 @@ class DesktopPet:
                 pady=2,
                 cursor="hand2",
             ).pack()
-        btn_x = overlay_x + flag_x + WORK_PROP_SIZE // 2 + 8
-        btn_y = overlay_y + flag_y - 28
+        try:
+            self.work_end_btn_win.update_idletasks()
+            bh = max(20, int(self.work_end_btn_win.winfo_reqheight()))
+        except Exception:
+            bh = 28
+        # 贴在旗图右侧（同一终点标记），拖旗时随 overlay 一起走；勿叠在旗脚中心
+        pw = int(getattr(self, "_work_flag_pw", WORK_PROP_SIZE) or WORK_PROP_SIZE)
+        btn_x = int(overlay_x + flag_x + pw // 2 + 8)
+        btn_y = int(overlay_y + flag_y - bh - 2)
         self.work_end_btn_win.geometry(f"+{btn_x}+{btn_y}")
 
     def _bind_work_flag_drag(self) -> None:
@@ -22751,7 +30575,9 @@ class DesktopPet:
         if self.state != "work" or not self.work_flag_movable:
             return
         self.work_flag_dragging = True
-        self.work_flag_drag_origin = (event.x_root, event.y_root, self.work_end_x, self.work_end_y)
+        fx, fy = self._work_flag_foot_xy()
+        # 以旗脚为拖拽原点，保证视觉旗与寻路终点一起动
+        self.work_flag_drag_origin = (event.x_root, event.y_root, fx, fy)
         # 拖旗时抬到桌宠前，否则点不到 / Motion 被吃掉
         try:
             if self.work_overlay and self.work_overlay.winfo_exists():
@@ -22763,27 +30589,55 @@ class DesktopPet:
     def _work_flag_motion(self, event: tk.Event) -> None:
         if not self.work_flag_dragging or self.state != "work" or not self.work_flag_movable:
             return
-        ox, oy, ex, ey = self.work_flag_drag_origin
-        dx = event.x_root - ox
-        dy = event.y_root - oy
-        margin = 80
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        max_x = max(margin, sw - self.display_size - margin)
-        max_y = max(margin, sh - self.display_size - margin)
-        self.work_end_x = max(margin, min(max_x, ex + dx))
-        self.work_end_y = max(margin, min(max_y, ey + dy))
+        ox, oy, fx0, fy0 = self.work_flag_drag_origin
+        self._work_set_end_from_flag_foot(
+            int(fx0 + (event.x_root - ox)),
+            int(fy0 + (event.y_root - oy)),
+        )
         # 拖动中只改 geometry，禁止重建子控件（否则会丢 B1-Motion）
         self._move_work_overlay_only()
 
     def _work_flag_release(self, _event: tk.Event | None = None) -> None:
         was_dragging = self.work_flag_dragging
+        origin = getattr(self, "work_flag_drag_origin", (0, 0, 0, 0))
         self.work_flag_dragging = False
         if was_dragging and self.state == "work":
             # 旗子挪走后，新送达的箱子从新位置重新堆起；已送达的留在原位
             self.work_local_stack = 0
             self._refresh_work_overlay()
             self._stack_work_props_under_pet()
+            try:
+                _ox, _oy, fx0, fy0 = origin
+                fx, fy = self._work_flag_foot_xy()
+                moved = math.hypot(fx - int(fx0), fy - int(fy0)) >= 40
+            except Exception:
+                moved = False
+            if moved:
+                self.root.after(220, lambda: self._maybe_meta_banter("work_flag"))
+
+    def _work_dest_center_xy(self) -> tuple[int, int]:
+        """寻路目标：桌宠窗口中心走到此处（与旗脚同 X，略高于旗脚）。"""
+        return (
+            int(self.work_end_x + self.display_size // 2),
+            int(self.work_end_y + self.display_size // 2),
+        )
+
+    def _work_flag_foot_xy(self) -> tuple[int, int]:
+        """终点标记点 = 旗脚 = 结束钮旁；不是立绘中心。拖旗时此点与 work_end 同步。"""
+        return (
+            int(self.work_end_x + self.display_size // 2),
+            int(self.work_end_y + self.display_size),
+        )
+
+    def _work_set_end_from_flag_foot(self, foot_x: int, foot_y: int) -> None:
+        """拖旗：旗脚挪到哪，真实终点（含结束钮）就跟到哪。"""
+        margin = 80
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        max_x = max(margin, sw - self.display_size - margin)
+        max_y = max(margin, sh - self.display_size - margin)
+        self.work_end_x = max(margin, min(max_x, int(foot_x - self.display_size // 2)))
+        self.work_end_y = max(margin, min(max_y, int(foot_y - self.display_size)))
 
     def _move_work_overlay_only(self) -> None:
         if not self.work_overlay or not self.work_overlay.winfo_exists():
@@ -22801,8 +30655,9 @@ class DesktopPet:
                 flag_x = max(1, int(self.work_overlay.winfo_width()) // 2)
             except Exception:
                 flag_x = 32
-        overlay_x = self.work_end_x + self.display_size // 2 - flag_x
-        overlay_y = self.work_end_y - height + pad
+        foot_x, foot_y = self._work_flag_foot_xy()
+        overlay_x = foot_x - flag_x
+        overlay_y = foot_y - height + pad
         flag_y = height - pad
         try:
             self.work_overlay.geometry(f"+{overlay_x}+{overlay_y}")
@@ -22820,7 +30675,7 @@ class DesktopPet:
 
     def _sync_work_overlay(self) -> None:
         if not self._work_overlay_should_show():
-            self._hide_work_overlay()
+            self._hide_work_overlay(destroy=False)
             self._update_work_start_box()
             return
         show_flag = bool(self._work_mode_config().get("show_props", True))
@@ -22834,10 +30689,10 @@ class DesktopPet:
                     pass
             self._update_work_start_box()
             if self.work_continuous and self.state == "work":
-                # 结束按钮仍钉在终点附近
-                fx = self.work_end_x + self.display_size // 2
-                fy = self.work_end_y
-                self._sync_work_end_button(fx - 40, fy - 80, 40, 80)
+                # 关旗时结束钮仍钉在终点标记旁（假 overlay：旗脚在局部 (0, h)）
+                fx, fy = self._work_flag_foot_xy()
+                self._work_flag_pw = 0
+                self._sync_work_end_button(fx, fy - 28, 0, 28)
             else:
                 self._hide_work_end_button()
             return
@@ -22848,15 +30703,32 @@ class DesktopPet:
             self.work_overlay.deiconify()
         except Exception:
             pass
-        self._refresh_work_overlay()
+        # 旗已在：只平移 + 刷起点箱，避免到站路径反复 destroy 子控件
+        self._place_work_overlay_light()
 
-    def _hide_work_overlay(self) -> None:
+    def _hide_work_overlay(self, *, destroy: bool = True) -> None:
         self._unbind_work_flag_drag()
         self._hide_work_end_button()
         if self.work_overlay and self.work_overlay.winfo_exists():
-            self.work_overlay.destroy()
-        self.work_overlay = None
-        self.work_canvas = None
+            if destroy:
+                try:
+                    self.work_overlay.destroy()
+                except Exception:
+                    pass
+                self.work_overlay = None
+                self.work_canvas = None
+                self._work_flag_built_key = None
+            else:
+                try:
+                    self.work_overlay.withdraw()
+                except Exception:
+                    try:
+                        self.work_overlay.destroy()
+                    except Exception:
+                        pass
+                    self.work_overlay = None
+                    self.work_canvas = None
+                    self._work_flag_built_key = None
         self.work_flag_dragging = False
 
     def _show_work_overlay(self) -> None:
@@ -22864,25 +30736,43 @@ class DesktopPet:
             self._update_work_start_box()
             return
         movable = self.work_flag_movable
-        self._hide_work_overlay()
+        # 优先复用已建好的色键窗，避免每次进入都 destroy/create
+        reuse = bool(self.work_overlay and self.work_overlay.winfo_exists() and self.work_canvas)
+        if reuse:
+            try:
+                self.work_overlay.withdraw()
+            except Exception:
+                reuse = False
+                self._hide_work_overlay(destroy=True)
+        else:
+            self._hide_work_overlay(destroy=True)
         self.work_flag_movable = movable
         width, height = self._work_stack_canvas_size(0)
-        self.work_overlay = tk.Toplevel(self.root)
-        self.work_overlay.withdraw()
-        self.work_overlay.overrideredirect(True)
-        self.work_overlay.configure(bg=WORK_CHROMA_NAME)
-        self.work_overlay.wm_attributes("-transparentcolor", WORK_CHROMA_NAME)
-        self.work_overlay.geometry(f"{width}x{height}+0+0")
-        self.work_canvas = tk.Frame(
-            self.work_overlay,
-            bg=WORK_CHROMA_NAME,
-            width=width,
-            height=height,
-            highlightthickness=0,
-        )
-        self.work_canvas.pack_propagate(False)
-        self.work_canvas.place(x=0, y=0, width=width, height=height)
-        self._apply_window_layer(self.work_overlay)
+        if not reuse:
+            self.work_overlay = tk.Toplevel(self.root)
+            self.work_overlay.withdraw()
+            self.work_overlay.overrideredirect(True)
+            self.work_overlay.configure(bg=WORK_CHROMA_NAME)
+            self.work_overlay.wm_attributes("-transparentcolor", WORK_CHROMA_NAME)
+            self.work_canvas = tk.Frame(
+                self.work_overlay,
+                bg=WORK_CHROMA_NAME,
+                width=width,
+                height=height,
+                highlightthickness=0,
+            )
+            self.work_canvas.pack_propagate(False)
+            self.work_canvas.place(x=0, y=0, width=width, height=height)
+            self._apply_window_layer(self.work_overlay)
+        else:
+            try:
+                self.work_overlay.geometry(f"{width}x{height}+0+0")
+                self.work_canvas.configure(width=width, height=height, bg=WORK_CHROMA_NAME)
+                self.work_canvas.place(x=0, y=0, width=width, height=height)
+            except Exception:
+                self._hide_work_overlay(destroy=True)
+                self._show_work_overlay()
+                return
         if self.work_flag_movable:
             self._bind_work_flag_drag()
             self._win32_set_click_through(self.work_overlay, False)
@@ -22894,7 +30784,111 @@ class DesktopPet:
             self.work_overlay.deiconify()
         except Exception:
             pass
-        self._stack_work_props_under_pet()
+        # _refresh_work_overlay 末尾已 stack，此处不再重复 lift
+
+    def _work_cargo_sprites_ready(self) -> bool:
+        """正式箱/旗已加载（非开场 sleep1 占位）。"""
+        sp = getattr(self, "sprites", None)
+        if sp is None or not getattr(sp, "box_img", None):
+            return False
+        try:
+            # quick pack 把 box_img/flag_img 绑成与 sleep[0] 同一 PhotoImage
+            return sp.box_img is not sp.sleep[0]
+        except Exception:
+            return True
+
+    def _invalidate_prewarmed_work_props(self) -> None:
+        """套图升级后丢弃占位预热窗；工作进行中则下一帧按新图刷新。"""
+        self._work_props_prewarmed = False
+        if self.state == "work":
+            self._work_flag_built_key = None
+            try:
+                self._update_work_start_box()
+                self._sync_work_overlay()
+            except Exception:
+                pass
+            return
+        win = getattr(self, "work_start_box_win", None)
+        if win is not None:
+            try:
+                if win.winfo_exists():
+                    win.destroy()
+            except Exception:
+                pass
+            self.work_start_box_win = None
+        # 预热壳也可能带着 sleep 占位尺寸，一并拆掉
+        ov = getattr(self, "work_overlay", None)
+        if ov is not None:
+            try:
+                if ov.winfo_exists():
+                    ov.destroy()
+            except Exception:
+                pass
+            self.work_overlay = None
+            self.work_canvas = None
+            self._work_flag_built_key = None
+
+    def _apply_chroma_prop_photo(self, win: tk.Misc, photo: ImageTk.PhotoImage) -> None:
+        """复用色键窗时同步换图（预热可能仍是 sleep 占位）。"""
+        try:
+            for child in win.winfo_children():
+                if isinstance(child, tk.Label):
+                    child.configure(image=photo)
+                    child.image = photo
+                    break
+            setattr(win, "_vpet_prop_photo_id", id(photo))
+        except Exception:
+            pass
+
+    def _prewarm_work_props(self) -> None:
+        """空闲时预建工作旗/箱壳窗，减轻首次进入工作模式的卡顿。"""
+        if getattr(self, "_work_props_prewarmed", False) or self._closing:
+            return
+        if not self.sprites or not getattr(self.sprites, "flag_img", None):
+            self.root.after(1500, self._prewarm_work_props)
+            return
+        # 等正式箱图就绪，避免预热把 sleep1 锁进起点箱窗
+        if not self._work_cargo_sprites_ready():
+            self.root.after(1500, self._prewarm_work_props)
+            return
+        try:
+            if not self.work_overlay or not self.work_overlay.winfo_exists():
+                width, height = self._work_stack_canvas_size(0)
+                self.work_overlay = tk.Toplevel(self.root)
+                self.work_overlay.withdraw()
+                self.work_overlay.overrideredirect(True)
+                self.work_overlay.configure(bg=WORK_CHROMA_NAME)
+                self.work_overlay.wm_attributes("-transparentcolor", WORK_CHROMA_NAME)
+                self.work_overlay.geometry(f"{width}x{height}+0+0")
+                self.work_canvas = tk.Frame(
+                    self.work_overlay,
+                    bg=WORK_CHROMA_NAME,
+                    width=width,
+                    height=height,
+                    highlightthickness=0,
+                )
+                self.work_canvas.pack_propagate(False)
+                self.work_canvas.place(x=0, y=0, width=width, height=height)
+                self._apply_window_layer(self.work_overlay)
+                self._win32_set_click_through(self.work_overlay, True)
+            if not self.work_start_box_win or not self.work_start_box_win.winfo_exists():
+                photo = self.sprites.box_img
+                self.work_start_box_win = self._make_chroma_prop_window(
+                    photo,
+                    -4000,
+                    -4000,
+                    click_through=True,
+                    anchor_s=False,
+                    layout_sync=False,
+                )
+                setattr(self.work_start_box_win, "_vpet_prop_photo_id", id(photo))
+                try:
+                    self.work_start_box_win.withdraw()
+                except Exception:
+                    pass
+            self._work_props_prewarmed = True
+        except Exception:
+            pass
 
     def _clear_work_anchored_boxes(self) -> None:
         for win in self.work_anchored_box_wins:
@@ -22915,18 +30909,43 @@ class DesktopPet:
         offsets = self._work_stack_offsets(idx + 1)
         dx, dy = offsets[idx]
         step = WORK_STACK_OFFSET
-        # 旗脚屏幕坐标（与旗图 anchor=S 对齐）
-        flag_sx = self.work_end_x + self.display_size // 2
-        flag_sy = self.work_end_y
+        # 旗脚屏幕坐标（与旗图 anchor=S、桌宠脚底对齐）
+        flag_sx, flag_sy = self._work_flag_foot_xy()
         box_sx = flag_sx + dx * step
         box_sy = flag_sy + dy * step
         photo = self.sprites.box_img
         win = self._make_chroma_prop_window(
-            photo, int(box_sx), int(box_sy), click_through=True, anchor_s=True
+            photo,
+            int(box_sx),
+            int(box_sy),
+            click_through=True,
+            anchor_s=True,
+            layout_sync=False,
         )
         self.work_anchored_box_wins.append(win)
+        # 限制可见堆箱，回收最旧窗口，减轻 lift/色键压力
+        while len(self.work_anchored_box_wins) > WORK_ANCHORED_BOX_MAX:
+            old = self.work_anchored_box_wins.pop(0)
+            try:
+                if old.winfo_exists():
+                    old.destroy()
+            except Exception:
+                pass
         self.work_local_stack += 1
         self._stack_work_props_under_pet()
+
+    def _place_work_overlay_light(self) -> None:
+        """旗图未变时只改 geometry / 起点箱，避免色键窗闪烁。"""
+        if not self.work_overlay or not self.work_overlay.winfo_exists():
+            self._refresh_work_overlay()
+            return
+        if not self.work_canvas or not self.work_canvas.winfo_children():
+            self._refresh_work_overlay()
+            return
+        self._move_work_overlay_only()
+        self._update_work_start_box()
+        if not self.work_flag_dragging:
+            self._stack_work_props_under_pet()
 
     def _refresh_work_overlay(self) -> None:
         if not bool(self._work_mode_config().get("show_props", True)):
@@ -22947,25 +30966,39 @@ class DesktopPet:
         pw = max(1, int(photo.width()))
         ph = max(1, int(photo.height()))
         label_h = 18
-        width = max(pw + pad * 2, 72)
+        # 右侧留文案空间；结束钮是独立窗，贴在旗图右侧屏幕坐标
+        width = max(pw + pad * 2 + 72, 96)
         height = ph + label_h + pad * 2
-        flag_x = width // 2
+        flag_x = pad + pw // 2
         flag_y = height - pad
         self._work_flag_local_x = flag_x
+        self._work_flag_pw = pw
         self._work_flag_overlay_h = height
         self._work_flag_pad = pad
+        built_key = (width, height, bool(self.work_flag_movable), id(photo))
+        # 旗脚钉在终点标记点；拖旗写回 work_end，结束钮跟同一套坐标
+        foot_x, foot_y = self._work_flag_foot_xy()
+        overlay_x = foot_x - flag_x
+        overlay_y = foot_y - height + pad
+
+        # 尺寸/旗图/文案未变：只平移，不 destroy 子控件
+        if (
+            getattr(self, "_work_flag_built_key", None) == built_key
+            and self.work_canvas.winfo_children()
+        ):
+            try:
+                self.work_overlay.geometry(f"{width}x{height}+{overlay_x}+{overlay_y}")
+            except Exception:
+                pass
+            self._sync_work_end_button(overlay_x, overlay_y, flag_x, flag_y)
+            self._update_work_start_box()
+            if not self.work_flag_dragging:
+                self._stack_work_props_under_pet()
+            return
 
         for w in self.work_canvas.winfo_children():
             w.destroy()
-        overlay_x = self.work_end_x + self.display_size // 2 - flag_x
-        overlay_y = self.work_end_y - height + pad
-        self.work_overlay.configure(bg=WORK_CHROMA_NAME)
-        try:
-            cur = str(self.work_overlay.wm_attributes("-transparentcolor") or "")
-            if cur != WORK_CHROMA_NAME:
-                self.work_overlay.wm_attributes("-transparentcolor", WORK_CHROMA_NAME)
-        except Exception:
-            pass
+        # 禁止热路径反复改 transparentcolor（会触发 DWM 色键重算闪一下）
         self.work_overlay.geometry(f"{width}x{height}+{overlay_x}+{overlay_y}")
         self.work_canvas.pack_propagate(False)
         self.work_canvas.configure(width=width, height=height, bg=WORK_CHROMA_NAME)
@@ -22974,20 +31007,18 @@ class DesktopPet:
         lbl.image = photo
         lbl.place(x=flag_x, y=flag_y, anchor=tk.S)
         label = "终点（可拖）" if self.work_flag_movable else "终点"
+        # 文案贴旗右侧中部；结束钮在文案旁（屏幕坐标由 _sync_work_end_button 算）
         tk.Label(
             self.work_canvas,
             text=label,
             font=PIXEL_FONT,
             fg="#ffee88",
             bg=WORK_CHROMA_NAME,
-        ).place(x=flag_x, y=flag_y - ph - 2, anchor=tk.S)
+        ).place(x=flag_x + pw // 2 + 4, y=flag_y - max(8, ph // 2), anchor=tk.W)
+        self._work_flag_built_key = built_key
 
         self._sync_work_end_button(overlay_x, overlay_y, flag_x, flag_y)
         self._update_work_start_box()
-        try:
-            self.work_overlay.update_idletasks()
-        except Exception:
-            pass
         if self.work_flag_movable:
             self._bind_work_flag_drag()
             self._win32_set_click_through(self.work_overlay, False)
@@ -23018,44 +31049,60 @@ class DesktopPet:
             sx, sy = self._smart_popup_pos(sx, sy, pw, ph)
             if not self.work_start_box_win or not self.work_start_box_win.winfo_exists():
                 self.work_start_box_win = self._make_chroma_prop_window(
-                    photo, sx, sy, click_through=True, anchor_s=False
+                    photo, sx, sy, click_through=True, anchor_s=False, layout_sync=False
                 )
+                setattr(self.work_start_box_win, "_vpet_prop_photo_id", id(photo))
             else:
-                self.work_start_box_win.geometry(f"{pw}x{ph}+{sx}+{sy}")
+                try:
+                    # 复用窗必须换图：预热可能仍是开场 sleep1
+                    if getattr(self.work_start_box_win, "_vpet_prop_photo_id", None) != id(photo):
+                        self._apply_chroma_prop_photo(self.work_start_box_win, photo)
+                    self.work_start_box_win.geometry(f"{pw}x{ph}+{sx}+{sy}")
+                    self.work_start_box_win.deiconify()
+                except Exception:
+                    pass
                 self._win32_set_click_through(self.work_start_box_win, True)
         elif self.work_start_box_win and self.work_start_box_win.winfo_exists():
-            self.work_start_box_win.destroy()
-            self.work_start_box_win = None
+            # withdraw 复用，避免 destroy/create 色键闪
+            try:
+                self.work_start_box_win.withdraw()
+            except Exception:
+                try:
+                    self.work_start_box_win.destroy()
+                except Exception:
+                    pass
+                self.work_start_box_win = None
 
     def _work_animate(self) -> None:
+        self.work_anim_job = None
         if self.state != "work" or self.mode == "game":
             self.work_animating = False
             return
         if self.dragging:
-            self.root.after(WALK_FRAME_MS, self._work_animate)
+            self.work_anim_job = self.root.after(WALK_FRAME_MS, self._work_animate)
             return
         sprite_map = self._work_sprites if self.work_use_work_sprites else self._walk_sprites
         frames = sprite_map[self.direction]
         self._set_image(frames[self.walk_frame % 2])
         self.walk_frame += 1
-        self.root.after(WALK_FRAME_MS, self._work_animate)
+        self.work_anim_job = self.root.after(WALK_FRAME_MS, self._work_animate)
 
     def _work_move_step(self) -> None:
+        self.work_move_job = None
         if self.state != "work" or self.mode == "game":
             return
         if self.dragging:
-            self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
+            self.work_move_job = self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
             return
         if self.work_flag_dragging:
             if not self._work_flag_button_down():
                 self._work_flag_release()
             else:
-                self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
+                self.work_move_job = self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
                 return
 
         if self.work_phase == "to_end":
-            tx = self.work_end_x + self.display_size // 2
-            ty = self.work_end_y + self.display_size // 2
+            tx, ty = self._work_dest_center_xy()
             self.work_use_work_sprites = True
         elif self.work_phase == "to_start":
             tx = self.work_start_x + self.display_size // 2
@@ -23065,6 +31112,10 @@ class DesktopPet:
             self._finish_work()
             return
         else:
+            # 相位丢失时自愈，避免静默断链卡死
+            if self.state == "work":
+                self.work_phase = "to_end" if self.work_carrying else "to_start"
+                self.work_move_job = self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
             return
 
         if self._dist_to(tx, ty) <= WORK_ARRIVE_DIST:
@@ -23082,7 +31133,7 @@ class DesktopPet:
         self.work_voice_steps = int(getattr(self, "work_voice_steps", 0)) + 1
         if self.work_voice_steps % WORK_VOICE_STEP_INTERVAL == 0:
             self._try_voice_work()
-        self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
+        self.work_move_job = self.root.after(WORK_MOVE_INTERVAL_MS, self._work_move_step)
 
     def _work_arrived(self) -> None:
         if self.work_phase == "to_start":
@@ -23120,13 +31171,10 @@ class DesktopPet:
         self._work_move_step()
 
     def _finish_work(self) -> None:
+        # 自定义按箱数：送到量后进入 finish → 回自由；自由持续运送不走此路径
         if self.state != "work" or self.work_continuous:
             return
-        if self.mode == "work":
-            self.mode = "free"
-        self._stop_work_mode()
-        self.state = "stand"
-        self._play_happy()
+        self._exit_work_to_free(reason="done", celebrate=True)
 
     def _hide_rain_fx(self) -> None:
         if self.rain_fx_win and self.rain_fx_win.winfo_exists():

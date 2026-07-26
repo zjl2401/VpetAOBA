@@ -1,13 +1,17 @@
 """
 Silent Oath — 地底冒险 RPG
 大地图 + 镜头跟随；地面 / 地下双层楼梯互通；多关卡冒险。
+关卡内含耐久血条、背包吃食物回血、宝箱骰子/猜拳判定，
+以及马里奥式要素：金币、加速蘑菇、无敌星、随机机关。
 """
 from __future__ import annotations
 
 import json
 import math
 import random
+import shutil
 import sys
+import time
 from pathlib import Path
 
 import pygame
@@ -25,6 +29,38 @@ def _rpg_user_root() -> Path:
     if local:
         return Path(local) / "Vpet" / "rpg"
     return Path.home() / ".vpet" / "rpg"
+
+
+def _rpg_userdata_root() -> Path:
+    """桌宠 userdata（与家园材料库共享）。"""
+    import os
+
+    local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+    if local:
+        return Path(local) / "Vpet" / "userdata"
+    return Path.home() / ".vpet" / "userdata"
+
+
+def _materials_dir_and_index() -> tuple[Path, Path]:
+    root = _rpg_userdata_root()
+    return root / "home_materials", root / "home_materials.json"
+
+
+def _load_paint_gallery() -> list[dict]:
+    _, index = _materials_dir_and_index()
+    if not index.is_file():
+        return []
+    try:
+        raw = json.loads(index.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        if isinstance(item, dict) and str(item.get("id") or "").strip():
+            out.append(item)
+    return out
 
 
 def _init_rpg_user_dirs() -> tuple[Path, Path]:
@@ -46,6 +82,97 @@ def _init_rpg_user_dirs() -> tuple[Path, Path]:
 
 
 SAVES_DIR, PROGRESS_FILE = _init_rpg_user_dirs()
+
+
+def _desktop_userdata_dir() -> Path:
+    """桌宠 userdata：与 pet.py 的食物库存共用。"""
+    import os
+
+    local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+    if local:
+        return Path(local) / "Vpet" / "userdata"
+    return Path.home() / ".vpet" / "userdata"
+
+
+def _food_inventory_path() -> Path:
+    return _desktop_userdata_dir() / "food_inventory.json"
+
+
+def _wallet_path() -> Path:
+    return _desktop_userdata_dir() / "wallet.json"
+
+
+def _add_coins_to_desktop_wallet(n: int) -> int:
+    """把 RPG 本局赚到的币写入桌宠统一钱包。返回钱包余额。"""
+    n = max(0, int(n))
+    if n <= 0:
+        return -1
+    path = _wallet_path()
+    try:
+        data: dict = {"coins": 20, "items": {}}
+        if path.is_file():
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                data = raw
+        coins = max(0, int(data.get("coins") or 0)) + n
+        data["coins"] = coins
+        if not isinstance(data.get("items"), dict):
+            data["items"] = {}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return coins
+    except Exception:
+        return -1
+
+
+def load_shared_food_inventory() -> dict[str, int]:
+    path = _food_inventory_path()
+    out = {fid: 0 for fid in RPG_FOOD_IDS}
+    if not path.is_file():
+        return out
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            for fid in RPG_FOOD_IDS:
+                out[fid] = max(0, int(data.get(fid, 0) or 0))
+    except Exception:
+        pass
+    return out
+
+
+def save_shared_food_delta(fid: str, delta: int) -> tuple[int, str]:
+    """增减桌宠食物库存；返回 (最终数量, 中文名)。"""
+    fid = str(fid)
+    label = RPG_FOOD_LABELS.get(fid, fid)
+    if fid not in RPG_FOOD_IDS or delta == 0:
+        return 0, label
+    path = _food_inventory_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    inv: dict[str, int] = {}
+    if path.is_file():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                inv = {str(k): max(0, int(v or 0)) for k, v in raw.items()}
+        except Exception:
+            inv = {}
+    cur = max(0, int(inv.get(fid, 0) or 0))
+    cur = max(0, cur + int(delta))
+    inv[fid] = cur
+    try:
+        path.write_text(json.dumps(inv, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+    return cur, label
+
+
+def rps_beats(a: int, b: int) -> int:
+    """1石 2剪 3布；返回 1=a胜 0=平 -1=a负。"""
+    if a == b:
+        return 0
+    if (a == 1 and b == 2) or (a == 2 and b == 3) or (a == 3 and b == 1):
+        return 1
+    return -1
 
 
 def load_rpg_progress() -> dict:
@@ -115,7 +242,7 @@ TILE = 36
 # 屏幕可见格子（相机视口）
 VIEW_TILES_X, VIEW_TILES_Y = 16, 11
 VIEW_W, VIEW_H = VIEW_TILES_X * TILE, VIEW_TILES_Y * TILE
-UI_H = 58  # 双行：状态 + F5/Ctrl+S 存档提示
+UI_H = 72  # 状态行 + 血条/食物 + toast
 PALETTE_H = 52  # 编辑器底部素材条
 # 内容区尺寸（对白/菜单/地图都画在这里）
 SCREEN_W, SCREEN_H = VIEW_W, VIEW_H + UI_H
@@ -123,6 +250,47 @@ SCREEN_W, SCREEN_H = VIEW_W, VIEW_H + UI_H
 FRAME_PAD = 18
 WINDOW_W, WINDOW_H = SCREEN_W + FRAME_PAD * 2, SCREEN_H + FRAME_PAD * 2
 FPS = 60
+
+# 与桌宠共用的食物 id（写入 userdata/food_inventory.json）
+RPG_FOOD_IDS: tuple[str, ...] = (
+    "apple",
+    "bread",
+    "candy",
+    "berry",
+    "cookie",
+    "juice",
+    "onigiri",
+    "tea",
+)
+RPG_FOOD_LABELS: dict[str, str] = {
+    "apple": "苹果",
+    "bread": "面包",
+    "candy": "糖果",
+    "berry": "草莓",
+    "cookie": "曲奇",
+    "juice": "果汁",
+    "onigiri": "饭团",
+    "tea": "热茶",
+}
+# 背包食用回血（马里奥式「吃道具补状态」）
+RPG_FOOD_HEAL: dict[str, int] = {
+    "apple": 12,
+    "bread": 18,
+    "candy": 8,
+    "berry": 10,
+    "cookie": 14,
+    "juice": 16,
+    "onigiri": 22,
+    "tea": 15,
+}
+RPS_NAMES = {1: "石头", 2: "剪刀", 3: "布"}
+RPG_MAX_HP = 100
+RPG_HAZARD_CHANCE = 0.035  # 换格时随机踩机关概率
+RPG_COIN_HEAL_EVERY = 10  # 攒够金币回复耐久
+RPG_COIN_HEAL = 15
+RPG_STAR_SEC = 6.0
+RPG_MUSHROOM_SEC = 8.0
+RPG_SPEED_MULT = 1.55
 
 # 地块
 EMPTY = 0
@@ -141,16 +309,67 @@ CAVE = 12  # 洞窟入口：地面↔地下（旧图规范时地下 CAVE→BRICK
 GATE = 13  # 通往下一关
 TREASURE_OPEN = 14  # 已开宝箱（装饰）
 MOUNTAIN = 15  # 景区（mountain 素材）
+GIFT_ART = 16  # 用户礼物像素画（家园导出）
+USER_PAINT = 17  # 家园/RPG 内画板自创素材
+TRAP_SPIKE = 18  # 尖刺陷阱（可走，踩中扣耐久 / DIY 提示）
+TRAP_PIT = 19  # 陷坑（可走，踩中扣耐久 / DIY 提示）
+TRAP_TILES = frozenset({TRAP_SPIKE, TRAP_PIT})
+PICKUP_COIN = 20  # DIY 可放置：金币
+PICKUP_MUSHROOM = 21  # DIY 可放置：加速蘑菇
+PICKUP_STAR = 22  # DIY 可放置：无敌星
+PICKUP_TILES = frozenset({PICKUP_COIN, PICKUP_MUSHROOM, PICKUP_STAR})
+PICKUP_TILE_KIND: dict[int, str] = {
+    PICKUP_COIN: "coin",
+    PICKUP_MUSHROOM: "mushroom",
+    PICKUP_STAR: "star",
+}
 
 # DIY 素材栏虚拟笔刷（非地块 ID）
 BRUSH_START = -1
 BRUSH_PRINCESS = -2
+BRUSH_PAINT = -3  # 打开像素画板
 
 # 砖地可走（地下背景）；岩石为隔断墙。TREE 可走（森林）。旧图 BRICK 曾作墙→ROCK。
 SOLID = {WATER, ROCK, OBSTACLE, HOUSE, BORDER, MOUNTAIN}
-WALKABLE_EXTRA = {EMPTY, GRASS, LAND, TREASURE, TREASURE_OPEN, STAIRS, CAVE, GATE, BRICK, TREE}
-# 叠在地板上的装饰物（岩石/砖地占满一格，不当道具叠层）
-PROP_OVERLAY = {TREE, OBSTACLE, HOUSE, TREASURE, TREASURE_OPEN, GATE, MOUNTAIN, CAVE}
+WALKABLE_EXTRA = {
+    EMPTY,
+    GRASS,
+    LAND,
+    TREASURE,
+    TREASURE_OPEN,
+    STAIRS,
+    CAVE,
+    GATE,
+    BRICK,
+    TREE,
+    GIFT_ART,
+    USER_PAINT,
+    TRAP_SPIKE,
+    TRAP_PIT,
+    PICKUP_COIN,
+    PICKUP_MUSHROOM,
+    PICKUP_STAR,
+}
+# 背景铺地：占满一格；地物叠在其上并抠成透明
+BACKGROUND_TILES = {GRASS, LAND, WATER, ROCK, BRICK}
+PROP_OVERLAY = {
+    TREE,
+    OBSTACLE,
+    HOUSE,
+    TREASURE,
+    TREASURE_OPEN,
+    GATE,
+    MOUNTAIN,
+    CAVE,
+    STAIRS,
+    GIFT_ART,
+    USER_PAINT,
+    TRAP_SPIKE,
+    TRAP_PIT,
+    PICKUP_COIN,
+    PICKUP_MUSHROOM,
+    PICKUP_STAR,
+}
 # 踩上可切换地面 / 地下
 LAYER_PORTALS = {STAIRS, CAVE}
 LAYER_FLASH_DUR = 0.42  # 层切换黑屏淡出时长（秒）
@@ -169,16 +388,18 @@ TILE_FILES = {
     STAIRS: "stairs.png",
     CAVE: "cave.png",
     MOUNTAIN: "mountain.png",
+    GIFT_ART: "gift_art.png",
+    USER_PAINT: "user_paint.png",
 }
 
 PALETTE = [
     (EMPTY, "清除"),
-    (GRASS, "草地"),
-    (LAND, "土地"),
-    (WATER, "水面"),
-    (BRICK, "砖地"),
+    (GRASS, "草地·背景"),
+    (LAND, "土地·背景"),
+    (WATER, "水面·背景"),
+    (BRICK, "砖地·背景"),
+    (ROCK, "石头·背景"),
     (TREE, "树木"),
-    (ROCK, "岩石隔断"),
     (OBSTACLE, "障碍"),
     (HOUSE, "房屋"),
     (TREASURE, "宝箱"),
@@ -186,9 +407,37 @@ PALETTE = [
     (CAVE, "洞窟"),
     (GATE, "关卡门"),
     (MOUNTAIN, "景区"),
+    (GIFT_ART, "礼物画"),
+    (USER_PAINT, "自创画"),
+    (TRAP_SPIKE, "尖刺陷阱"),
+    (TRAP_PIT, "陷坑"),
+    (PICKUP_COIN, "金币"),
+    (PICKUP_MUSHROOM, "加速蘑菇"),
+    (PICKUP_STAR, "无敌星"),
+    (BRUSH_PAINT, "画素材"),
     (BRUSH_START, "起点"),
     (BRUSH_PRINCESS, "公主"),
 ]
+
+PIXEL_PAINT_SIZE = 12
+PIXEL_PAINT_COLORS: tuple[tuple[int, int, int] | None, ...] = (
+    None,
+    (255, 107, 157),
+    (255, 51, 85),
+    (255, 136, 68),
+    (255, 221, 102),
+    (136, 255, 102),
+    (102, 221, 170),
+    (68, 204, 255),
+    (136, 204, 255),
+    (68, 102, 255),
+    (204, 136, 255),
+    (255, 255, 255),
+    (187, 187, 187),
+    (51, 68, 85),
+    (34, 34, 34),
+    (139, 90, 43),
+)
 
 # 出发点房屋绘制放大（格数边长）；树木：两张 tree 横向并排，整体仍只占 1 格
 # mountain 横纵都严格占 1 格（与 TREE 一样 TILE×TILE）
@@ -203,12 +452,17 @@ TREASURE_LOOT = (
 )
 
 INTERACT_HINTS = {
-    TREASURE: "按 E 打开宝箱",
+    TREASURE: "按 E 打开宝箱（随机骰子或猜拳）",
     HOUSE: "按 E 查看房屋",
     GATE: "靠近关卡门即可进入下一关",
     STAIRS: "踩上楼梯切换地面 / 地下",
     CAVE: "踩上洞窟切换地面 / 地下",
     TREASURE_OPEN: "空宝箱……什么都不剩了",
+    TRAP_SPIKE: "尖刺陷阱！小心脚下",
+    TRAP_PIT: "陷坑！别掉下去",
+    PICKUP_COIN: "金币（开局后可捡）",
+    PICKUP_MUSHROOM: "加速蘑菇（开局后可捡）",
+    PICKUP_STAR: "无敌星（开局后可捡）",
 }
 
 # 关卡设定：更多样素材（森林/水面/景区/洞窟）拼成
@@ -228,6 +482,7 @@ LEVEL_DEFS = [
         "land_blobs": 16,
         "stairs": 2,
         "treasures": 5,
+        "traps": 6,
         "ug_fill": 0.62,
         "ug_corridors": 22,
         "princess": False,
@@ -246,6 +501,7 @@ LEVEL_DEFS = [
         "land_blobs": 20,
         "stairs": 2,
         "treasures": 6,
+        "traps": 8,
         "ug_fill": 0.58,
         "ug_corridors": 28,
         "princess": False,
@@ -264,6 +520,7 @@ LEVEL_DEFS = [
         "land_blobs": 24,
         "stairs": 3,
         "treasures": 8,
+        "traps": 10,
         "ug_fill": 0.55,
         "ug_corridors": 34,
         "princess": False,
@@ -282,54 +539,175 @@ LEVEL_DEFS = [
         "land_blobs": 28,
         "stairs": 3,
         "treasures": 10,
+        "traps": 14,
         "ug_fill": 0.52,
         "ug_corridors": 40,
         "princess": True,
     },
 ]
 
-def load_img(name: str) -> pygame.Surface:
+def load_img(name: str, *, key_bg: bool = False) -> pygame.Surface:
+    import os
+
+    candidates = [
+        _rpg_user_root() / "assets" / name,
+        ASSETS / name,
+    ]
+    # 桌宠 userdata（便携包 data/ 或本机 Local）导出的礼物画
+    try:
+        local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        if local:
+            candidates.insert(0, Path(local) / "Vpet" / "userdata" / "rpg_assets" / name)
+            candidates.insert(0, Path(local) / "Vpet" / "rpg" / "assets" / name)
+    except Exception:
+        pass
+    # exe 旁便携 data
+    if getattr(sys, "frozen", False):
+        candidates.insert(0, Path(sys.executable).resolve().parent / "data" / "rpg_assets" / name)
+    for path in candidates:
+        if path.is_file():
+            if key_bg:
+                try:
+                    from process_assets import flood_key
+                    from PIL import Image
+
+                    keyed = flood_key(Image.open(path))
+                    return _pil_rgba_to_surface(keyed)
+                except Exception:
+                    # 抠图失败才退回原图；勿因 convert_alpha 失败丢掉已抠结果
+                    pass
+            try:
+                return pygame.image.load(str(path)).convert_alpha()
+            except Exception:
+                return pygame.image.load(str(path))
+    # 礼物画 / 自创画缺失时生成占位，避免编辑器崩溃
+    if name in ("gift_art.png", "user_paint.png"):
+        ensure_user_art_placeholder(name)
+        path = ASSETS / name
+        if path.is_file():
+            try:
+                return pygame.image.load(str(path)).convert_alpha()
+            except Exception:
+                return pygame.image.load(str(path))
+    raise FileNotFoundError(f"缺少素材: {ASSETS / name}，请先运行 process_assets.py")
+
+
+def _pil_rgba_to_surface(im) -> pygame.Surface:
+    """PIL RGBA → 带透明的 Surface；透明像素清成 (0,0,0,0) 防绿边渗色。"""
+    from PIL import Image
+
+    im = im.convert("RGBA")
+    px = im.load()
+    w, h = im.size
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a < 8:
+                px[x, y] = (0, 0, 0, 0)
+    raw = im.tobytes("raw", "RGBA")
+    surf = pygame.image.fromstring(raw, (w, h), "RGBA")
+    try:
+        return surf.convert_alpha()
+    except Exception:
+        out = pygame.Surface((w, h), pygame.SRCALPHA, 32)
+        out.blit(surf, (0, 0))
+        return out
+
+
+def _draw_checkerboard(surf: pygame.Surface, rect: pygame.Rect, cell: int = 4) -> None:
+    """素材栏透明底预览用棋盘格。"""
+    c0, c1 = (36, 40, 52), (28, 32, 44)
+    for y in range(rect.top, rect.bottom, cell):
+        for x in range(rect.left, rect.right, cell):
+            odd = ((x - rect.left) // cell + (y - rect.top) // cell) & 1
+            pygame.draw.rect(
+                surf,
+                c1 if odd else c0,
+                (
+                    x,
+                    y,
+                    min(cell, rect.right - x),
+                    min(cell, rect.bottom - y),
+                ),
+            )
+
+
+def ensure_user_art_placeholder(name: str = "gift_art.png") -> None:
     path = ASSETS / name
-    if not path.exists():
-        raise FileNotFoundError(f"缺少素材: {path}，请先运行 process_assets.py")
-    return pygame.image.load(str(path)).convert_alpha()
+    if path.is_file():
+        return
+    ASSETS.mkdir(exist_ok=True)
+    from PIL import Image, ImageDraw
+
+    im = Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    if name == "user_paint.png":
+        d.rectangle([2, 2, TILE - 3, TILE - 3], fill=(180, 220, 255, 255), outline=(80, 140, 200, 255))
+        d.rectangle([8, 8, TILE - 9, TILE - 9], fill=(220, 240, 255, 255))
+    else:
+        d.rectangle([2, 2, TILE - 3, TILE - 3], fill=(255, 180, 200, 255), outline=(180, 80, 120, 255))
+        d.rectangle([8, 8, TILE - 9, TILE - 9], fill=(255, 220, 230, 255))
+    im.save(path)
+
+
+def ensure_gift_art_placeholder() -> None:
+    ensure_user_art_placeholder("gift_art.png")
+    ensure_user_art_placeholder("user_paint.png")
 
 
 def ensure_extra_tiles() -> None:
-    """若缺少楼梯/岩地，现场生成。"""
+    """楼梯/洞窟：透明底生成（叠在背景上）；缺失或旧版不透明底时刷新。"""
     ASSETS.mkdir(exist_ok=True)
-    need = [("stairs.png", "down"), ("stairs_up.png", "up"), ("cave.png", "cave")]
-    missing = [n for n, _ in need if not (ASSETS / n).exists()]
-    if not missing:
-        return
+    ensure_gift_art_placeholder()
     from PIL import Image, ImageDraw
 
-    if not (ASSETS / "stairs.png").exists():
+    def _write_stairs_down() -> None:
         im = Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
-        d.rectangle([0, 0, 47, 47], fill=(90, 78, 58, 255))
         for i, c in enumerate([(160, 140, 110), (140, 120, 95), (120, 100, 78), (100, 82, 62)]):
             y0 = 6 + i * 9
             x0 = 4 + i * 3
             d.rectangle([x0, y0, 44, y0 + 8], fill=(*c, 255))
         d.polygon([(24, 34), (18, 26), (30, 26)], fill=(220, 200, 80, 255))
         im.save(ASSETS / "stairs.png")
-    if not (ASSETS / "stairs_up.png").exists():
+
+    def _write_stairs_up() -> None:
         im = Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
-        d.rectangle([0, 0, 47, 47], fill=(50, 45, 62, 255))
         for i, c in enumerate([(70, 65, 90), (85, 78, 105), (100, 92, 120), (115, 105, 135)]):
             y0 = 34 - i * 9
             x0 = 4 + i * 3
             d.rectangle([x0, y0, 44, y0 + 8], fill=(*c, 255))
         d.polygon([(24, 12), (18, 20), (30, 20)], fill=(220, 200, 80, 255))
         im.save(ASSETS / "stairs_up.png")
-    if not (ASSETS / "cave.png").exists():
-        im = Image.new("RGBA", (TILE, TILE), (42, 38, 52, 255))
+
+    def _write_cave() -> None:
+        im = Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
-        for x, y in [(5, 7), (18, 4), (30, 12), (8, 22), (22, 28), (35, 20), (12, 35), (28, 38)]:
+        d.ellipse([4, 6, TILE - 5, TILE - 3], fill=(70, 62, 78, 255))
+        d.ellipse([12, 14, TILE - 13, TILE - 8], fill=(0, 0, 0, 0))
+        for x, y in [(5, 7), (18, 4), (30, 12), (8, 22), (35, 20), (12, 35)]:
             d.point((x, y), fill=(55, 50, 68, 255))
         im.save(ASSETS / "cave.png")
+
+    def _needs_refresh(path: Path) -> bool:
+        if not path.is_file():
+            return True
+        try:
+            im = Image.open(path).convert("RGBA")
+            # 四角皆不透明 → 旧版铺满底，需刷新为透明叠层
+            w, h = im.size
+            corners = (im.getpixel((0, 0)), im.getpixel((w - 1, 0)), im.getpixel((0, h - 1)), im.getpixel((w - 1, h - 1)))
+            return all(a >= 200 for *_rgb, a in corners)
+        except Exception:
+            return True
+
+    if _needs_refresh(ASSETS / "stairs.png"):
+        _write_stairs_down()
+    if _needs_refresh(ASSETS / "stairs_up.png"):
+        _write_stairs_up()
+    if _needs_refresh(ASSETS / "cave.png"):
+        _write_cave()
 
 
 PLAYER_KINDS = ("knight", "vpet", "allmate")
@@ -338,6 +716,8 @@ PLAYER_KIND_LABELS = {
     "vpet": "aoba",
     "allmate": "ren",
 }
+# 选角/菜单提示：未来可扩展更多同伴
+FUTURE_COMPANION_TIP = "也许未来随着其他角色的开发，冒险路上也会遇到更多伙伴。"
 # 操控小人起始格：编辑器蓝框
 START_MARKER_COLOR = (40, 140, 255)
 START_MARKER_FILL = (40, 140, 255, 55)
@@ -401,18 +781,16 @@ def _desktop_asset_candidates(*parts: str) -> list[Path]:
 
 
 def _key_outer_bg_surface(surf: pygame.Surface) -> pygame.Surface:
-    """抠掉外圈连通背景（白/黑/绿幕），选角与小人显示用。"""
+    """抠掉外圈连通背景（白/黑/绿幕），选角与素材栏预览用。"""
     try:
         from process_assets import flood_key
         from PIL import Image
-        import numpy as np
 
         w, h = surf.get_size()
         raw = pygame.image.tostring(surf, "RGBA")
         im = Image.frombytes("RGBA", (w, h), raw)
         keyed = flood_key(im)
-        out = pygame.image.fromstring(keyed.tobytes("raw", "RGBA"), keyed.size, "RGBA")
-        return out.convert_alpha()
+        return _pil_rgba_to_surface(keyed)
     except Exception:
         try:
             return surf.convert_alpha()
@@ -435,11 +813,16 @@ def _load_surface_any(
                 from PIL import Image
 
                 keyed = flood_key(Image.open(p))
-                img = pygame.image.fromstring(keyed.tobytes("raw", "RGBA"), keyed.size, "RGBA").convert_alpha()
+                img = _pil_rgba_to_surface(keyed)
             else:
-                img = pygame.image.load(str(p)).convert_alpha()
+                try:
+                    img = pygame.image.load(str(p)).convert_alpha()
+                except Exception:
+                    img = pygame.image.load(str(p))
             if size is not None:
                 img = pygame.transform.scale(img, size)
+                if key_bg:
+                    img = _key_outer_bg_surface(img)
             return img
         except Exception:
             continue
@@ -459,7 +842,8 @@ class Assets:
         ensure_extra_tiles()
         self.tiles: dict[int, pygame.Surface] = {}
         for tid, fname in TILE_FILES.items():
-            img = load_img(fname)
+            # 地物：外圈完全抠透明，叠在背景上；背景素材不抠，铺满一格
+            img = load_img(fname, key_bg=(tid in PROP_OVERLAY))
             if tid == HOUSE:
                 side = TILE * HOUSE_DRAW_TILES
                 self.tiles[tid] = pygame.transform.scale(img, (side, side))
@@ -471,6 +855,9 @@ class Assets:
                 self.tiles[tid] = self._make_pair_tree_tile(img)
             else:
                 self.tiles[tid] = pygame.transform.scale(img, (TILE, TILE))
+            # 缩放后再抠一次，清掉缩放渗出的绿边
+            if tid in PROP_OVERLAY:
+                self.tiles[tid] = _key_outer_bg_surface(self.tiles[tid])
             # 关卡门：房屋着色提示（略小一点以免与出发点房屋混淆）
         gate = self.tiles[HOUSE].copy()
         if gate.get_width() > TILE * 2:
@@ -485,8 +872,98 @@ class Assets:
         dark.fill((0, 0, 0, 110))
         open_chest.blit(dark, (0, 0))
         self.tiles[TREASURE_OPEN] = open_chest
-        self.stairs_up = pygame.transform.scale(load_img("stairs_up.png"), (TILE, TILE))
+        # 可放置陷阱（程序绘制，无需额外 PNG）
+        # 游玩时默认几乎看不见；踩中后显示完整贴图。编辑器始终用完整图。
+        spike = self._make_trap_spike_tile()
+        pit = self._make_trap_pit_tile()
+        self.tiles[TRAP_SPIKE] = spike
+        self.tiles[TRAP_PIT] = pit
+        self.trap_hidden: dict[int, pygame.Surface] = {
+            TRAP_SPIKE: self._make_trap_faint_tile(spike, alpha=32),
+            TRAP_PIT: self._make_trap_faint_tile(pit, alpha=28),
+        }
+        self.tiles[PICKUP_COIN] = self._make_pickup_coin_tile()
+        self.tiles[PICKUP_MUSHROOM] = self._make_pickup_mushroom_tile()
+        self.tiles[PICKUP_STAR] = self._make_pickup_star_tile()
+        self.stairs_up = pygame.transform.scale(load_img("stairs_up.png", key_bg=True), (TILE, TILE))
         self._load_knight_and_ui()
+
+    @staticmethod
+    def _make_trap_spike_tile() -> pygame.Surface:
+        """尖刺陷阱：草地感底 + 金属尖刺。"""
+        s = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+        # 暗色石板底
+        pygame.draw.rect(s, (52, 48, 58, 220), (2, TILE // 2, TILE - 4, TILE // 2 - 2), border_radius=3)
+        pygame.draw.rect(s, (36, 32, 42, 180), (4, TILE // 2 + 2, TILE - 8, TILE // 2 - 6), border_radius=2)
+        # 三根尖刺
+        tips = ((TILE // 4, TILE // 2 + 2), (TILE // 2, TILE // 2 + 2), (3 * TILE // 4, TILE // 2 + 2))
+        for cx, by in tips:
+            pts = [(cx, by - TILE // 3), (cx - 5, by + 2), (cx + 5, by + 2)]
+            pygame.draw.polygon(s, (190, 200, 210), pts)
+            pygame.draw.polygon(s, (120, 130, 145), pts, 1)
+            # 尖端高光
+            pygame.draw.circle(s, (240, 245, 255), (cx, by - TILE // 3 + 2), 2)
+        return s
+
+    @staticmethod
+    def _make_trap_pit_tile() -> pygame.Surface:
+        """陷坑：黑洞 + 碎石边缘。"""
+        s = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+        cx, cy = TILE // 2, TILE // 2 + 2
+        # 外圈泥土
+        pygame.draw.ellipse(s, (78, 58, 42, 230), (4, 8, TILE - 8, TILE - 12))
+        # 内黑洞
+        pygame.draw.ellipse(s, (18, 14, 22, 255), (10, 14, TILE - 20, TILE - 24))
+        pygame.draw.ellipse(s, (8, 6, 12, 255), (14, 18, TILE - 28, TILE - 32))
+        # 边缘碎石
+        for ox, oy in ((8, 12), (TILE - 10, 14), (12, TILE - 10), (TILE - 14, TILE - 12)):
+            pygame.draw.circle(s, (110, 95, 80), (ox, oy), 3)
+        # 警示十字微光
+        pygame.draw.line(s, (180, 90, 70, 160), (cx - 6, cy), (cx + 6, cy), 1)
+        pygame.draw.line(s, (180, 90, 70, 160), (cx, cy - 5), (cx, cy + 5), 1)
+        return s
+
+    @staticmethod
+    def _make_trap_faint_tile(full: pygame.Surface, *, alpha: int = 30) -> pygame.Surface:
+        """未踩中时的微弱提示：几乎看不见，只剩一点点痕迹。"""
+        faint = pygame.Surface(full.get_size(), pygame.SRCALPHA)
+        tmp = full.copy()
+        # SRCALPHA 源上 set_alpha 会与像素 alpha 相乘，得到极淡叠层
+        tmp.set_alpha(max(0, min(255, int(alpha))))
+        faint.blit(tmp, (0, 0))
+        return faint
+
+    @staticmethod
+    def _make_pickup_coin_tile() -> pygame.Surface:
+        s = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+        cx, cy = TILE // 2, TILE // 2
+        pygame.draw.circle(s, (255, 200, 40), (cx, cy), 10)
+        pygame.draw.circle(s, (255, 240, 140), (cx, cy), 10, 2)
+        pygame.draw.line(s, (180, 120, 20), (cx, cy - 5), (cx, cy + 5), 2)
+        return s
+
+    @staticmethod
+    def _make_pickup_mushroom_tile() -> pygame.Surface:
+        s = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+        cx, cy = TILE // 2, TILE // 2
+        pygame.draw.circle(s, (230, 60, 70), (cx, cy - 2), 9)
+        pygame.draw.circle(s, (250, 250, 250), (cx, cy + 6), 7)
+        pygame.draw.circle(s, (255, 255, 255), (cx - 3, cy - 4), 2)
+        return s
+
+    @staticmethod
+    def _make_pickup_star_tile() -> pygame.Surface:
+        s = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+        cx, cy = TILE // 2, TILE // 2
+        pts = []
+        for i in range(5):
+            a = -math.pi / 2 + i * (2 * math.pi / 5)
+            pts.append((cx + int(math.cos(a) * 11), cy + int(math.sin(a) * 11)))
+            a2 = a + math.pi / 5
+            pts.append((cx + int(math.cos(a2) * 5), cy + int(math.sin(a2) * 5)))
+        pygame.draw.polygon(s, (255, 220, 60), pts)
+        pygame.draw.polygon(s, (255, 255, 200), pts, 1)
+        return s
 
     @staticmethod
     def _make_pair_tree_tile(img: pygame.Surface) -> pygame.Surface:
@@ -524,7 +1001,8 @@ class Assets:
         self.knight["left"] = [pygame.transform.flip(s, True, False) for s in self.knight["right"]]
         # 公主略小于骑士
         pw, ph = max(16, int(cw * 0.72)), max(20, int(ch * 0.72))
-        self.princess = pygame.transform.scale(load_img("princess.png"), (pw, ph))
+        self.princess = pygame.transform.scale(load_img("princess.png", key_bg=True), (pw, ph))
+        self.princess = _key_outer_bg_surface(self.princess)
         vpet_sheet = self._load_vpet_sheet((cw, ch))
         allmate_sheet = self._load_allmate_sheet((cw, ch), fallback=vpet_sheet)
         self.players: dict[str, dict[str, list[pygame.Surface]]] = {
@@ -825,11 +1303,11 @@ def repair_layer_portals(data: dict) -> dict:
 def normalize_map_tiles(data: dict) -> dict:
     """地下：砖地=背景、岩石=隔断；旧图 BRICK 墙→ROCK，非门户 CAVE 地→BRICK。"""
     if data.get("tile_schema") == 2:
-        return repair_layer_portals(data)
+        return ensure_ground_layers(repair_layer_portals(data))
     # 已有楼梯/成对洞窟时不再做旧迁移（否则会清掉地下洞窟并堵死砖道）
     if _map_has_portal_pairs(data):
         data["tile_schema"] = 2
-        return repair_layer_portals(data)
+        return ensure_ground_layers(repair_layer_portals(data))
     surf = data.get("surface") or data.get("tiles")
     for key in ("surface", "underground", "tiles"):
         grid = data.get(key)
@@ -854,7 +1332,7 @@ def normalize_map_tiles(data: dict) -> dict:
                 elif t == BRICK:
                     row[i] = ROCK
     data["tile_schema"] = 2
-    return repair_layer_portals(data)
+    return ensure_ground_layers(repair_layer_portals(data))
 
 
 def carve_path(grid: list[list[int]], start: tuple[int, int], goal: tuple[int, int], rng: random.Random, floor: int) -> None:
@@ -1127,6 +1605,22 @@ def generate_level(level_idx: int, seed: int | None = None) -> dict:
             if under[y][x] == BRICK:
                 under[y][x] = TREASURE
 
+    # 可放置陷阱：尖刺 / 陷坑（避开起点、房屋、门户、宝箱）
+    for _ in range(int(cfg.get("traps", 0))):
+        trap = TRAP_SPIKE if rng.random() < 0.55 else TRAP_PIT
+        if rng.random() < 0.55:
+            x, y = rng.randint(1, w - 2), rng.randint(1, h - 2)
+            if (
+                surface[y][x] in (GRASS, LAND)
+                and (x, y) != start
+                and (x, y) != (hx, hy)
+            ):
+                surface[y][x] = trap
+        else:
+            x, y = rng.randint(1, w - 2), rng.randint(1, h - 2)
+            if under[y][x] == BRICK:
+                under[y][x] = trap
+
     return {
         "level": level_idx,
         "name": cfg["name"],
@@ -1153,6 +1647,63 @@ def map_size(data: dict) -> tuple[int, int]:
 
 def layer_grid(data: dict, layer: str) -> list[list[int]]:
     return data["underground"] if layer == "underground" else data["surface"]
+
+
+def ground_key_for_layer(layer: str) -> str:
+    return "ground_underground" if layer == "underground" else "ground_surface"
+
+
+def default_ground_for_layer(layer: str) -> int:
+    return BRICK if layer == "underground" else GRASS
+
+
+def ensure_ground_layers(data: dict) -> dict:
+    """保证每层有 ground_*：背景铺地；地物格保留其下的草/土/水/石/砖。"""
+    for layer in ("surface", "underground"):
+        grid = data.get(layer)
+        if not isinstance(grid, list) or not grid:
+            continue
+        gkey = ground_key_for_layer(layer)
+        default = default_ground_for_layer(layer)
+        ground = data.get(gkey)
+        h = len(grid)
+        w = len(grid[0]) if grid else 0
+        bad = (
+            not isinstance(ground, list)
+            or len(ground) != h
+            or (h > 0 and (not ground or len(ground[0]) != w))
+        )
+        if bad:
+            new_g: list[list[int]] = []
+            for row in grid:
+                grow: list[int] = []
+                for t in row:
+                    ti = int(t)
+                    if ti in BACKGROUND_TILES:
+                        grow.append(ti)
+                    elif ti == EMPTY:
+                        grow.append(EMPTY)
+                    else:
+                        grow.append(default)
+                new_g.append(grow)
+            data[gkey] = new_g
+        else:
+            assert isinstance(ground, list)
+            for y, row in enumerate(grid):
+                for x, t in enumerate(row):
+                    ti = int(t)
+                    if ti in BACKGROUND_TILES:
+                        ground[y][x] = ti
+                    elif ti == EMPTY:
+                        ground[y][x] = EMPTY
+                    elif int(ground[y][x]) not in BACKGROUND_TILES:
+                        ground[y][x] = default
+    return data
+
+
+def layer_ground(data: dict, layer: str) -> list[list[int]]:
+    ensure_ground_layers(data)
+    return data[ground_key_for_layer(layer)]
 
 
 def map_center_tile(data: dict) -> tuple[int, int]:
@@ -1268,7 +1819,16 @@ class Knight:
         players = getattr(self.assets, "players", None) or {}
         return players.get(self.kind) or self.assets.knight
 
-    def update(self, dt: float, keys, grid: list[list[int]], mw: int, mh: int) -> None:
+    def update(
+        self,
+        dt: float,
+        keys,
+        grid: list[list[int]],
+        mw: int,
+        mh: int,
+        *,
+        speed_mult: float = 1.0,
+    ) -> None:
         vx = vy = 0
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             vx -= 1
@@ -1291,8 +1851,9 @@ class Knight:
 
         length = (vx * vx + vy * vy) ** 0.5
         vx, vy = vx / length, vy / length
-        self._try_move(vx * self.SPEED * dt, 0, grid, mw, mh)
-        self._try_move(0, vy * self.SPEED * dt, grid, mw, mh)
+        spd = self.SPEED * max(0.4, float(speed_mult))
+        self._try_move(vx * spd * dt, 0, grid, mw, mh)
+        self._try_move(0, vy * spd * dt, grid, mw, mh)
 
         self.anim_t += dt
         if self.anim_t >= 0.16:
@@ -1315,12 +1876,15 @@ class Knight:
                         return True
         return False
 
-    def draw(self, surf: pygame.Surface, cam: Camera) -> None:
+    def draw(self, surf: pygame.Surface, cam: Camera, *, flash: bool = False) -> None:
         frames = self._sheet()[self.dir]
         if self.dir == "down":
             img = frames[0] if not self.moving else frames[1 + self.frame % max(1, len(frames) - 1)]
         else:
             img = frames[self.frame % len(frames)]
+        if flash:
+            img = img.copy()
+            img.fill((255, 240, 120, 90), special_flags=pygame.BLEND_RGBA_ADD)
         sx, sy = cam.apply(self.x - img.get_width() // 2, self.y - img.get_height() + 8)
         surf.blit(img, (sx, sy))
 
@@ -1418,6 +1982,7 @@ class Game:
         self.clock = pygame.time.Clock()
         self.font = self._load_font(16)
         self.font_sm = self._load_font(13)
+        self.font_lg = self._load_font(22)
         # Start 页菜单：像素风（Press Start 2P）
         self.font_pixel = self._load_pixel_font(14)
         self.font_pixel_sm = self._load_pixel_font(10)
@@ -1439,8 +2004,24 @@ class Game:
         self.level_idx = 0
         self.treasures = 0
         self.total_treasures = 0
+        self.hp = RPG_MAX_HP
+        self.max_hp = RPG_MAX_HP
+        self.chest_event: dict | None = None
+        self.hazard_cd = 0.0
+        self._last_hazard_tile: tuple[str, int, int] | None = None
+        self.map_trap_cd = 0.0
+        self._last_map_trap_tile: tuple[str, int, int] | None = None
+        self.revealed_traps: set[tuple[str, int, int]] = set()
         self.message = ""
         self.message_t = 0.0
+        self.bag_open = False
+        self.bag_idx = 0
+        self.coins = 0
+        self._wallet_earned = 0
+        self.pickups: list[dict] = []
+        self.star_t = 0.0
+        self.speed_t = 0.0
+        self.pickup_bob = 0.0
         self.stairs_cd = 0.0
         self.layer_flash = 0.0  # 1→0：地上地下切换黑屏
         self.portal_stand_lock: tuple[str, int, int] | None = None
@@ -1460,11 +2041,22 @@ class Game:
         self.editor_panning = False
         self.editor_pan_origin = (0, 0, 0.0, 0.0)
         self.paint_drag = False
+        self.paint_cells: list[int] = [0] * (PIXEL_PAINT_SIZE * PIXEL_PAINT_SIZE)
+        self.paint_brush = 1
+        self.paint_colors: list[tuple[int, int, int] | None] = list(PIXEL_PAINT_COLORS)
+        self.paint_return_state = "editor"
+        self.paint_delete_pending = False
+        self.paint_naming = False
+        self.paint_name = ""
+        self.paint_gallery: list[dict] = []
+        self.paint_gallery_idx = 0
+        self.paint_edit_id: str | None = None
         # 操控角色：knight / aoba(Vpet) / ren(Allmate)（加载后选角；游玩中也可按 C 切换）
         self.player_kind = "knight"
         self.pending_play: dict | None = None  # {data, campaign} 选角后再开局
         self.kind_select_idx = 0
         self.reward_sfx = self._make_reward_sfx()
+        self.coin_sfx = self._make_coin_sfx()
         # BGM：点 START 播 startmusic，结束后循环 music
         self._bgm_phase: str | None = None  # None | "start" | "loop"
         self.music_volume = MUSIC_DEFAULT_VOLUME
@@ -1507,6 +2099,860 @@ class Game:
     def toast(self, text: str, sec: float = 2.2) -> None:
         self.message = text
         self.message_t = sec
+
+    def uses_durability(self) -> bool:
+        """仅战役冒险使用耐久；DIY 试玩 / 编辑器不显示、不结算耐久。"""
+        if self.state in ("editor", "paint", "menu", "picker"):
+            return False
+        if self.state == "kind_select" and self.pending_play is not None:
+            return bool(self.pending_play.get("campaign"))
+        return bool(self.campaign)
+
+    def food_bag_count(self) -> int:
+        inv = load_shared_food_inventory()
+        return sum(int(inv.get(fid, 0) or 0) for fid in RPG_FOOD_IDS)
+
+    def change_hp(self, delta: int, *, reason: str = "") -> None:
+        if not self.uses_durability():
+            return
+        before = int(self.hp)
+        self.hp = max(0, min(int(self.max_hp), before + int(delta)))
+        if reason:
+            sign = "+" if delta > 0 else ""
+            self.toast(f"{reason}（耐久 {sign}{delta} → {self.hp}/{self.max_hp}）", 2.8)
+        if self.hp <= 0:
+            self._on_hp_empty()
+
+    def _on_hp_empty(self) -> None:
+        """耐久耗尽：回到本关起点并恢复一半血。"""
+        if not self.map_data or not self.knight:
+            self.hp = max(1, self.max_hp // 2)
+            return
+        sx, sy = resolve_start(self.map_data)
+        self.knight.x = sx * TILE + TILE // 2
+        self.knight.y = sy * TILE + TILE // 2
+        self.layer = "surface"
+        self.hp = max(20, self.max_hp // 2)
+        self.chest_event = None
+        self.bag_open = False
+        self.star_t = 0.0
+        self.speed_t = 0.0
+        self.toast("耐久耗尽…勉强爬回出发点，恢复了一半耐久", 3.5)
+
+    def change_food(self, delta: int) -> str:
+        """随机增减一份桌宠食物；返回说明文案。"""
+        if delta > 0:
+            fid = random.choice(RPG_FOOD_IDS)
+            n, label = save_shared_food_delta(fid, 1)
+            return f"获得{label}×1（库存 {n}）"
+        # 扣食物：优先扣已有的
+        inv = load_shared_food_inventory()
+        owned = [fid for fid in RPG_FOOD_IDS if inv.get(fid, 0) > 0]
+        if not owned:
+            return "背包里没有食物可扣"
+        fid = random.choice(owned)
+        n, label = save_shared_food_delta(fid, -1)
+        return f"失去{label}×1（库存 {n}）"
+
+    def bag_food_rows(self) -> list[tuple[str, str, int, int]]:
+        """(fid, label, count, heal)"""
+        inv = load_shared_food_inventory()
+        rows: list[tuple[str, str, int, int]] = []
+        for fid in RPG_FOOD_IDS:
+            n = int(inv.get(fid, 0) or 0)
+            rows.append((fid, RPG_FOOD_LABELS.get(fid, fid), n, int(RPG_FOOD_HEAL.get(fid, 10))))
+        return rows
+
+    def toggle_bag(self) -> None:
+        if self.bag_open:
+            self.bag_open = False
+            return
+        if self.chest_event or self.dialog:
+            return
+        self.bag_open = True
+        rows = self.bag_food_rows()
+        # 默认选中第一份有货的食物
+        self.bag_idx = 0
+        for i, (_fid, _lab, n, _h) in enumerate(rows):
+            if n > 0:
+                self.bag_idx = i
+                break
+        self.toast("打开背包 · ↑↓选择 · Enter吃 · I/Esc关闭", 2.0)
+
+    def eat_bag_food(self, fid: str | None = None) -> None:
+        if not self.uses_durability():
+            self.toast("DIY 模式没有耐久，无需吃食物")
+            return
+        rows = self.bag_food_rows()
+        if fid is None:
+            if not rows:
+                self.toast("背包是空的")
+                return
+            self.bag_idx = max(0, min(self.bag_idx, len(rows) - 1))
+            fid = rows[self.bag_idx][0]
+        inv = load_shared_food_inventory()
+        if int(inv.get(fid, 0) or 0) <= 0:
+            self.toast(f"{RPG_FOOD_LABELS.get(fid, fid)}已经没有了")
+            return
+        if self.hp >= self.max_hp:
+            self.toast("耐久已满，先冒险再吃吧")
+            return
+        heal = int(RPG_FOOD_HEAL.get(fid, 10))
+        n, label = save_shared_food_delta(fid, -1)
+        before = int(self.hp)
+        self.hp = min(self.max_hp, before + heal)
+        gained = self.hp - before
+        self._play_reward_sfx()
+        self.toast(f"吃下{label}！耐久+{gained}（{self.hp}/{self.max_hp}）· 剩{n}", 3.0)
+
+    def handle_bag_key(self, key: int) -> None:
+        if key in (pygame.K_ESCAPE, pygame.K_i, pygame.K_b):
+            self.bag_open = False
+            return
+        rows = self.bag_food_rows()
+        if not rows:
+            return
+        if key in (pygame.K_UP, pygame.K_w):
+            self.bag_idx = (self.bag_idx - 1) % len(rows)
+        elif key in (pygame.K_DOWN, pygame.K_s):
+            self.bag_idx = (self.bag_idx + 1) % len(rows)
+        elif key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_e):
+            self.eat_bag_food()
+        elif key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8):
+            idx = {
+                pygame.K_1: 0,
+                pygame.K_2: 1,
+                pygame.K_3: 2,
+                pygame.K_4: 3,
+                pygame.K_5: 4,
+                pygame.K_6: 5,
+                pygame.K_7: 6,
+                pygame.K_8: 7,
+            }[key]
+            if 0 <= idx < len(rows):
+                self.bag_idx = idx
+                self.eat_bag_food(rows[idx][0])
+
+    def draw_bag_overlay(self) -> None:
+        dim = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 150))
+        self.screen.blit(dim, (0, 0))
+        box = pygame.Rect(48, 36, SCREEN_W - 96, VIEW_H - 72)
+        self.draw_textbox(self.screen, box)
+        title = self.font.render("背包 · 吃食物补充耐久", True, (255, 220, 120))
+        self.screen.blit(title, (box.x + 16, box.y + 12))
+        sub = self.font_sm.render(
+            (
+                f"当前耐久 {self.hp}/{self.max_hp}  ·  金币 {self.coins}"
+                if self.uses_durability()
+                else f"DIY 模式 · 无耐久  ·  金币 {self.coins}"
+            ),
+            True,
+            (200, 210, 230),
+        )
+        self.screen.blit(sub, (box.x + 16, box.y + 36))
+        rows = self.bag_food_rows()
+        y = box.y + 62
+        if not any(n > 0 for _fid, _lab, n, _h in rows):
+            empty = self.font.render("空空如也…去开宝箱或捡补给吧", True, (180, 190, 210))
+            self.screen.blit(empty, (box.x + 16, y + 20))
+        for i, (fid, label, n, heal) in enumerate(rows):
+            selected = i == self.bag_idx
+            if n <= 0:
+                col = (110, 118, 136)
+            elif selected:
+                col = (255, 240, 160)
+            else:
+                col = (230, 235, 245)
+            prefix = "> " if selected else "  "
+            line = f"{prefix}{i + 1}.{label}  ×{n}  （+{heal}耐久）"
+            self.screen.blit(self.font.render(line, True, col), (box.x + 14, y))
+            y += 26
+        hint = self.font_sm.render("↑↓ / 1-8 选择 · Enter 吃 · I / Esc 关闭", True, (170, 180, 200))
+        self.screen.blit(hint, (box.x + 16, box.bottom - 28))
+
+    def _reset_mario_state(self, *, keep_coins: bool = False) -> None:
+        if not keep_coins:
+            self.coins = 0
+        self.pickups = []
+        self.star_t = 0.0
+        self.speed_t = 0.0
+        self.bag_open = False
+        self.pickup_bob = 0.0
+
+    def _harvest_placed_pickups(self) -> list[dict]:
+        """把地图上放置的金币/蘑菇/星收成运行时 pickups，格子还原为背景。"""
+        out: list[dict] = []
+        if not self.map_data:
+            return out
+        ensure_ground_layers(self.map_data)
+        for layer_name in ("surface", "underground"):
+            grid = self.map_data.get(layer_name)
+            if not isinstance(grid, list):
+                continue
+            ground = layer_ground(self.map_data, layer_name)
+            default = default_ground_for_layer(layer_name)
+            for ty, row in enumerate(grid):
+                if not isinstance(row, list):
+                    continue
+                for tx, cell in enumerate(row):
+                    kind = PICKUP_TILE_KIND.get(int(cell))
+                    if not kind:
+                        continue
+                    out.append({"kind": kind, "layer": layer_name, "tx": int(tx), "ty": int(ty)})
+                    g = int(ground[ty][tx]) if ty < len(ground) and tx < len(ground[ty]) else default
+                    fill = g if g in BACKGROUND_TILES else default
+                    row[tx] = fill
+                    ground[ty][tx] = fill
+        return out
+
+    def spawn_level_pickups(self) -> None:
+        """关卡内散布金币 / 蘑菇 / 无敌星（马里奥式拾取物）。"""
+        self.pickups = []
+        if not self.map_data:
+            return
+        placed = self._harvest_placed_pickups()
+        # DIY：优先用编辑器放置的道具；有放置则不再随机刷
+        if placed and not self.campaign:
+            self.pickups = placed
+            return
+        # 战役：随机散布；若地图里也摆了道具则一并加入
+        if placed and self.campaign:
+            self.pickups.extend(placed)
+
+        mw, mh = map_size(self.map_data)
+        start = resolve_start(self.map_data)
+        candidates: list[tuple[str, int, int]] = []
+        occupied = {(str(p["layer"]), int(p["tx"]), int(p["ty"])) for p in self.pickups}
+        for layer_name, key in (("surface", "surface"), ("underground", "underground")):
+            grid = self.map_data.get(key) or []
+            for ty in range(1, mh - 1):
+                for tx in range(1, mw - 1):
+                    if (layer_name, tx, ty) in occupied:
+                        continue
+                    cell = grid[ty][tx]
+                    if cell not in WALKABLE_EXTRA:
+                        continue
+                    if cell in PICKUP_TILES or cell in TRAP_TILES:
+                        continue
+                    if layer_name == "surface" and (tx, ty) == start:
+                        continue
+                    candidates.append((layer_name, tx, ty))
+        random.shuffle(candidates)
+        if not candidates:
+            return
+
+        def _take(n: int) -> list[tuple[str, int, int]]:
+            out = candidates[:n]
+            del candidates[:n]
+            return out
+
+        # DIY 未放置任何道具时，仍给少量随机，避免空荡
+        if self.campaign:
+            coin_n = min(14, max(8, len(candidates) // 40))
+            mush_n = min(2, len(candidates))
+            star_chance = 0.65
+        else:
+            coin_n = min(6, max(3, len(candidates) // 60))
+            mush_n = min(1, len(candidates))
+            star_chance = 0.35
+
+        for layer, tx, ty in _take(coin_n):
+            self.pickups.append({"kind": "coin", "layer": layer, "tx": tx, "ty": ty})
+        for layer, tx, ty in _take(mush_n):
+            self.pickups.append({"kind": "mushroom", "layer": layer, "tx": tx, "ty": ty})
+        if candidates and random.random() < star_chance:
+            layer, tx, ty = _take(1)[0]
+            self.pickups.append({"kind": "star", "layer": layer, "tx": tx, "ty": ty})
+
+    def grant_coins(self, n: int = 1, *, reason: str = "", silent: bool = False) -> str:
+        add = max(0, int(n))
+        self.coins += add
+        self._wallet_earned = int(getattr(self, "_wallet_earned", 0) or 0) + add
+        if add > 0:
+            self._play_coin_sfx()
+        msg = reason or f"金币 +{n}（合计 {self.coins}）"
+        # 战役：每满 10 枚回血；DIY 无耐久，只攒币
+        if self.uses_durability():
+            while self.coins >= RPG_COIN_HEAL_EVERY:
+                self.coins -= RPG_COIN_HEAL_EVERY
+                before = int(self.hp)
+                self.hp = min(self.max_hp, before + RPG_COIN_HEAL)
+                gained = self.hp - before
+                self._play_reward_sfx()
+                msg = f"{msg} · 金币×{RPG_COIN_HEAL_EVERY}！耐久+{gained}"
+        if not silent:
+            self.toast(msg, 2.6)
+        return msg
+
+    def flush_wallet_earned(self) -> None:
+        """把本局获得的金币同步到桌宠 wallet.json（不扣局内币）。"""
+        n = int(getattr(self, "_wallet_earned", 0) or 0)
+        if n <= 0:
+            return
+        bal = _add_coins_to_desktop_wallet(n)
+        self._wallet_earned = 0
+        if bal >= 0:
+            self.toast(f"金币已同步桌宠钱包 +{n}（持有 {bal}）", 2.8)
+
+    def grant_mushroom(self, *, reason: str = "吃到加速蘑菇！", silent: bool = False) -> str:
+        self.speed_t = RPG_MUSHROOM_SEC
+        self._play_reward_sfx()
+        msg = f"{reason} 移速提升 {int(RPG_MUSHROOM_SEC)} 秒"
+        if not silent:
+            self.toast(msg, 2.8)
+        return msg
+
+    def grant_star(self, *, reason: str = "捡到无敌星！", silent: bool = False) -> str:
+        self.star_t = RPG_STAR_SEC
+        self._play_reward_sfx()
+        msg = f"{reason} {int(RPG_STAR_SEC)} 秒内免疫陷阱"
+        if not silent:
+            self.toast(msg, 2.8)
+        return msg
+
+    def update_pickups(self, dt: float) -> None:
+        self.pickup_bob += dt
+        if self.star_t > 0:
+            self.star_t = max(0.0, self.star_t - dt)
+            if self.star_t <= 0:
+                self.toast("无敌状态结束", 1.4)
+        if self.speed_t > 0:
+            self.speed_t = max(0.0, self.speed_t - dt)
+            if self.speed_t <= 0:
+                self.toast("加速效果结束", 1.4)
+        if not self.knight or not self.pickups:
+            return
+        remain: list[dict] = []
+        for p in self.pickups:
+            if p.get("layer") != self.layer:
+                remain.append(p)
+                continue
+            cx = int(p["tx"]) * TILE + TILE // 2
+            cy = int(p["ty"]) * TILE + TILE // 2
+            if abs(self.knight.x - cx) <= TILE * 0.42 and abs(self.knight.y - cy) <= TILE * 0.42:
+                kind = str(p.get("kind") or "coin")
+                if kind == "mushroom":
+                    self.grant_mushroom()
+                elif kind == "star":
+                    self.grant_star()
+                else:
+                    self.grant_coins(1, reason="捡到金币！")
+            else:
+                remain.append(p)
+        self.pickups = remain
+
+    def draw_pickups(self, surf: pygame.Surface) -> None:
+        bob = math.sin(self.pickup_bob * 4.0) * 3.0
+        for p in self.pickups:
+            if p.get("layer") != self.layer:
+                continue
+            cx = int(p["tx"]) * TILE + TILE // 2
+            cy = int(p["ty"]) * TILE + TILE // 2 + int(bob)
+            sx, sy = self.camera.apply(cx, cy)
+            kind = str(p.get("kind") or "coin")
+            if kind == "mushroom":
+                pygame.draw.circle(surf, (230, 60, 70), (sx, sy - 2), 8)
+                pygame.draw.circle(surf, (250, 250, 250), (sx, sy + 5), 6)
+                pygame.draw.circle(surf, (255, 255, 255), (sx - 3, sy - 4), 2)
+            elif kind == "star":
+                pts = []
+                for i in range(5):
+                    a = -math.pi / 2 + i * (2 * math.pi / 5)
+                    pts.append((sx + int(math.cos(a) * 9), sy + int(math.sin(a) * 9)))
+                    a2 = a + math.pi / 5
+                    pts.append((sx + int(math.cos(a2) * 4), sy + int(math.sin(a2) * 4)))
+                pygame.draw.polygon(surf, (255, 220, 60), pts)
+                pygame.draw.polygon(surf, (255, 255, 200), pts, 1)
+            else:
+                pygame.draw.circle(surf, (255, 200, 40), (sx, sy), 7)
+                pygame.draw.circle(surf, (255, 240, 140), (sx, sy), 7, 1)
+                pygame.draw.line(surf, (180, 120, 20), (sx, sy - 4), (sx, sy + 4), 2)
+
+    def apply_chest_outcome(self, won: bool) -> str:
+        """胜利：回血/得食物/金币或道具；失败：扣血或扣食物。DIY 无耐久结算。"""
+        loot_name, loot_desc = random.choice(TREASURE_LOOT)
+        durable = self.uses_durability()
+        if won:
+            bonus = ""
+            roll = random.random()
+            if roll < 0.18:
+                bonus = "；" + self.grant_mushroom(reason="宝箱里蹦出蘑菇！", silent=True)
+            elif roll < 0.28:
+                bonus = "；" + self.grant_star(reason="宝箱里闪出无敌星！", silent=True)
+            elif roll < 0.55:
+                bonus = "；" + self.grant_coins(random.randint(2, 5), reason="宝箱金币哗啦啦！", silent=True)
+            if durable:
+                if random.random() < 0.55:
+                    heal = random.randint(12, 22)
+                    self.hp = min(self.max_hp, self.hp + heal)
+                    extra = self.change_food(1) if random.random() < 0.35 else ""
+                    msg = f"判定成功！{loot_name}：{loot_desc} 耐久+{heal}"
+                    if extra:
+                        msg += f"；{extra}"
+                    msg += bonus
+                else:
+                    extra = self.change_food(1)
+                    heal = random.randint(6, 12)
+                    self.hp = min(self.max_hp, self.hp + heal)
+                    msg = f"判定成功！{loot_name}：{loot_desc}；{extra}；耐久+{heal}{bonus}"
+            else:
+                # DIY：只给食物/道具，不碰耐久
+                if random.random() < 0.6:
+                    extra = self.change_food(1)
+                    msg = f"判定成功！{loot_name}：{loot_desc}；{extra}{bonus}"
+                else:
+                    bonus2 = bonus or ("；" + self.grant_coins(random.randint(2, 4), reason="宝箱金币！", silent=True))
+                    msg = f"判定成功！{loot_name}：{loot_desc}{bonus2}"
+            self._play_reward_sfx()
+            return msg
+        # 失败
+        if not durable:
+            if self.food_bag_count() > 0 and random.random() < 0.45:
+                extra = self.change_food(-1)
+                msg = f"判定失败…{extra}"
+            else:
+                msg = f"判定失败…宝箱啪地关上了（DIY 无耐久惩罚）"
+            return msg
+        if random.random() < 0.5 or self.food_bag_count() <= 0:
+            dmg = random.randint(10, 18)
+            self.hp = max(0, self.hp - dmg)
+            msg = f"判定失败…宝箱机关弹开！耐久-{dmg}"
+        else:
+            extra = self.change_food(-1)
+            dmg = random.randint(6, 12)
+            self.hp = max(0, self.hp - dmg)
+            msg = f"判定失败…{extra}；耐久-{dmg}"
+        if self.hp <= 0:
+            self._on_hp_empty()
+        return msg
+
+    def begin_chest_event(self, tx: int, ty: int) -> None:
+        """开箱：随机二选一——要么掷骰，要么猜拳（玩家不能自选）。"""
+        mode = random.choice(("dice", "rps"))
+        if mode == "dice":
+            phase = "dice"
+            msg = "宝箱锁上了骰子机关！按 SPACE 掷骰（需 ≥4 点）"
+            toast = "宝箱判定：掷骰子！"
+        else:
+            phase = "rps"
+            msg = "宝箱锁上了猜拳机关！1石头  2剪刀  3布"
+            toast = "宝箱判定：石头剪刀布！"
+        self.chest_event = {
+            "tx": int(tx),
+            "ty": int(ty),
+            "phase": phase,
+            "mode": mode,
+            "player_roll": 0,
+            "enemy_roll": 0,
+            "display_roll": 0,
+            "player_rps": 0,
+            "enemy_rps": 0,
+            "display_enemy_rps": 0,
+            "spin": 0,
+            "spin_t": 0.0,
+            "msg": msg,
+        }
+        self.toast(toast, 1.8)
+
+    def finish_chest_event(self, won: bool, detail: str = "") -> None:
+        """结算奖励/惩罚，并停留在结果面板片刻（更易看清）。"""
+        ev = self.chest_event
+        if not ev or not self.map_data:
+            self.chest_event = None
+            return
+        if ev.get("phase") == "result" and ev.get("settled"):
+            return
+        tx, ty = int(ev["tx"]), int(ev["ty"])
+        grid = self.current_grid()
+        if 0 <= ty < len(grid) and 0 <= tx < len(grid[0]) and grid[ty][tx] == TREASURE:
+            grid[ty][tx] = TREASURE_OPEN
+            self.treasures += 1
+        outcome = self.apply_chest_outcome(won)
+        detail = (detail or str(ev.get("msg") or "")).strip()
+        ev["phase"] = "result"
+        ev["won"] = bool(won)
+        ev["settled"] = True
+        ev["detail"] = detail
+        ev["outcome"] = outcome
+        ev["msg"] = outcome
+        ev["result_t"] = 2.8
+        self.toast(f"{outcome}（本关宝箱 {self.treasures}）", 4.2)
+
+    def close_chest_event(self) -> None:
+        self.chest_event = None
+
+    def handle_chest_event_key(self, key: int) -> None:
+        ev = self.chest_event
+        if not ev:
+            return
+        phase = str(ev.get("phase") or "")
+        if phase == "result":
+            if key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE, pygame.K_e):
+                self.close_chest_event()
+            return
+        if key == pygame.K_ESCAPE:
+            self.chest_event = None
+            self.toast("取消开箱")
+            return
+        if phase == "dice" and key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_e):
+            ev["phase"] = "dice_spin"
+            ev["spin"] = 0
+            ev["spin_t"] = 0.0
+            ev["player_roll"] = random.randint(1, 6)
+            ev["display_roll"] = random.randint(1, 6)
+            ev["msg"] = "骰子转动中…"
+            return
+        if phase == "rps" and key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_KP1, pygame.K_KP2, pygame.K_KP3):
+            mapping = {
+                pygame.K_1: 1,
+                pygame.K_KP1: 1,
+                pygame.K_2: 2,
+                pygame.K_KP2: 2,
+                pygame.K_3: 3,
+                pygame.K_KP3: 3,
+            }
+            pr = mapping[key]
+            er = random.randint(1, 3)
+            ev["player_rps"] = pr
+            ev["enemy_rps"] = er
+            ev["display_enemy_rps"] = random.randint(1, 3)
+            ev["phase"] = "rps_spin"
+            ev["spin"] = 0
+            ev["spin_t"] = 0.0
+            ev["msg"] = f"你出了{RPS_NAMES[pr]}！对手正在出拳…"
+
+    def update_chest_event(self, dt: float) -> None:
+        ev = self.chest_event
+        if not ev:
+            return
+        phase = str(ev.get("phase") or "")
+        if phase == "result":
+            ev["result_t"] = float(ev.get("result_t") or 0) - dt
+            if float(ev.get("result_t") or 0) <= 0:
+                self.close_chest_event()
+            return
+        if phase == "dice_spin":
+            ev["spin_t"] = float(ev.get("spin_t") or 0) + dt
+            ev["spin"] = int(ev.get("spin") or 0) + 1
+            # 转动阶段快速换面
+            if float(ev["spin_t"]) < 0.95:
+                if ev["spin"] % 2 == 0:
+                    ev["display_roll"] = random.randint(1, 6)
+                return
+            pr = int(ev.get("player_roll") or 1)
+            ev["display_roll"] = pr
+            need = 4
+            won = pr >= need
+            detail = f"你掷出 {pr} 点（需≥{need}）— {'成功！' if won else '失败…'}"
+            self.finish_chest_event(won, detail)
+            return
+        if phase == "rps_spin":
+            ev["spin_t"] = float(ev.get("spin_t") or 0) + dt
+            ev["spin"] = int(ev.get("spin") or 0) + 1
+            if float(ev["spin_t"]) < 0.85:
+                if ev["spin"] % 2 == 0:
+                    ev["display_enemy_rps"] = random.randint(1, 3)
+                return
+            pr = int(ev.get("player_rps") or 1)
+            er = int(ev.get("enemy_rps") or 1)
+            ev["display_enemy_rps"] = er
+            res = rps_beats(pr, er)
+            if res > 0:
+                detail = f"你出{RPS_NAMES[pr]}，对手{RPS_NAMES[er]} — 你赢了！"
+                self.finish_chest_event(True, detail)
+            elif res == 0:
+                ev["phase"] = "rps"
+                ev["player_rps"] = 0
+                ev["enemy_rps"] = 0
+                ev["display_enemy_rps"] = 0
+                ev["msg"] = f"平局（双方{RPS_NAMES[pr]}）！再出一次：1石 2剪 3布"
+            else:
+                detail = f"你出{RPS_NAMES[pr]}，对手{RPS_NAMES[er]} — 输了…"
+                self.finish_chest_event(False, detail)
+
+    def _draw_die_face(self, surf: pygame.Surface, rect: pygame.Rect, value: int, *, highlight: bool = False) -> None:
+        """绘制有点数的骰子面。"""
+        bg = (255, 245, 210) if highlight else (235, 235, 245)
+        border = (255, 200, 80) if highlight else (50, 55, 70)
+        pygame.draw.rect(surf, bg, rect, border_radius=10)
+        pygame.draw.rect(surf, border, rect, 3, border_radius=10)
+        v = max(0, min(6, int(value)))
+        if v <= 0:
+            q = self.font_lg.render("?", True, (120, 130, 150))
+            surf.blit(q, (rect.centerx - q.get_width() // 2, rect.centery - q.get_height() // 2))
+            return
+        # 九点网格 pip
+        inset = max(10, rect.w // 5)
+        positions = {
+            1: ((1, 1),),
+            2: ((0, 0), (2, 2)),
+            3: ((0, 0), (1, 1), (2, 2)),
+            4: ((0, 0), (0, 2), (2, 0), (2, 2)),
+            5: ((0, 0), (0, 2), (1, 1), (2, 0), (2, 2)),
+            6: ((0, 0), (0, 1), (0, 2), (2, 0), (2, 1), (2, 2)),
+        }
+        r = max(4, rect.w // 12)
+        for gx, gy in positions[v]:
+            cx = rect.x + inset + gx * (rect.w - 2 * inset) // 2
+            cy = rect.y + inset + gy * (rect.h - 2 * inset) // 2
+            pygame.draw.circle(surf, (35, 40, 55), (cx, cy), r)
+
+    def _draw_rps_icon(self, surf: pygame.Surface, rect: pygame.Rect, choice: int, *, selected: bool = False, dim: bool = False) -> None:
+        """石头 / 剪刀 / 布 图标面板。"""
+        palette = {
+            0: ((70, 78, 98), (160, 170, 190), "?"),
+            1: ((90, 110, 150), (210, 220, 240), "石头"),
+            2: ((150, 90, 110), (255, 180, 200), "剪刀"),
+            3: ((90, 140, 120), (180, 240, 210), "布"),
+        }
+        bg, accent, label = palette.get(int(choice), palette[0])
+        if dim:
+            bg = tuple(max(20, c - 35) for c in bg)
+        if selected:
+            pygame.draw.rect(surf, (255, 220, 100), rect.inflate(6, 6), border_radius=12)
+        pygame.draw.rect(surf, bg, rect, border_radius=10)
+        pygame.draw.rect(surf, accent, rect, 2, border_radius=10)
+        cx, cy = rect.centerx, rect.centery - 6
+        c = int(choice)
+        if c == 1:
+            # 石头：圆拳
+            pygame.draw.circle(surf, accent, (cx, cy), rect.w // 4)
+            pygame.draw.circle(surf, bg, (cx, cy), rect.w // 7)
+        elif c == 2:
+            # 剪刀：两叉
+            pygame.draw.line(surf, accent, (cx - 14, cy - 16), (cx + 10, cy + 14), 5)
+            pygame.draw.line(surf, accent, (cx + 14, cy - 16), (cx - 10, cy + 14), 5)
+            pygame.draw.circle(surf, accent, (cx - 14, cy - 16), 5)
+            pygame.draw.circle(surf, accent, (cx + 14, cy - 16), 5)
+        elif c == 3:
+            # 布：方掌
+            hand = pygame.Rect(0, 0, rect.w // 2, rect.h // 2)
+            hand.center = (cx, cy)
+            pygame.draw.rect(surf, accent, hand, border_radius=4)
+            pygame.draw.rect(surf, bg, hand.inflate(-8, -8), border_radius=3)
+        else:
+            q = self.font_lg.render("?", True, accent)
+            surf.blit(q, (cx - q.get_width() // 2, cy - q.get_height() // 2))
+        lab = self.font_sm.render(label, True, (245, 245, 250))
+        surf.blit(lab, (rect.centerx - lab.get_width() // 2, rect.bottom - 22))
+
+    def maybe_trigger_hazard(self) -> None:
+        """换格时小概率踩机关：扣血或扣食物（马里奥式突发惩罚）。"""
+        if not self.uses_durability():
+            return  # DIY：无耐久机关
+        if not self.knight or self.chest_event or self.dialog or self.bag_open:
+            return
+        if self.hazard_cd > 0:
+            return
+        if self.star_t > 0:
+            return  # 无敌星：完全跳过陷阱
+        tx, ty = self.knight.tile_pos()
+        key = (self.layer, int(tx), int(ty))
+        if key == self._last_hazard_tile:
+            return
+        self._last_hazard_tile = key
+        if random.random() > RPG_HAZARD_CHANCE:
+            return
+        self.hazard_cd = 2.4
+        kind = random.choice(("hp", "hp", "food", "heal_trap", "mystery"))
+        # heal_trap / mystery：神秘砖风格奖励
+        if kind == "mystery":
+            roll = random.random()
+            if roll < 0.45:
+                self.grant_coins(random.randint(1, 3), reason="头顶神秘砖弹出金币！")
+            elif roll < 0.75:
+                self.grant_mushroom(reason="神秘砖弹出蘑菇！")
+            else:
+                self.grant_star(reason="神秘砖弹出无敌星！")
+            return
+        if kind == "heal_trap" and random.random() < 0.45:
+            if random.random() < 0.5:
+                heal = random.randint(6, 12)
+                self.change_hp(heal, reason="脚下滚出一枚幸运币！")
+                self.grant_coins(1, reason="幸运币！", silent=True)
+            else:
+                msg = self.change_food(1)
+                self.toast(f"草丛里捡到补给：{msg}", 2.8)
+            return
+        if kind == "food" and self.food_bag_count() > 0:
+            msg = self.change_food(-1)
+            self.toast(f"踩到陷阱！{msg}", 2.8)
+        else:
+            dmg = -random.randint(6, 14)
+            self.change_hp(dmg, reason="踩到尖刺机关！")
+
+    def maybe_trigger_map_trap(self) -> None:
+        """踩到地图上放置的陷阱地块（尖刺 / 陷坑）。"""
+        if not self.knight or self.chest_event or self.dialog or self.bag_open:
+            return
+        if self.map_trap_cd > 0:
+            return
+        if self.star_t > 0:
+            return
+        tx, ty = self.knight.tile_pos()
+        grid = self.current_grid()
+        mw, mh = map_size(self.map_data) if self.map_data else (0, 0)
+        if not (0 <= tx < mw and 0 <= ty < mh):
+            return
+        cell = grid[ty][tx]
+        if cell not in TRAP_TILES:
+            self._last_map_trap_tile = None
+            return
+        key = (self.layer, int(tx), int(ty))
+        if key == self._last_map_trap_tile:
+            return
+        self._last_map_trap_tile = key
+        self.revealed_traps.add(key)
+        self.map_trap_cd = 1.1
+        if cell == TRAP_SPIKE:
+            if self.uses_durability():
+                dmg = -random.randint(8, 16)
+                self.change_hp(dmg, reason="踩中尖刺陷阱！")
+            else:
+                self.toast("踩中尖刺陷阱！（DIY 不扣耐久）", 2.4)
+        else:  # TRAP_PIT
+            if self.uses_durability():
+                dmg = -random.randint(10, 18)
+                self.change_hp(dmg, reason="掉进陷坑！")
+                # 小概率额外掉食物
+                if self.food_bag_count() > 0 and random.random() < 0.35:
+                    msg = self.change_food(-1)
+                    self.toast(f"陷坑里掉了补给：{msg}", 2.6)
+            else:
+                self.toast("掉进陷坑！（DIY 不扣耐久）", 2.4)
+
+    def draw_chest_event_overlay(self) -> None:
+        ev = self.chest_event
+        if not ev:
+            return
+        dim = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
+        phase = str(ev.get("phase") or "")
+        mode = str(ev.get("mode") or "")
+        dim.fill((0, 0, 0, 170 if phase == "result" else 150))
+        self.screen.blit(dim, (0, 0))
+
+        if phase == "result":
+            won = bool(ev.get("won"))
+            mode = str(ev.get("mode") or "")
+            box = pygame.Rect(32, 36, SCREEN_W - 64, VIEW_H - 72)
+            self.draw_textbox(self.screen, box)
+            bar_c = (60, 200, 120) if won else (230, 80, 80)
+            pygame.draw.rect(self.screen, bar_c, (box.x + 8, box.y + 8, box.w - 16, 8), border_radius=2)
+            headline = "判定成功！" if won else "判定失败…"
+            title = self.font_lg.render(headline, True, (120, 255, 170) if won else (255, 140, 140))
+            self.screen.blit(title, (box.centerx - title.get_width() // 2, box.y + 22))
+
+            # —— 上方图案：骰子终局 / 猜拳双方 ——
+            art_y = box.y + 58
+            if mode == "dice":
+                die_size = 88
+                die_rect = pygame.Rect(0, 0, die_size, die_size)
+                die_rect.center = (box.centerx, art_y + die_size // 2)
+                roll = int(ev.get("player_roll") or ev.get("display_roll") or 0)
+                self._draw_die_face(self.screen, die_rect, roll, highlight=True)
+                tag = self.font.render(f"{roll} 点", True, (255, 230, 140) if won else (255, 180, 160))
+                self.screen.blit(tag, (box.centerx - tag.get_width() // 2, die_rect.bottom + 8))
+                y = die_rect.bottom + 36
+            else:
+                card_w, card_h = 92, 104
+                you_r = pygame.Rect(box.x + 56, art_y, card_w, card_h)
+                foe_r = pygame.Rect(box.right - 56 - card_w, art_y, card_w, card_h)
+                you_lab = self.font_sm.render("你", True, (180, 220, 255))
+                foe_lab = self.font_sm.render("机关", True, (255, 180, 180))
+                self.screen.blit(you_lab, (you_r.centerx - you_lab.get_width() // 2, you_r.y - 18))
+                self.screen.blit(foe_lab, (foe_r.centerx - foe_lab.get_width() // 2, foe_r.y - 18))
+                self._draw_rps_icon(self.screen, you_r, int(ev.get("player_rps") or 0), selected=True)
+                self._draw_rps_icon(self.screen, foe_r, int(ev.get("enemy_rps") or 0), selected=True)
+                vs = self.font_lg.render("VS", True, (255, 230, 140))
+                self.screen.blit(vs, (box.centerx - vs.get_width() // 2, art_y + card_h // 2 - 12))
+                y = art_y + card_h + 16
+
+            detail = str(ev.get("detail") or "")
+            outcome = str(ev.get("outcome") or ev.get("msg") or "")
+            if detail:
+                d = self.font.render(detail, True, (255, 240, 180))
+                self.screen.blit(d, (box.centerx - d.get_width() // 2, y))
+                y += 26
+            # 结算摘要：过长则截断一行
+            if outcome:
+                max_w = box.w - 40
+                line = outcome
+                if self.font.size(line)[0] > max_w:
+                    while len(line) > 4 and self.font.size(line + "…")[0] > max_w:
+                        line = line[:-1]
+                    line += "…"
+                t = self.font_sm.render(line, True, (220, 228, 240))
+                self.screen.blit(t, (box.centerx - t.get_width() // 2, y))
+            hint = self.font_sm.render("Enter / Space 继续", True, (190, 200, 220))
+            self.screen.blit(hint, (box.centerx - hint.get_width() // 2, box.bottom - 28))
+            return
+
+        # —— 判定进行中：大面板 + 骰子/猜拳画面 ——
+        box = pygame.Rect(36, 48, SCREEN_W - 72, VIEW_H - 100)
+        self.draw_textbox(self.screen, box)
+        if mode == "dice":
+            title_txt = "宝箱判定 · 掷骰子"
+        else:
+            title_txt = "宝箱判定 · 石头剪刀布"
+        title = self.font.render(title_txt, True, (255, 220, 120))
+        self.screen.blit(title, (box.centerx - title.get_width() // 2, box.y + 14))
+        msg = str(ev.get("msg") or "")
+        sub = self.font_sm.render(msg, True, (220, 225, 235))
+        self.screen.blit(sub, (box.centerx - sub.get_width() // 2, box.y + 42))
+
+        if mode == "dice":
+            die_size = 96
+            die_rect = pygame.Rect(0, 0, die_size, die_size)
+            die_rect.center = (box.centerx, box.centery + 8)
+            show_v = int(ev.get("display_roll") or 0)
+            if phase == "dice":
+                show_v = 0
+            spinning = phase == "dice_spin"
+            # 轻晃
+            if spinning:
+                shake = int(4 * math.sin(float(ev.get("spin_t") or 0) * 40))
+                die_rect.x += shake
+            self._draw_die_face(self.screen, die_rect, show_v, highlight=spinning or phase == "result")
+            need_lbl = self.font_sm.render("成功条件：点数 ≥ 4", True, (180, 200, 230))
+            self.screen.blit(need_lbl, (box.centerx - need_lbl.get_width() // 2, die_rect.bottom + 14))
+            if phase == "dice":
+                tip = self.font.render("SPACE / Enter 掷骰", True, (120, 220, 255))
+                self.screen.blit(tip, (box.centerx - tip.get_width() // 2, box.bottom - 36))
+            elif phase == "dice_spin":
+                tip = self.font.render("转动中…", True, (255, 220, 140))
+                self.screen.blit(tip, (box.centerx - tip.get_width() // 2, box.bottom - 36))
+            return
+
+        # 猜拳画面
+        card_w, card_h = 88, 100
+        gap = 18
+        total_w = card_w * 3 + gap * 2
+        x0 = box.centerx - total_w // 2
+        y0 = box.y + 78
+        if phase == "rps":
+            for i, choice in enumerate((1, 2, 3)):
+                r = pygame.Rect(x0 + i * (card_w + gap), y0, card_w, card_h)
+                self._draw_rps_icon(self.screen, r, choice)
+            tip = self.font.render("按 1 / 2 / 3 出拳", True, (120, 220, 255))
+            self.screen.blit(tip, (box.centerx - tip.get_width() // 2, box.bottom - 36))
+            return
+
+        # rps_spin / 展示双方
+        you_r = pygame.Rect(box.x + 48, y0, card_w + 12, card_h + 8)
+        foe_r = pygame.Rect(box.right - 48 - (card_w + 12), y0, card_w + 12, card_h + 8)
+        you_lab = self.font_sm.render("你", True, (180, 220, 255))
+        foe_lab = self.font_sm.render("宝箱机关", True, (255, 180, 180))
+        self.screen.blit(you_lab, (you_r.centerx - you_lab.get_width() // 2, you_r.y - 22))
+        self.screen.blit(foe_lab, (foe_r.centerx - foe_lab.get_width() // 2, foe_r.y - 22))
+        self._draw_rps_icon(self.screen, you_r, int(ev.get("player_rps") or 0), selected=True)
+        enemy_show = int(ev.get("display_enemy_rps") or 0)
+        self._draw_rps_icon(self.screen, foe_r, enemy_show, selected=phase != "rps_spin")
+        vs = self.font_lg.render("VS", True, (255, 230, 140))
+        self.screen.blit(vs, (box.centerx - vs.get_width() // 2, y0 + card_h // 2 - 10))
+        if phase == "rps_spin":
+            tip = self.font.render("揭晓中…", True, (255, 220, 140))
+            self.screen.blit(tip, (box.centerx - tip.get_width() // 2, box.bottom - 36))
 
     def show_dialog(self, title: str, body: str) -> None:
         self.dialog = {"title": title, "body": body}
@@ -1551,10 +2997,16 @@ class Game:
             "level_idx": int(self.level_idx),
             "treasures": int(self.treasures),
             "total_treasures": int(self.total_treasures),
+            "hp": int(self.hp),
+            "max_hp": int(self.max_hp),
+            "coins": int(self.coins),
             "layer": self.layer,
             "player_kind": self.player_kind,
             "player": [self.knight.x, self.knight.y, self.knight.dir],
             "map_data": self.map_data,
+            "pickups": self.pickups,
+            "star_t": float(self.star_t),
+            "speed_t": float(self.speed_t),
         }
         path = self._save_path(slot)
         try:
@@ -1563,6 +3015,7 @@ class Game:
         except Exception as exc:
             self.toast(f"存档失败：{exc}", 3.5)
             return
+        self.flush_wallet_earned()
         self.toast(f"已存档 {path.name}（菜单 LOAD SAVE 读取）", 3.0)
 
     def load_game(self, slot: int = 1, path: Path | None = None) -> bool:
@@ -1592,6 +3045,15 @@ class Game:
         self.level_idx = int(data.get("level_idx", 0))
         self.treasures = int(data.get("treasures", 0))
         self.total_treasures = int(data.get("total_treasures", 0))
+        self.hp = max(1, min(RPG_MAX_HP, int(data.get("hp", RPG_MAX_HP))))
+        self.max_hp = max(1, min(RPG_MAX_HP, int(data.get("max_hp", RPG_MAX_HP))))
+        self.coins = max(0, int(data.get("coins", 0)))
+        self.star_t = max(0.0, float(data.get("star_t", 0)))
+        self.speed_t = max(0.0, float(data.get("speed_t", 0)))
+        raw_pickups = data.get("pickups")
+        self.pickups = list(raw_pickups) if isinstance(raw_pickups, list) else []
+        self.bag_open = False
+        self.chest_event = None
         self.layer = str(data.get("layer", "surface"))
         kind = str(data.get("player_kind") or self.player_kind or "knight")
         if kind in PLAYER_KINDS:
@@ -1619,6 +3081,9 @@ class Game:
         )
         if (stx, sty) != (int(self.knight.x) // TILE, int(self.knight.y) // TILE):
             self.knight.place_on_tile(stx, sty)
+        # 旧存档无拾取物：补刷一波
+        if not self.pickups:
+            self.spawn_level_pickups()
         self.state = "play"
         self.dialog = None
         self.picker_mode = ""
@@ -1775,12 +3240,7 @@ class Game:
         tx, ty, cell = targets[0]
         grid = self.current_grid()
         if cell == TREASURE:
-            loot_name, loot_desc = random.choice(TREASURE_LOOT)
-            grid[ty][tx] = TREASURE_OPEN
-            self.treasures += 1
-            self._play_reward_sfx()
-            # 说明类互动用 toast，不对白文本框打断操作
-            self.toast(f"宝箱：找到了{loot_name}！{loot_desc}（本关 {self.treasures}）", 3.2)
+            self.begin_chest_event(tx, ty)
             return
         if cell == TREASURE_OPEN:
             self.toast("空宝箱：已经被翻过了")
@@ -1842,8 +3302,10 @@ class Game:
                     rect.inflate(-14, -14), 2,
                 )
             elif tid == BRUSH_PRINCESS:
-                thumb = self.assets.princess
+                thumb = _key_outer_bg_surface(self.assets.princess)
                 max_s = min(rect.w - 4, rect.h - 4)
+                preview = rect.inflate(-6, -6)
+                _draw_checkerboard(self.screen, preview, cell=4)
                 if thumb.get_width() > max_s or thumb.get_height() > max_s:
                     scale = max_s / max(thumb.get_width(), thumb.get_height())
                     thumb = pygame.transform.scale(
@@ -1853,16 +3315,29 @@ class Game:
                     thumb,
                     (rect.centerx - thumb.get_width() // 2, rect.centery - thumb.get_height() // 2),
                 )
+            elif tid == BRUSH_PAINT:
+                pygame.draw.rect(self.screen, (48, 36, 64), rect.inflate(-6, -6))
+                pen = self.font_sm.render("画", True, (255, 180, 220))
+                self.screen.blit(pen, (rect.centerx - pen.get_width() // 2, rect.centery - pen.get_height() // 2))
             else:
                 img = self.assets.tiles.get(tid)
                 if img:
-                    thumb = img
+                    # 地物 / 自创画：素材栏预览再抠一层外圈绿幕，棋盘格显示透明底
+                    thumb = _key_outer_bg_surface(img) if tid in PROP_OVERLAY else img
                     max_s = min(rect.w - 4, rect.h - 4)
                     if thumb.get_width() > max_s or thumb.get_height() > max_s:
                         scale = max_s / max(thumb.get_width(), thumb.get_height())
                         thumb = pygame.transform.scale(
                             thumb, (max(1, int(thumb.get_width() * scale)), max(1, int(thumb.get_height() * scale)))
                         )
+                    if tid in PROP_OVERLAY:
+                        preview = pygame.Rect(
+                            rect.centerx - max_s // 2,
+                            rect.centery - max_s // 2,
+                            max_s,
+                            max_s,
+                        )
+                        _draw_checkerboard(self.screen, preview, cell=4)
                     self.screen.blit(
                         thumb,
                         (rect.centerx - thumb.get_width() // 2, rect.centery - thumb.get_height() // 2),
@@ -1967,6 +3442,61 @@ class Game:
         except pygame.error:
             pass
 
+    @staticmethod
+    def _make_coin_sfx() -> pygame.mixer.Sound | None:
+        """获得金币短音效：叮叮。优先读素材，否则合成。"""
+        if not pygame.mixer.get_init():
+            return None
+        for name in ("sfx_coin.wav", "sfx_money.wav", "sfx_coin.ogg"):
+            path = ASSETS / name
+            if path.exists():
+                try:
+                    return pygame.mixer.Sound(str(path))
+                except pygame.error:
+                    pass
+        path = ASSETS / "sfx_coin.wav"
+        try:
+            import math
+            import struct
+            import wave
+
+            ASSETS.mkdir(exist_ok=True)
+            fr = 22050
+            notes = (987.77, 1318.5)  # B5 E6
+            frames = bytearray()
+            for ni, freq in enumerate(notes):
+                dur = 0.07 if ni == 0 else 0.10
+                n = int(fr * dur)
+                for i in range(n):
+                    t = i / fr
+                    env = math.sin(math.pi * min(1.0, t / dur)) ** 0.5
+                    env *= math.exp(-t * 8.0)
+                    sample = env * (
+                        0.6 * math.sin(2 * math.pi * freq * t)
+                        + 0.2 * math.sin(2 * math.pi * freq * 2 * t)
+                    )
+                    val = int(max(-1.0, min(1.0, sample)) * 20000)
+                    frames += struct.pack("<h", val)
+            with wave.open(str(path), "w") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(fr)
+                wf.writeframes(frames)
+            return pygame.mixer.Sound(str(path))
+        except Exception:
+            return None
+
+    def _play_coin_sfx(self) -> None:
+        if getattr(self, "coin_sfx", None) is None:
+            self.coin_sfx = self._make_coin_sfx()
+        if self.coin_sfx is None:
+            return
+        try:
+            self.coin_sfx.set_volume(0.7)
+            self.coin_sfx.play()
+        except pygame.error:
+            pass
+
     def current_grid(self) -> list[list[int]]:
         assert self.map_data
         return layer_grid(self.map_data, self.layer)
@@ -1981,6 +3511,9 @@ class Game:
     def _select_editor_brush(self, tid: int) -> None:
         """底栏/快捷键选笔刷；虚拟笔刷进入起点/公主拖放模式。"""
         self.editor_delete_pending = False
+        if tid == BRUSH_PAINT:
+            self.open_pixel_painter()
+            return
         if tid == BRUSH_START:
             self.brush = BRUSH_START
             self.edit_mode = "start"
@@ -1993,13 +3526,642 @@ class Game:
             return
         self.brush = tid
         self.edit_mode = "tile"
+        self.paint_delete_pending = False
         name = next((n for t, n in PALETTE if t == tid), "?")
         if tid == EMPTY:
-            self.toast("清除：擦地块；点公主格可去掉公主")
+            self.toast("清除：擦地物留背景；再擦可清空整格")
+        elif tid == USER_PAINT:
+            self.toast("自创画 · 左键放置 · Delete删除素材 · F2/画素材重画")
+        elif tid in BACKGROUND_TILES:
+            self.toast(f"背景：{name} · 铺满一格")
         elif tid in LAYER_PORTALS:
-            self.toast(f"笔刷：{name} · 画一格联通双层，并新增地下层页面")
+            self.toast(f"地物：{name} · 叠在背景上 · 联通双层")
+        elif tid in PROP_OVERLAY:
+            self.toast(f"地物：{name} · 叠在背景上（已抠透明）")
         else:
             self.toast(f"笔刷：{name}")
+
+    def open_pixel_painter(self) -> None:
+        """地图编辑器内像素画板 → 可多张命名保存，并设为当前「自创画」笔刷。"""
+        self.paint_return_state = self.state if self.state in ("editor", "play") else "editor"
+        self.paint_cells = [0] * (PIXEL_PAINT_SIZE * PIXEL_PAINT_SIZE)
+        self.paint_brush = 1
+        self.paint_colors = list(PIXEL_PAINT_COLORS)
+        self.paint_drag = False
+        self.paint_naming = False
+        self.paint_name = ""
+        self.paint_edit_id = None
+        self.paint_gallery = _load_paint_gallery()
+        self.paint_gallery_idx = max(0, len(self.paint_gallery) - 1)
+        # 尝试加载草稿
+        draft = _rpg_user_root() / "user_paint_draft.json"
+        if draft.is_file():
+            try:
+                raw = json.loads(draft.read_text(encoding="utf-8"))
+                if isinstance(raw, dict) and isinstance(raw.get("cells"), list):
+                    cells = raw["cells"]
+                    pal = raw.get("palette")
+                    if isinstance(pal, list) and pal:
+                        self._set_paint_colors_from_hex(pal)
+                    self.paint_cells = [
+                        max(0, min(len(self.paint_colors) - 1, int(v or 0)))
+                        for v in cells[: len(self.paint_cells)]
+                    ]
+                    while len(self.paint_cells) < PIXEL_PAINT_SIZE * PIXEL_PAINT_SIZE:
+                        self.paint_cells.append(0)
+                elif isinstance(raw, list) and len(raw) >= len(self.paint_cells):
+                    self.paint_cells = [
+                        max(0, min(len(self.paint_colors) - 1, int(v or 0)))
+                        for v in raw[: len(self.paint_cells)]
+                    ]
+            except Exception:
+                pass
+        self.state = "pixel_paint"
+        self.toast("画素材：Enter命名保存 · P/+取色 · [ ]图库 · Esc返回")
+
+    def _set_paint_colors_from_hex(self, pal: list) -> None:
+        """用十六进制色板重建 paint_colors（保留 0=橡皮）。"""
+        colors: list[tuple[int, int, int] | None] = [None]
+        for c in pal or ():
+            if c in (None, "", "null"):
+                continue
+            if isinstance(c, str) and c.startswith("#") and len(c) >= 7:
+                try:
+                    colors.append((int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)))
+                except Exception:
+                    continue
+            elif isinstance(c, (list, tuple)) and len(c) >= 3:
+                try:
+                    colors.append((int(c[0]), int(c[1]), int(c[2])))
+                except Exception:
+                    continue
+        if len(colors) < 2:
+            colors = list(PIXEL_PAINT_COLORS)
+        self.paint_colors = colors[:24]
+        if self.paint_brush >= len(self.paint_colors):
+            self.paint_brush = 1
+
+    def _paint_palette_hex(self) -> list[str | None]:
+        out: list[str | None] = []
+        for col in self.paint_colors:
+            if not col:
+                out.append(None)
+            else:
+                out.append("#%02x%02x%02x" % col)
+        return out
+
+    def _pick_custom_paint_color(self, *, replace_idx: int | None = None) -> None:
+        """系统取色：追加色槽，或替换指定槽。"""
+        try:
+            import tkinter as tk
+            from tkinter import colorchooser
+        except Exception:
+            self.toast("当前环境无法打开取色器")
+            return
+        root = None
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            try:
+                root.attributes("-topmost", True)
+            except Exception:
+                pass
+            initial = None
+            if replace_idx is not None and 0 < replace_idx < len(self.paint_colors):
+                col = self.paint_colors[replace_idx]
+                if col:
+                    initial = "#%02x%02x%02x" % col
+            kwargs: dict = {"title": "自选画笔颜色" if replace_idx is None else "替换此色"}
+            if initial:
+                kwargs["color"] = initial
+            picked = colorchooser.askcolor(**kwargs)
+        except Exception:
+            picked = None
+        finally:
+            if root is not None:
+                try:
+                    root.destroy()
+                except Exception:
+                    pass
+        if not picked or not picked[1]:
+            return
+        hex_c = str(picked[1]).strip()
+        try:
+            rgb = (int(hex_c[1:3], 16), int(hex_c[3:5], 16), int(hex_c[5:7], 16))
+        except Exception:
+            self.toast("颜色无效")
+            return
+        if replace_idx is not None and 0 < replace_idx < len(self.paint_colors):
+            self.paint_colors[replace_idx] = rgb
+            self.paint_brush = replace_idx
+            self.toast("已替换该色")
+            return
+        if len(self.paint_colors) < 24:
+            self.paint_colors.append(rgb)
+            self.paint_brush = len(self.paint_colors) - 1
+        else:
+            self.paint_colors[-1] = rgb
+            self.paint_brush = len(self.paint_colors) - 1
+        self.toast("已加入自选色 · 可继续画")
+
+    def _load_gallery_into_canvas(self, entry: dict) -> bool:
+        cells = entry.get("cells")
+        if not isinstance(cells, list) or not cells:
+            # 尝试从 PNG 无法反推色板下标，仅提示
+            self.toast("该作品无画板数据，请在桌宠里再编辑")
+            return False
+        pal = entry.get("palette")
+        if isinstance(pal, list) and pal:
+            self._set_paint_colors_from_hex(pal)
+        else:
+            self.paint_colors = list(PIXEL_PAINT_COLORS)
+        n = PIXEL_PAINT_SIZE * PIXEL_PAINT_SIZE
+        self.paint_cells = [0] * n
+        for i in range(min(n, len(cells))):
+            self.paint_cells[i] = max(0, min(len(self.paint_colors) - 1, int(cells[i] or 0)))
+        self.paint_edit_id = str(entry.get("id") or "") or None
+        self.paint_name = str(entry.get("name") or "")
+        self.toast(f"已载入：「{self.paint_name}」")
+        return True
+
+    def _apply_gallery_as_brush(self, entry: dict) -> None:
+        """把图库作品设为当前自创画笔刷。"""
+        materials_dir, _ = _materials_dir_and_index()
+        fname = str(entry.get("file") or "")
+        src = materials_dir / fname
+        if not src.is_file() and isinstance(entry.get("cells"), list):
+            # 用 cells 重导出
+            self.paint_cells = [
+                max(0, min(len(self.paint_colors) - 1, int(v or 0)))
+                for v in entry["cells"][: PIXEL_PAINT_SIZE * PIXEL_PAINT_SIZE]
+            ]
+            while len(self.paint_cells) < PIXEL_PAINT_SIZE * PIXEL_PAINT_SIZE:
+                self.paint_cells.append(0)
+            self._save_pixel_paint_asset(named=False, force_name=str(entry.get("name") or "自创画"))
+            return
+        if not src.is_file():
+            self.toast("找不到该作品文件")
+            return
+        from PIL import Image
+
+        try:
+            img = Image.open(src).convert("RGBA")
+            home_img = img.resize((28, 28), Image.Resampling.NEAREST)
+            rpg_img = img.resize((TILE, TILE), Image.Resampling.NEAREST)
+            for path in self._user_paint_file_candidates():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                out = home_img if "home_props" in path.as_posix() else rpg_img
+                out.save(path)
+            meta = _rpg_user_root() / "user_paint_meta.json"
+            meta.write_text(
+                json.dumps({"custom": True, "id": entry.get("id"), "name": entry.get("name")}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            self._reload_user_paint_tile()
+            self.brush = USER_PAINT
+            self.toast(f"笔刷已设为「{entry.get('name')}」")
+        except Exception:
+            self.toast("设为笔刷失败")
+
+    def _user_paint_file_candidates(self) -> list[Path]:
+        targets = [
+            _rpg_user_root() / "assets" / "user_paint.png",
+            ASSETS / "user_paint.png",
+        ]
+        try:
+            import os
+
+            local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+            if local:
+                targets.append(Path(local) / "Vpet" / "userdata" / "home_props" / "user_paint.png")
+                targets.append(Path(local) / "Vpet" / "userdata" / "rpg_assets" / "user_paint.png")
+                targets.append(Path(local) / "Vpet" / "rpg" / "assets" / "user_paint.png")
+        except Exception:
+            pass
+        # 去重并保持顺序
+        out: list[Path] = []
+        for p in targets:
+            if p not in out:
+                out.append(p)
+        return out
+
+    def _user_paint_is_custom(self) -> bool:
+        """是否已有可删的自创画（草稿有笔触或保存标记）。"""
+        meta = _rpg_user_root() / "user_paint_meta.json"
+        if meta.is_file():
+            try:
+                data = json.loads(meta.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data.get("custom"):
+                    return True
+            except Exception:
+                pass
+        draft = _rpg_user_root() / "user_paint_draft.json"
+        if draft.is_file():
+            try:
+                raw = json.loads(draft.read_text(encoding="utf-8"))
+                if isinstance(raw, list) and any(int(v or 0) > 0 for v in raw):
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _reload_user_paint_tile(self) -> None:
+        try:
+            ensure_user_art_placeholder("user_paint.png")
+            surf = load_img("user_paint.png", key_bg=True)
+            scaled = pygame.transform.scale(surf, (TILE, TILE))
+            self.assets.tiles[USER_PAINT] = _key_outer_bg_surface(scaled)
+        except Exception:
+            pass
+
+    def _strip_user_paint_from_map(self) -> int:
+        """当前地图上的自创画格改回背景；返回清除格数。"""
+        if not self.map_data:
+            return 0
+        ensure_ground_layers(self.map_data)
+        cleared = 0
+        for layer in ("surface", "underground"):
+            grid = self.map_data.get(layer)
+            if not isinstance(grid, list):
+                continue
+            ground = layer_ground(self.map_data, layer)
+            default = default_ground_for_layer(layer)
+            for y, row in enumerate(grid):
+                for x, t in enumerate(row):
+                    if int(t) != USER_PAINT:
+                        continue
+                    base = int(ground[y][x]) if int(ground[y][x]) in BACKGROUND_TILES else default
+                    row[x] = base
+                    ground[y][x] = base
+                    cleared += 1
+        return cleared
+
+    def _delete_user_paint_asset(self, *, confirmed: bool = False) -> None:
+        """删除已保存的自创画素材（文件 + 草稿），并刷新贴图。"""
+        if not self._user_paint_is_custom():
+            self.paint_delete_pending = False
+            self.toast("当前没有可删除的自创画")
+            return
+        if not confirmed:
+            self.paint_delete_pending = True
+            self.toast("再按 Delete / X 确认删除「自创画」素材", 2.8)
+            return
+        self.paint_delete_pending = False
+        for path in self._user_paint_file_candidates():
+            try:
+                if path.is_file():
+                    path.unlink()
+            except Exception:
+                pass
+        for extra in (
+            _rpg_user_root() / "user_paint_draft.json",
+            _rpg_user_root() / "user_paint_meta.json",
+        ):
+            try:
+                if extra.is_file():
+                    extra.unlink()
+            except Exception:
+                pass
+        ensure_user_art_placeholder("user_paint.png")
+        try:
+            from PIL import Image
+
+            src = ASSETS / "user_paint.png"
+            if src.is_file():
+                im = Image.open(src).convert("RGBA")
+                home = im.resize((28, 28), Image.Resampling.NEAREST)
+                rpg = im.resize((TILE, TILE), Image.Resampling.NEAREST)
+                for path in self._user_paint_file_candidates():
+                    try:
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        out = home if "home_props" in path.as_posix() else rpg
+                        out.save(path)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        self._reload_user_paint_tile()
+        self.paint_cells = [0] * (PIXEL_PAINT_SIZE * PIXEL_PAINT_SIZE)
+        cleared = self._strip_user_paint_from_map()
+        if self.brush == USER_PAINT:
+            self.brush = GRASS
+            self.edit_mode = "tile"
+        msg = "已删除「自创画」素材"
+        if cleared:
+            msg += f"（地图上清除 {cleared} 格）"
+        self.toast(msg, 3.0)
+
+    def _paint_cell_index(self, pos: tuple[int, int]) -> int | None:
+        """画板格索引；颜色条点击返回负索引 -1-color；+取色返回 -1000。"""
+        cell = 22
+        grid_w = PIXEL_PAINT_SIZE * cell
+        ox = (SCREEN_W - grid_w) // 2
+        oy = 70
+        mx, my = pos
+        # 色板（与绘制一致）
+        n_swatch = len(self.paint_colors) + 1  # 末尾 +取色
+        pal_y = oy + grid_w + 16
+        px0 = (SCREEN_W - n_swatch * 28) // 2
+        if pal_y <= my <= pal_y + 26:
+            idx = (mx - px0) // 28
+            if idx == len(self.paint_colors):
+                return -1000  # 取色
+            if 0 <= idx < len(self.paint_colors):
+                return -1 - idx
+        if ox <= mx < ox + grid_w and oy <= my < oy + grid_w:
+            gx = (mx - ox) // cell
+            gy = (my - oy) // cell
+            if 0 <= gx < PIXEL_PAINT_SIZE and 0 <= gy < PIXEL_PAINT_SIZE:
+                return gy * PIXEL_PAINT_SIZE + gx
+        return None
+
+    def _save_pixel_paint_asset(self, *, named: bool = True, force_name: str | None = None) -> bool:
+        if not any(int(v or 0) > 0 for v in self.paint_cells):
+            self.toast("先画几笔再保存")
+            return False
+        from PIL import Image, ImageDraw
+
+        # 命名流程
+        if named and force_name is None:
+            if not self.paint_naming:
+                self.paint_naming = True
+                self.paint_name = str(self.paint_name or self.paint_edit_id or "")[:16]
+                if not self.paint_name:
+                    self.paint_name = f"自创{len(self.paint_gallery) + 1}"
+                self.toast("输入名字后按 Enter 确认（Backspace 改字）")
+                return False
+            label = (self.paint_name or "").strip()[:16] or f"自创{len(self.paint_gallery) + 1}"
+            self.paint_naming = False
+        else:
+            label = (force_name or self.paint_name or "自创画").strip()[:16]
+
+        scale = 4
+        side = PIXEL_PAINT_SIZE * scale
+        im = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        for y in range(PIXEL_PAINT_SIZE):
+            for x in range(PIXEL_PAINT_SIZE):
+                idx = int(self.paint_cells[y * PIXEL_PAINT_SIZE + x] or 0)
+                if idx <= 0 or idx >= len(self.paint_colors):
+                    continue
+                col = self.paint_colors[idx]
+                if not col:
+                    continue
+                x0, y0 = x * scale, y * scale
+                d.rectangle([x0, y0, x0 + scale - 1, y0 + scale - 1], fill=(*col, 255))
+        if not any(im.getdata()):
+            self.toast("画布是空的")
+            return False
+        home_img = im.resize((28, 28), Image.Resampling.NEAREST)
+        rpg_img = im.resize((TILE, TILE), Image.Resampling.NEAREST)
+        for path in self._user_paint_file_candidates():
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                out = home_img if "home_props" in path.as_posix() else rpg_img
+                out.save(path)
+            except Exception:
+                pass
+        # 写入共享图库（可多张）
+        try:
+            materials_dir, index_path = _materials_dir_and_index()
+            materials_dir.mkdir(parents=True, exist_ok=True)
+            mid = self.paint_edit_id or f"m{time.strftime('%Y%m%d%H%M%S')}"
+            fname = f"{mid}.png"
+            home_img.save(materials_dir / fname)
+            items = _load_paint_gallery()
+            pal = self._paint_palette_hex()
+            entry = {
+                "id": mid,
+                "name": label,
+                "file": fname,
+                "source": "rpg",
+                "cells": list(self.paint_cells),
+                "palette": pal,
+            }
+            replaced = False
+            for i, old in enumerate(items):
+                if str(old.get("id")) == mid:
+                    items[i] = entry
+                    replaced = True
+                    break
+            if not replaced:
+                items.append(entry)
+            index_path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+            self.paint_gallery = items
+            self.paint_gallery_idx = len(items) - 1
+            self.paint_edit_id = mid
+            self.paint_name = label
+        except Exception:
+            pass
+        try:
+            draft = _rpg_user_root() / "user_paint_draft.json"
+            draft.write_text(
+                json.dumps({"cells": list(self.paint_cells), "palette": self._paint_palette_hex()}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+        try:
+            meta = _rpg_user_root() / "user_paint_meta.json"
+            meta.write_text(
+                json.dumps({"custom": True, "id": self.paint_edit_id, "name": label}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+        self._reload_user_paint_tile()
+        self.paint_delete_pending = False
+        self.brush = USER_PAINT
+        # 额外导出一份带时间戳的 PNG
+        try:
+            export_dir = _rpg_user_root().parent / "userdata" / "exports"
+            if not export_dir.parent.is_dir():
+                export_dir = _rpg_user_root() / "exports"
+            export_dir.mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            out = export_dir / f"rpg_{label}_{stamp}.png"
+            rpg_img.save(out)
+        except Exception:
+            pass
+        self.toast(f"已保存「{label}」· 可继续画新图或 [ ] 切换图库")
+        return True
+
+    def run_pixel_paint(self, events: list) -> None:
+        for e in events:
+            if e.type == pygame.KEYDOWN:
+                if self.paint_naming:
+                    if e.key == pygame.K_ESCAPE:
+                        self.paint_naming = False
+                        self.toast("已取消命名")
+                        continue
+                    if e.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        self._save_pixel_paint_asset(named=True)
+                        continue
+                    if e.key == pygame.K_BACKSPACE:
+                        self.paint_name = (self.paint_name or "")[:-1]
+                        continue
+                    ch = e.unicode or ""
+                    if ch and ch.isprintable() and len(self.paint_name or "") < 16:
+                        self.paint_name = (self.paint_name or "") + ch
+                    continue
+                if e.key == pygame.K_ESCAPE:
+                    self.paint_delete_pending = False
+                    self.paint_naming = False
+                    self.state = self.paint_return_state or "editor"
+                    self.toast("已返回编辑器")
+                    return
+                if e.key in (pygame.K_RETURN, pygame.K_s):
+                    self._save_pixel_paint_asset(named=True)
+                    continue
+                if e.key == pygame.K_LEFTBRACKET:
+                    self.paint_gallery = _load_paint_gallery()
+                    if self.paint_gallery:
+                        self.paint_gallery_idx = (self.paint_gallery_idx - 1) % len(self.paint_gallery)
+                        g = self.paint_gallery[self.paint_gallery_idx]
+                        self.toast(f"图库 {self.paint_gallery_idx + 1}/{len(self.paint_gallery)}：{g.get('name')}")
+                    else:
+                        self.toast("图库还是空的")
+                    continue
+                if e.key == pygame.K_RIGHTBRACKET:
+                    self.paint_gallery = _load_paint_gallery()
+                    if self.paint_gallery:
+                        self.paint_gallery_idx = (self.paint_gallery_idx + 1) % len(self.paint_gallery)
+                        g = self.paint_gallery[self.paint_gallery_idx]
+                        self.toast(f"图库 {self.paint_gallery_idx + 1}/{len(self.paint_gallery)}：{g.get('name')}")
+                    else:
+                        self.toast("图库还是空的")
+                    continue
+                if e.key == pygame.K_l:
+                    self.paint_gallery = _load_paint_gallery()
+                    if self.paint_gallery:
+                        self.paint_gallery_idx = max(0, min(self.paint_gallery_idx, len(self.paint_gallery) - 1))
+                        self._load_gallery_into_canvas(self.paint_gallery[self.paint_gallery_idx])
+                    else:
+                        self.toast("图库还是空的")
+                    continue
+                if e.key == pygame.K_a:
+                    self.paint_gallery = _load_paint_gallery()
+                    if self.paint_gallery:
+                        self.paint_gallery_idx = max(0, min(self.paint_gallery_idx, len(self.paint_gallery) - 1))
+                        self._apply_gallery_as_brush(self.paint_gallery[self.paint_gallery_idx])
+                    else:
+                        self.toast("图库还是空的")
+                    continue
+                if e.key == pygame.K_n:
+                    # 新建空白，再画可另存
+                    self.paint_cells = [0] * (PIXEL_PAINT_SIZE * PIXEL_PAINT_SIZE)
+                    self.paint_edit_id = None
+                    self.paint_name = ""
+                    self.toast("新建空白画布")
+                    continue
+                if e.key in (pygame.K_DELETE, pygame.K_x):
+                    self._delete_user_paint_asset(confirmed=bool(self.paint_delete_pending))
+                    continue
+                if e.key == pygame.K_c:
+                    self.paint_delete_pending = False
+                    self.paint_cells = [0] * (PIXEL_PAINT_SIZE * PIXEL_PAINT_SIZE)
+                    self.paint_edit_id = None
+                    self.toast("已清空画板")
+                if e.key == pygame.K_p:
+                    self._pick_custom_paint_color()
+                    continue
+                if pygame.K_0 <= e.key <= pygame.K_9:
+                    idx = e.key - pygame.K_0
+                    if idx < len(self.paint_colors):
+                        self.paint_brush = idx
+            if e.type == pygame.MOUSEBUTTONDOWN and not self.paint_naming:
+                self.paint_delete_pending = False
+                pos = self._content_mouse(e.pos)
+                hit = self._paint_cell_index(pos)
+                if hit is None:
+                    continue
+                if hit == -1000:
+                    # 左键追加 / 右键替换当前笔刷色
+                    if e.button == 3 and self.paint_brush > 0:
+                        self._pick_custom_paint_color(replace_idx=int(self.paint_brush))
+                    else:
+                        self._pick_custom_paint_color()
+                    continue
+                if hit < 0:
+                    idx = -1 - hit
+                    if e.button == 3 and idx > 0:
+                        self._pick_custom_paint_color(replace_idx=idx)
+                    else:
+                        self.paint_brush = idx
+                    continue
+                if e.button == 1:
+                    self.paint_drag = True
+                    self.paint_cells[hit] = int(self.paint_brush)
+                elif e.button == 3:
+                    self.paint_drag = True
+                    self.paint_cells[hit] = 0
+            if e.type == pygame.MOUSEBUTTONUP:
+                self.paint_drag = False
+            if e.type == pygame.MOUSEMOTION and self.paint_drag and not self.paint_naming:
+                pos = self._content_mouse(e.pos)
+                hit = self._paint_cell_index(pos)
+                if hit is not None and hit >= 0:
+                    buttons = pygame.mouse.get_pressed(3)
+                    self.paint_cells[hit] = 0 if buttons[2] else int(self.paint_brush)
+
+        self.screen.fill((18, 22, 34))
+        title = self.font.render("画素材 · 可多张命名", True, (255, 200, 220))
+        self.screen.blit(title, (16, 12))
+        if self.paint_naming:
+            hint = self.font_sm.render(
+                f"命名中：{self.paint_name or '_'}  · Enter确认 · Esc取消",
+                True,
+                (255, 220, 140),
+            )
+        else:
+            hint = self.font_sm.render(
+                "Enter命名 · P/+取色 · 右键色块替换 · [ ]图库 · L载入 · A设笔刷 · N新建 · Esc",
+                True,
+                (170, 180, 200),
+            )
+        self.screen.blit(hint, (16, 36))
+        if self.paint_gallery:
+            g = self.paint_gallery[max(0, min(self.paint_gallery_idx, len(self.paint_gallery) - 1))]
+            ghint = self.font_sm.render(
+                f"图库 {self.paint_gallery_idx + 1}/{len(self.paint_gallery)}：{g.get('name')}",
+                True,
+                (140, 200, 180),
+            )
+            self.screen.blit(ghint, (16, 52))
+
+        cell = 22
+        grid_w = PIXEL_PAINT_SIZE * cell
+        ox = (SCREEN_W - grid_w) // 2
+        oy = 70
+        pygame.draw.rect(self.screen, (10, 14, 22), (ox - 4, oy - 4, grid_w + 8, grid_w + 8))
+        for y in range(PIXEL_PAINT_SIZE):
+            for x in range(PIXEL_PAINT_SIZE):
+                idx = int(self.paint_cells[y * PIXEL_PAINT_SIZE + x] or 0)
+                col = self.paint_colors[idx] if 0 <= idx < len(self.paint_colors) else None
+                rect = pygame.Rect(ox + x * cell, oy + y * cell, cell - 1, cell - 1)
+                pygame.draw.rect(self.screen, col or (26, 32, 48), rect)
+
+        pal_y = oy + grid_w + 16
+        n_swatch = len(self.paint_colors) + 1
+        px0 = (SCREEN_W - n_swatch * 28) // 2
+        for i, col in enumerate(self.paint_colors):
+            r = pygame.Rect(px0 + i * 28, pal_y, 24, 24)
+            pygame.draw.rect(self.screen, col or (26, 32, 48), r)
+            if i == int(self.paint_brush):
+                pygame.draw.rect(self.screen, (255, 230, 120), r, 2)
+            else:
+                pygame.draw.rect(self.screen, (90, 100, 120), r, 1)
+        plus = pygame.Rect(px0 + len(self.paint_colors) * 28, pal_y, 24, 24)
+        pygame.draw.rect(self.screen, (70, 100, 130), plus)
+        pygame.draw.rect(self.screen, (200, 220, 240), plus, 1)
+        plus_txt = self.font_sm.render("+", True, (255, 255, 255))
+        self.screen.blit(plus_txt, (plus.x + 7, plus.y + 3))
+        bar = "画素材 · 点 + 或按 P 自选颜色（右键色块可替换）"
+        if self.paint_naming:
+            bar = f"命名：{self.paint_name or ''}|"
+        elif self.paint_delete_pending:
+            bar = "再按 Delete / X 确认删除当前自创画笔刷！"
+        self.draw_ui_bar(bar)
 
     def _make_player(self, tile_xy: tuple[int, int]) -> Knight:
         kind = self.player_kind if self.player_kind in PLAYER_KINDS else "knight"
@@ -2034,14 +4196,23 @@ class Game:
         self.layer = "surface"
         self.knight = self._make_player(resolve_start(data))
         self.treasures = 0
+        self.hp = self.max_hp = RPG_MAX_HP
+        self.chest_event = None
+        self.hazard_cd = 0.0
+        self._last_hazard_tile = None
+        self.map_trap_cd = 0.0
+        self._last_map_trap_tile = None
+        self.revealed_traps = set()
         self.stairs_cd = 0.0
+        self._reset_mario_state(keep_coins=bool(self.campaign and idx > 0))
+        self.spawn_level_pickups()
         self.state = "play"
         if self.campaign:
             note_rpg_best_level(idx)
         mw, mh = map_size(data)
         self.camera.follow(self.knight.x, self.knight.y, mw, mh)
         tip = "寻找公主！" if data["princess"] else "找到地下金色关卡门进入下一关"
-        self.toast(f"{data['name']} — {tip}")
+        self.toast(f"{data['name']} — {tip}（I背包吃食物 · 捡金币/蘑菇/星）")
 
     def start_play(self, data: dict, campaign: bool = False) -> None:
         """加载地图后先选操控角色（knight/aoba/ren），再开局。"""
@@ -2050,6 +4221,7 @@ class Game:
             data = self._migrate_old_map(data)
         data = normalize_map_tiles(data)
         self.pending_play = {"data": data, "campaign": bool(campaign)}
+        self.campaign = bool(campaign)  # 选角页起就区分 DIY / 战役（耐久显示）
         try:
             self.kind_select_idx = PLAYER_KINDS.index(self.player_kind)
         except ValueError:
@@ -2069,7 +4241,16 @@ class Game:
         spawn = resolve_start(data)
         self.knight = self._make_player(spawn)
         self.treasures = 0
+        self.hp = self.max_hp = RPG_MAX_HP
+        self.chest_event = None
+        self.hazard_cd = 0.0
+        self._last_hazard_tile = None
+        self.map_trap_cd = 0.0
+        self._last_map_trap_tile = None
+        self.revealed_traps = set()
         self.stairs_cd = 0.0
+        self._reset_mario_state(keep_coins=False)
+        self.spawn_level_pickups()
         self.state = "play"
         # DIY / 自建地图试玩：不放冒险 BGM
         if campaign:
@@ -2078,7 +4259,9 @@ class Game:
             self.stop_bgm()
         mw, mh = map_size(data)
         self.camera.follow(self.knight.x, self.knight.y, mw, mh)
-        tip = " · WASD移动 · C切换 knight/aoba/ren · 踩楼梯/洞窟切层"
+        tip = " · WASD移动 · C切换角色 · 踩楼梯/洞窟切层"
+        if campaign:
+            tip = " · I背包补耐久" + tip
         if data.get("princess"):
             tip = " · 找到公主通关" + tip
         else:
@@ -2150,6 +4333,8 @@ class Game:
             label = PLAYER_KIND_LABELS.get(kind, kind)
             txt = self.font.render(label, True, (255, 240, 200) if selected else (210, 215, 230))
             self.screen.blit(txt, (rect.centerx - txt.get_width() // 2, rect.bottom - 36))
+        tip = self.font_sm.render(FUTURE_COMPANION_TIP, True, (155, 170, 200))
+        self.screen.blit(tip, (SCREEN_W // 2 - tip.get_width() // 2, VIEW_H - 28))
         self.draw_ui_bar("加载完成 · knight / aoba(Vpet) / ren(Allmate)")
 
     def _migrate_old_map(self, data: dict) -> dict:
@@ -2208,17 +4393,22 @@ class Game:
         mode = "有公主通关" if data.get("princess") else "自由探索"
         self.toast(
             f"{hint} · {mode} · 镜头→{focus} | 蓝框=起点 · 公主可拖放/右键去掉 | "
-            f"Tab切层 · Ctrl+S 保存"
+            f"Tab切层 · Ctrl+S 保存 · Shift+S/导出 另存文件"
         )
 
     def draw_visible_map(self, surf: pygame.Surface, grid: list[list[int]], mw: int, mh: int, show_goal: bool) -> None:
         assert self.map_data
+        ensure_ground_layers(self.map_data)
+        # 编辑器看 edit_layer；游玩看 self.layer —— 传入的 grid 已对应正确层
+        view_layer = self.edit_layer if self.state == "editor" else self.layer
+        ground = layer_ground(self.map_data, view_layer)
+
         tx0 = max(0, int(self.camera.x) // TILE)
         ty0 = max(0, int(self.camera.y) // TILE)
         tx1 = min(mw, tx0 + VIEW_TILES_X + 2)
         ty1 = min(mh, ty0 + VIEW_TILES_Y + 2)
 
-        default_base = BRICK if self.layer == "underground" else GRASS
+        default_base = BRICK if view_layer == "underground" else GRASS
         for y in range(ty0, ty1):
             for x in range(tx0, tx1):
                 t = grid[y][x]
@@ -2227,20 +4417,31 @@ class Game:
                     # 未绘制格：暗底空白画布
                     pygame.draw.rect(surf, (16, 18, 26), (sx, sy, TILE, TILE))
                     continue
-                if t in PROP_OVERLAY:
-                    base = default_base
-                elif t == STAIRS:
-                    base = default_base
-                else:
+
+                # 背景铺满；地物叠在对应 ground 上
+                if t in BACKGROUND_TILES:
                     base = t
+                elif t in PROP_OVERLAY:
+                    g = int(ground[y][x]) if y < len(ground) and x < len(ground[y]) else default_base
+                    base = g if g in BACKGROUND_TILES else default_base
+                else:
+                    base = t if t in self.assets.tiles else default_base
+
                 img = self.assets.tiles.get(base) or self.assets.tiles[GRASS]
                 surf.blit(img, (sx, sy))
 
                 if t == STAIRS:
-                    stair_img = self.assets.stairs_up if self.layer == "underground" else self.assets.tiles[STAIRS]
+                    stair_img = (
+                        self.assets.stairs_up if view_layer == "underground" else self.assets.tiles[STAIRS]
+                    )
                     surf.blit(stair_img, (sx, sy))
-                elif t in PROP_OVERLAY and t in self.assets.tiles:
+                elif t in PROP_OVERLAY and t != STAIRS and t in self.assets.tiles:
                     prop = self.assets.tiles[t]
+                    # 游玩中：陷阱默认极淡，踩中后才显示完整贴图（编辑器始终完整）
+                    if t in TRAP_TILES and self.state != "editor":
+                        trap_key = (view_layer, int(x), int(y))
+                        if trap_key not in getattr(self, "revealed_traps", set()):
+                            prop = getattr(self.assets, "trap_hidden", {}).get(t, prop)
                     if t in (HOUSE, GATE):
                         # 高大物体：以格底为脚点，向上伸出多格
                         ox = sx + (TILE - prop.get_width()) // 2
@@ -2282,13 +4483,53 @@ class Game:
         bar = pygame.Rect(0, VIEW_H, SCREEN_W, UI_H)
         pygame.draw.rect(self.screen, (28, 32, 48), bar)
         pygame.draw.line(self.screen, (90, 100, 130), (0, VIEW_H), (SCREEN_W, VIEW_H), 2)
-        self.screen.blit(self.font_sm.render(text, True, (230, 230, 240)), (12, VIEW_H + 6))
+        durable = self.uses_durability()
+        row_y = VIEW_H + 6
+        x = 12
+        if durable:
+            # 马里奥式血条（仅战役）
+            hp_w, hp_h = 140, 12
+            ratio = 0.0 if self.max_hp <= 0 else max(0.0, min(1.0, self.hp / self.max_hp))
+            pygame.draw.rect(self.screen, (40, 44, 58), (x, row_y, hp_w, hp_h))
+            fill_c = (68, 220, 120) if ratio > 0.45 else ((240, 180, 60) if ratio > 0.2 else (230, 70, 70))
+            pygame.draw.rect(self.screen, fill_c, (x, row_y, int(hp_w * ratio), hp_h))
+            pygame.draw.rect(self.screen, (200, 200, 210), (x, row_y, hp_w, hp_h), 1)
+            hp_lbl = self.font_sm.render(f"耐久 {self.hp}/{self.max_hp}", True, (230, 230, 240))
+            self.screen.blit(hp_lbl, (x + hp_w + 8, row_y - 1))
+            x = x + hp_w + 100
+            food_n = self.food_bag_count()
+            food_lbl = self.font_sm.render(f"食物 {food_n}", True, (255, 200, 120))
+            self.screen.blit(food_lbl, (x, row_y - 1))
+            x += 80
+            coin_lbl = self.font_sm.render(f"金币 {self.coins}", True, (255, 220, 80))
+            self.screen.blit(coin_lbl, (x, row_y - 1))
+        elif self.state == "play":
+            # DIY 试玩：不显示耐久
+            coin_lbl = self.font_sm.render(f"金币 {self.coins}", True, (255, 220, 80))
+            self.screen.blit(coin_lbl, (12, row_y - 1))
+            mode_lbl = self.font_sm.render("DIY · 无耐久", True, (160, 175, 200))
+            self.screen.blit(mode_lbl, (12 + coin_lbl.get_width() + 16, row_y - 1))
+        self.screen.blit(self.font_sm.render(text, True, (200, 205, 220)), (12, VIEW_H + 24))
         if self.message_t > 0 and self.message:
-            # 第二行醒目提示（F5 存档等）；UI_H 已留足高度避免裁切
-            self.screen.blit(
-                self.font_sm.render(self.message, True, (255, 220, 100)),
-                (12, VIEW_H + 30),
-            )
+            # 判定结果用更大字号 + 更醒目颜色（成功偏绿 / 失败偏红 / 其它金黄）
+            msg = self.message
+            if msg.startswith("判定成功"):
+                col = (120, 255, 170)
+                fnt = self.font
+            elif msg.startswith("判定失败"):
+                col = (255, 150, 140)
+                fnt = self.font
+            else:
+                col = (255, 220, 100)
+                fnt = self.font_sm
+            tip = fnt.render(msg, True, col)
+            # 过长则截断尾部，避免挤出屏幕
+            max_w = SCREEN_W - 24
+            if tip.get_width() > max_w:
+                while msg and fnt.size(msg + "…")[0] > max_w:
+                    msg = msg[:-1]
+                tip = fnt.render(msg + "…", True, col)
+            self.screen.blit(tip, (12, VIEW_H + 44))
 
     def draw_textbox(self, surf: pygame.Surface, rect: pygame.Rect) -> None:
         """用 text.png 拉伸为对白框（保留底部三角箭头）。"""
@@ -2322,6 +4563,7 @@ class Game:
         self.enter_menu(play_intro=True)
 
     def enter_menu(self, play_intro: bool = True) -> None:
+        self.flush_wallet_earned()
         self.state = "menu"
         self.stop_bgm()
         if play_intro:
@@ -2530,11 +4772,17 @@ class Game:
             py = int(SCREEN_H // 2 - big.get_height() // 2 - 28 + bob)
             self.screen.blit(big, (px, py))
 
-        # 文本框随公主一起淡出
+        # 文本框随公主一起淡出：更窄更高，夹在公主与底部操作说明之间
         if princess_a > 0:
-            box_m = 36
-            box_h = 88
-            box = pygame.Rect(box_m, SCREEN_H - box_h - 16, SCREEN_W - box_m * 2, box_h)
+            box_w = min(420, SCREEN_W - 140)
+            box_h = 118
+            hint_reserve = 34
+            box_x = (SCREEN_W - box_w) // 2
+            box_y = SCREEN_H - hint_reserve - box_h - 12
+            # 避免盖住公主（中部偏上）：下限压在公主脚下方附近
+            princess_clear_y = SCREEN_H // 2 + 56
+            box_y = max(princess_clear_y, min(box_y, SCREEN_H - hint_reserve - box_h - 8))
+            box = pygame.Rect(box_x, box_y, box_w, box_h)
             box_surf = pygame.transform.scale(self.assets.text_frame, (box.w, box.h)).copy()
             if princess_a < 255:
                 box_surf.set_alpha(princess_a)
@@ -2550,13 +4798,17 @@ class Game:
             if princess_a < 255:
                 text_surf = text_surf.copy()
                 text_surf.set_alpha(princess_a)
-            self.screen.blit(text_surf, (box.x + 18, box.y + 20))
+            text_x = box.x + (box.w - text_surf.get_width()) // 2
+            text_y = box.y + max(18, (box.h - text_surf.get_height()) // 2 - 4)
+            self.screen.blit(text_surf, (text_x, text_y))
 
             hint = self.font_sm.render("ENTER/SPACE/点击 继续     ESC/S 跳过开场", True, (200, 200, 200))
             if princess_a < 255:
                 hint = hint.copy()
                 hint.set_alpha(princess_a)
-            self.screen.blit(hint, (box.x + 18, box.bottom - 28))
+            hint_x = (SCREEN_W - hint.get_width()) // 2
+            hint_y = SCREEN_H - hint_reserve + 4
+            self.screen.blit(hint, (hint_x, hint_y))
         else:
             skip = self.font_sm.render("ESC / S — Skip", True, (160, 170, 190))
             self.screen.blit(skip, (SCREEN_W // 2 - skip.get_width() // 2, SCREEN_H - 36))
@@ -2749,8 +5001,19 @@ class Game:
         mw, mh = map_size(self.map_data)
         grid = self.current_grid()
 
+        if self.hazard_cd > 0:
+            self.hazard_cd = max(0.0, self.hazard_cd - dt)
+        if self.map_trap_cd > 0:
+            self.map_trap_cd = max(0.0, self.map_trap_cd - dt)
+
         for e in events:
             if e.type == pygame.KEYDOWN:
+                if self.chest_event:
+                    self.handle_chest_event_key(e.key)
+                    continue
+                if self.bag_open:
+                    self.handle_bag_key(e.key)
+                    continue
                 if self.dialog:
                     if e.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_e, pygame.K_ESCAPE):
                         self.close_dialog()
@@ -2758,6 +5021,9 @@ class Game:
                 if e.key == pygame.K_ESCAPE:
                     self.enter_menu(play_intro=False)
                     return
+                if e.key in (pygame.K_i, pygame.K_b):
+                    self.toggle_bag()
+                    continue
                 if e.key == pygame.K_c:
                     self.cycle_player_kind()
                 if e.key == pygame.K_r and self.campaign:
@@ -2772,6 +5038,57 @@ class Game:
                     self.load_game(1)
                 elif e.key == pygame.K_e:
                     self.try_interact()
+
+        if self.chest_event:
+            self.update_chest_event(dt)
+            world = pygame.Surface((VIEW_W, VIEW_H))
+            if self.layer == "underground":
+                world.fill((18, 16, 28))
+            else:
+                world.fill((30, 50, 40))
+            self.draw_visible_map(world, self.current_grid(), mw, mh, show_goal=True)
+            self.knight.draw(world, self.camera)
+            if self.layer == "underground":
+                shade = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
+                shade.fill((0, 0, 30, 50))
+                world.blit(shade, (0, 0))
+            self.screen.blit(world, (0, 0))
+            self.draw_chest_event_overlay()
+            phase = str((self.chest_event or {}).get("phase") or "")
+            mode = str((self.chest_event or {}).get("mode") or "")
+            if phase == "result":
+                bar = "判定结果 · Enter / Space 继续"
+            elif mode == "dice":
+                bar = "掷骰判定 · SPACE掷骰 · Esc取消"
+            elif mode == "rps":
+                bar = "猜拳判定 · 1石 2剪 3布 · Esc取消"
+            else:
+                bar = "宝箱判定中 · Esc取消"
+            self.draw_ui_bar(bar)
+            return
+
+        if self.bag_open:
+            world = pygame.Surface((VIEW_W, VIEW_H))
+            if self.layer == "underground":
+                world.fill((18, 16, 28))
+            else:
+                world.fill((30, 50, 40))
+            self.draw_visible_map(world, self.current_grid(), mw, mh, show_goal=True)
+            self.draw_pickups(world)
+            flash = self.star_t > 0 and int(self.pickup_bob * 10) % 2 == 0
+            self.knight.draw(world, self.camera, flash=flash)
+            if self.layer == "underground":
+                shade = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
+                shade.fill((0, 0, 30, 50))
+                world.blit(shade, (0, 0))
+            self.screen.blit(world, (0, 0))
+            self.draw_bag_overlay()
+            self.draw_ui_bar(
+                "背包 · ↑↓选择 · Enter吃食物回血 · I关闭"
+                if self.uses_durability()
+                else "背包 · DIY无耐久 · I关闭"
+            )
+            return
 
         if self.dialog:
             # 对话中暂停移动
@@ -2798,8 +5115,9 @@ class Game:
 
         keys = pygame.key.get_pressed()
         # 黑屏前半略过移动，避免刚切换又踩门口
+        speed_mult = RPG_SPEED_MULT if self.speed_t > 0 else 1.0
         if self.layer_flash < 0.55:
-            self.knight.update(dt, keys, grid, mw, mh)
+            self.knight.update(dt, keys, grid, mw, mh, speed_mult=speed_mult)
         self.camera.follow(self.knight.x, self.knight.y, mw, mh)
 
         tx, ty = self.knight.tile_pos()
@@ -2811,6 +5129,11 @@ class Game:
                 self.portal_stand_lock = None
         else:
             self.portal_stand_lock = None
+
+        # 换格随机机关（马里奥式突发）+ 地图放置陷阱
+        self.maybe_trigger_hazard()
+        self.maybe_trigger_map_trap()
+        self.update_pickups(dt)
 
         # 附近互动提示
         self.nearby_hint = ""
@@ -2829,7 +5152,9 @@ class Game:
         else:
             world.fill((30, 50, 40))
         self.draw_visible_map(world, self.current_grid(), mw, mh, show_goal=True)
-        self.knight.draw(world, self.camera)
+        self.draw_pickups(world)
+        flash = self.star_t > 0 and int(self.pickup_bob * 10) % 2 == 0
+        self.knight.draw(world, self.camera, flash=flash)
         if self.layer == "underground":
             shade = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
             shade.fill((0, 0, 30, 50))
@@ -2846,7 +5171,14 @@ class Game:
         layer_cn = "地下" if self.layer == "underground" else "地面"
         name = self.map_data.get("name", "")
         kind_cn = PLAYER_KIND_LABELS.get(self.player_kind, self.player_kind)
-        tip = self.nearby_hint or "E互动 F5/Ctrl+S存档 C角色"
+        buff = ""
+        if self.star_t > 0:
+            buff += f" 星{self.star_t:.0f}s"
+        if self.speed_t > 0:
+            buff += f" 速{self.speed_t:.0f}s"
+        tip = self.nearby_hint or (
+            "E互动 I背包 F5存档 C角色" if self.uses_durability() else "E互动 F5存档 C角色"
+        )
         best = ""
         if self.campaign:
             progress = load_rpg_progress()
@@ -2854,7 +5186,7 @@ class Game:
             if bidx >= 0:
                 best = f" | 历史最高第{bidx + 1}关"
         self.draw_ui_bar(
-            f"{name} | {kind_cn} | {layer_cn} | 宝箱 {self.treasures}{best} | {tip} | Esc"
+            f"{name} | {kind_cn} | {layer_cn} | 宝箱{self.treasures} 币{self.coins}{buff}{best} | {tip} | Esc"
             + (" | R重开" if self.campaign else "")
         )
 
@@ -2968,9 +5300,15 @@ class Game:
                 elif e.key == pygame.K_o and ctrl:
                     self.editor_delete_pending = False
                     self.open_map_picker(for_editor=True)
+                elif e.key in (pygame.K_DELETE, pygame.K_x) and self.brush == USER_PAINT:
+                    # 选中「自创画」时：Delete/X 删除素材（需确认两次）
+                    self._delete_user_paint_asset(confirmed=bool(self.paint_delete_pending))
                 elif e.key in (pygame.K_DELETE, pygame.K_d) and (ctrl or e.key == pygame.K_DELETE):
-                    # Delete 或 Ctrl+D：删除当前已保存文件
+                    # Delete 或 Ctrl+D：删除当前已保存地图文件
+                    self.paint_delete_pending = False
                     self._editor_delete_current()
+                elif e.key == pygame.K_F2:
+                    self.open_pixel_painter()
                 elif e.key == pygame.K_s and not ctrl:
                     self._select_editor_brush(BRUSH_START)
                 elif e.key == pygame.K_g:
@@ -3038,6 +5376,11 @@ class Game:
                     self.paint_drag = self.edit_mode in ("tile", "start", "goal")
                     self._paint_at(pos, erase=(self.brush == EMPTY and self.edit_mode == "tile"))
                 elif e.button == 3:
+                    hit = self._hit_editor_palette(pos)
+                    if hit == USER_PAINT:
+                        # 素材栏右键「自创画」：删除素材
+                        self._delete_user_paint_asset(confirmed=bool(self.paint_delete_pending))
+                        continue
                     if pos[1] >= VIEW_H - PALETTE_H:
                         continue
                     # 右键：擦地块；公主模式下去掉公主
@@ -3167,8 +5510,9 @@ class Game:
             self.toast("已去掉公主 · 自由探索（无通关）")
 
     def _erase_tile(self, tx: int, ty: int) -> None:
-        """清除已放上去的地块；楼梯/洞窟会同步双层并更新列表。"""
+        """清除已放上去的地块；楼梯/洞窟会同步双层并更新列表。地物清除后露出背景。"""
         assert self.map_data
+        ensure_ground_layers(self.map_data)
         goal = self.map_data.get("goal")
         if (
             self.map_data.get("princess")
@@ -3180,13 +5524,24 @@ class Game:
         ):
             self._clear_princess()
         grid = self.current_grid()
+        ground = layer_ground(self.map_data, self.edit_layer)
         cell = grid[ty][tx]
-        grid[ty][tx] = EMPTY
+        base = int(ground[ty][tx]) if ground[ty][tx] in BACKGROUND_TILES else EMPTY
+        if cell in PROP_OVERLAY and base in BACKGROUND_TILES:
+            # 只擦地物，留下背景
+            grid[ty][tx] = base
+        else:
+            grid[ty][tx] = EMPTY
+            ground[ty][tx] = EMPTY
         if cell in LAYER_PORTALS:
             other = "underground" if self.edit_layer == "surface" else "surface"
             other_grid = layer_grid(self.map_data, other)
+            other_ground = layer_ground(self.map_data, other)
             if other_grid[ty][tx] in LAYER_PORTALS:
-                other_grid[ty][tx] = EMPTY
+                ob = int(other_ground[ty][tx]) if other_ground[ty][tx] in BACKGROUND_TILES else EMPTY
+                other_grid[ty][tx] = ob if ob in BACKGROUND_TILES else EMPTY
+                if ob not in BACKGROUND_TILES:
+                    other_ground[ty][tx] = EMPTY
             if cell == STAIRS:
                 stairs = self.map_data.setdefault("stairs", [])
                 self.map_data["stairs"] = [p for p in stairs if p != [tx, ty]]
@@ -3220,6 +5575,7 @@ class Game:
             if grid and 0 <= sty < len(grid) and 0 <= stx < len(grid[0]):
                 if grid[sty][stx] in SOLID:
                     grid[sty][stx] = GRASS
+                    layer_ground(self.map_data, "surface")[sty][stx] = GRASS
             self.map_data["start"] = [stx, sty]
             self.edit_layer = "surface"
             self.layer = "surface"
@@ -3245,7 +5601,9 @@ class Game:
             self.map_data["princess"] = True
             grid = self.current_grid()
             if grid[ty][tx] in SOLID:
-                grid[ty][tx] = BRICK if self.edit_layer == "underground" else GRASS
+                fill = BRICK if self.edit_layer == "underground" else GRASS
+                grid[ty][tx] = fill
+                layer_ground(self.map_data, self.edit_layer)[ty][tx] = fill
             if self.brush != BRUSH_PRINCESS:
                 self.edit_mode = "tile"
             if prev != [tx, ty] or prev_layer != self.edit_layer:
@@ -3258,8 +5616,28 @@ class Game:
             return
         if self.brush in (BRUSH_START, BRUSH_PRINCESS):
             return
+        ensure_ground_layers(self.map_data)
         grid = self.current_grid()
-        grid[ty][tx] = self.brush
+        ground = layer_ground(self.map_data, self.edit_layer)
+        default = default_ground_for_layer(self.edit_layer)
+        brush = int(self.brush)
+        if brush in BACKGROUND_TILES:
+            # 背景：铺满该格（地物被盖掉）
+            grid[ty][tx] = brush
+            ground[ty][tx] = brush
+        elif brush in PROP_OVERLAY:
+            # 地物：叠在已有背景上；若当前是空/地物则保留或补默认背景
+            if ground[ty][tx] not in BACKGROUND_TILES:
+                if grid[ty][tx] in BACKGROUND_TILES:
+                    ground[ty][tx] = int(grid[ty][tx])
+                else:
+                    ground[ty][tx] = default
+            grid[ty][tx] = brush
+        else:
+            grid[ty][tx] = brush
+            if brush != EMPTY:
+                ground[ty][tx] = default if ground[ty][tx] not in BACKGROUND_TILES else ground[ty][tx]
+
         if self.brush in LAYER_PORTALS:
             # 放置前是否已有其它楼梯/洞窟（用于首次解锁地下层页）
             had_before = False
@@ -3280,7 +5658,11 @@ class Game:
                     break
             # 双层同步楼梯 / 洞窟（可与另一类门户并存于不同格）
             other = "underground" if self.edit_layer == "surface" else "surface"
-            layer_grid(self.map_data, other)[ty][tx] = self.brush
+            other_grid = layer_grid(self.map_data, other)
+            other_ground = layer_ground(self.map_data, other)
+            other_grid[ty][tx] = self.brush
+            if other_ground[ty][tx] not in BACKGROUND_TILES:
+                other_ground[ty][tx] = default_ground_for_layer(other)
             stairs = self.map_data.setdefault("stairs", [])
             caves = self.map_data.setdefault("caves", [])
             pos = [tx, ty]
@@ -3313,15 +5695,36 @@ class Game:
         self.custom_maps = self._list_maps()
 
     def _save_map(self, *, export_copy: bool = False) -> None:
-        """保存：覆盖当前文件（无则新建）；导出：始终另存新文件。"""
+        """保存：覆盖当前文件（无则新建）；导出：始终另存新文件，并复制到 userdata/exports。"""
         assert self.map_data
         if export_copy or self.edit_map_path is None or not self.edit_map_path.exists():
             path = self._next_diy_path()
             self._write_map_file(path)
-            self.toast(("已导出 → " if export_copy else "已保存 → ") + path.name)
+            # 导出时再拷一份到 userdata/exports 方便带走
+            if export_copy:
+                try:
+                    export_dir = _rpg_user_root().parent / "userdata" / "exports"
+                    if not export_dir.parent.is_dir():
+                        export_dir = _rpg_user_root() / "exports"
+                    export_dir.mkdir(parents=True, exist_ok=True)
+                    dest = export_dir / path.name
+                    shutil.copy2(path, dest)
+                    self.toast(f"已导出 JSON → {dest}", 4.5)
+                    try:
+                        if sys.platform == "win32":
+                            import os
+
+                            os.startfile(str(export_dir))  # noqa: S606
+                    except Exception:
+                        pass
+                    return
+                except Exception as exc:
+                    self.toast(f"已保存 {path.name}，导出副本失败：{exc}", 4.0)
+                    return
+            self.toast(("已导出 → " if export_copy else "已保存 → ") + str(path), 3.5)
             return
         self._write_map_file(self.edit_map_path)
-        self.toast(f"已保存 → {self.edit_map_path.name}")
+        self.toast(f"已保存 → {self.edit_map_path}", 3.2)
 
     def _delete_map_file(self, path: Path) -> bool:
         try:
@@ -3417,6 +5820,7 @@ class Game:
             events = pygame.event.get()
             for e in events:
                 if e.type == pygame.QUIT:
+                    self.flush_wallet_earned()
                     self.stop_bgm()
                     pygame.quit()
                     sys.exit(0)
@@ -3443,6 +5847,8 @@ class Game:
                 self.run_win(events)
             elif self.state == "editor":
                 self.run_editor(events, dt)
+            elif self.state == "pixel_paint":
+                self.run_pixel_paint(events)
 
             # 内容区外加边框，包住整块画面
             self.draw_window_frame()

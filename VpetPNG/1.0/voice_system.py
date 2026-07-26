@@ -19,6 +19,8 @@ VOICE_CHANNEL_ID = 1
 VOICE_PRIORITY_AMBIENT = 1
 VOICE_PRIORITY_SCENE = 2
 VOICE_GLOBAL_COOLDOWN_MS = 10_000
+VOICE_COOLDOWN_MIN_MS = 3_000
+VOICE_COOLDOWN_MAX_MS = 60_000
 VOICE_HI_CATEGORY = "你好"
 
 # 去掉文件名开头的序号/字母前缀，如「1 文本」「a 文本」「11.文本」
@@ -365,11 +367,15 @@ class VoicePlayer:
         self._done_cb: Callable[[], None] | None = None
         self._session_priority = 0
         self._last_session_end_ms = 0
+        self.global_cooldown_ms = VOICE_GLOBAL_COOLDOWN_MS
         self._last_pick_path: dict[tuple[str, str], Path] = {}
         self._last_call_body_path: Path | None = None
         self._last_call_seq: list = []
         self._play_gen = 0
         self.reload_catalog_async()
+
+    def set_global_cooldown_ms(self, ms: int) -> None:
+        self.global_cooldown_ms = max(VOICE_COOLDOWN_MIN_MS, min(VOICE_COOLDOWN_MAX_MS, int(ms)))
 
     def reload_catalog_async(self, *, on_done: Callable[[], None] | None = None) -> None:
         if on_done:
@@ -410,7 +416,7 @@ class VoicePlayer:
     def _global_cooldown_ready(self) -> bool:
         if self._last_session_end_ms <= 0:
             return True
-        return int(time.time() * 1000) - self._last_session_end_ms >= VOICE_GLOBAL_COOLDOWN_MS
+        return int(time.time() * 1000) - self._last_session_end_ms >= int(self.global_cooldown_ms)
 
     def _mark_session_end(self) -> None:
         self._last_session_end_ms = int(time.time() * 1000)

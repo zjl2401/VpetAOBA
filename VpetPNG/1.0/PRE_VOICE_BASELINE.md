@@ -157,8 +157,8 @@
 | S03 | 工作模式 | 搬箱；拖拽松手继续工作 | work 相关 |
 | S04 | 睡眠互动 30s | 深度睡眠后自动醒 | `_play_sleep_interact` |
 | S05 | 日程提醒 | schedules 到点 toast | `_reminder_tick` |
-| S06 | AI 对话 | 千问 + fallback | `_toggle_ai_chat` |
-| S07 | 留声机 | 音乐/音效播放与列表 | `_open_phonograph` |
+| S06 | AI 对话 | 入口保留；目前 stub「尚未开发完全」 | `_open_ai_chat_stub` |
+| S07 | 留声机 | 系统→我的→回忆→留声；音乐/音效播放与列表 | `_open_phonograph` |
 | S08 | 全局热键 | Ctrl+Shift+* 见 FEATURES.md | `_register_hotkey` |
 
 ---
@@ -279,7 +279,7 @@
 - [x] **H-MATE-TURN** 智能伴侣跟随朝向防抖：`MINI_PET_TURN_HOLD_MS` + 轴向迟滞，避免斜向/贴身狂切面
 - [x] **H-WORK-FLAG-BOX** 工作：旗/箱 **Tk magenta 色键抠外围**（禁止露玫红/深蓝底）；先设色键再分层；点透只拨 `WS_EX_TRANSPARENT`
 - [x] **H-GAME-FALL-VIS** 采集：Pillow 食物放大（~size/5）；特殊物裁边；`_force_chroma_key_rgb` 去粉边；色键同旗箱
-- [x] **H-WIN32-MAGENTA-KEY** 色键建窗设一次即可；**禁止**每帧 clear→重设 `-transparentcolor`（会闪玫红）；采集热路径只 `lift`
+- [x] **H-WIN32-MAGENTA-KEY** 色键建窗设一次即可；**禁止**每帧 clear→重设 `-transparentcolor`（会闪玫红）；采集热路径只 `lift`；工作：拖宠/到站不重建旗面、起点箱 withdraw 复用、桌面钟增量重绘
 - [x] **H-RPG-DIY-FILE** RPG DIY 底栏：保存 / 导出 / 删除 / 打开；`Ctrl+S` 覆盖保存，导出另存；删文件二次确认
 - [x] **H-RPG-DIY-ERASE** DIY 可删除已放素材：底栏「清除」+ 左键擦、任意笔刷右键擦；楼梯/洞窟双层同步清
 - [x] **H-RPG-TREE1** RPG 树木：两张 `tree` **横向并排**拼成一图，整体宽高**严格占一格**草地（逻辑仍一格）
@@ -308,16 +308,31 @@
 - [x] **H-OWNER-ONCE** 去掉桌宠编号（正式包 `PET_ID_FEATURE=False`）；改为**所属人昵称**：启动后强制弹窗填写，**不可跳过**；仅可填一次、不可更改；重置也**不得**改动所属人
 - [x] **H-OWNER-FRONT** 所属人取名窗必须置顶可见：禁止 `transient` 到无边框主窗；强制 `-topmost`；不参与底部层级下压；`_keep_owner_name_win_front` 防启动刷新盖住
 - [x] **H-OWNER-THEN-GUIDE** 启动顺序：**先所属人 → 填完后再弹首次操作说明**；取名确认后**强制**弹一次（忽略旧包已写的 `seen_hints.operation_guide`）；另用 `post_owner_guide` 保证「已取名但未走过取名后说明」的老存档补弹一次；之后启动不再弹
-- [x] **H-BDAY-SET** 我的→生日祝福→**设定日期**：月/日 + 祝福语；到日触发文本框「生日快乐，+祝福语」（同日最多一次）
-- [x] **H-BDAY-GIFT** 我的→生日祝福→**赠送礼物**：输入礼物文本；每年 **4/22**（桌宠生日）触发俏皮感谢（含所属人昵称、第几个生日、礼物名；同日最多一次）
+- [x] **H-BDAY-SET** 互动→工具→生日祝福→**设定日期**：月/日 + 祝福语；到日触发文本框「生日快乐，+祝福语」（同日最多一次）
+- [x] **H-BDAY-GIFT** 互动→工具→生日祝福→**赠送礼物**：输入礼物文本；每年 **4/22**（桌宠生日）触发俏皮感谢（含所属人昵称、第几个生日、礼物名；同日最多一次）
 - [x] **H-RESET-OWNER** 恢复初始：清空设置/存档/生日礼物等，**仅保留所属人**（及登记时间）
 - [x] **H-NO-LEADERBOARD** 模式→游戏菜单**去掉「持有者排名」**（无编号公开包不再入口）
+- [x] **H-MEMORIES-UNDER-MY** 回忆（画廊/留声）在 **系统→我的→回忆**，不在系统根菜单
+- [x] **H-DAILY-LOGIN-COIN** 每天首次打开桌宠登录礼 **+1 金币**（`wallet.last_daily_coin_ymd`，同日仅一次）
+- [x] **H-OWNER-STATS** 我的→所属人：显示**相伴天数**、**相伴时长**（各模式合计）；可点「查看详细」展开一起听歌/工作/跟随/漫步/自由/睡眠/游戏；须有 `owner_set_at` 登记时间；时长靠 `achievements.stats.mode_seconds` 累计
+- [x] **H-OWNER-LAUNCH-GREET** 启动问候：首次认主欢迎词；约超 3 天未开则「好想你」类台词（走生日问候链路 `_maybe_owner_launch_greeting`）
+- [x] **H-COMMUNITY-MENU** 系统→社区：**关于 / 问题反馈 / 投稿创意 / 操作说明**；「投稿与创意」改名「投稿创意」；操作说明不在系统根菜单（F1 仍可开）
+- [x] **H-TOOL-CLOCK-CTRL** 互动→工具打开的秒表：**开始/暂停/结束**；计时器：**开始/暂停**；默认暂停待点开始；睡眠/音乐/工作自动时钟**不加**按钮
+- [x] **H-CLOCK-WALKER-GREEN** 秒表/计时器绕圈小人抠掉与边缘连通的**绿色外圈**（`desktop_clock._remove_outer_green`）
+- [x] **H-AI-INVITE-STUB** 互动→对话→AI 对话、面板→邀请：toast「尚未开发完全」（不进完整功能）
+- [x] **H-FARM-TOOLS-V2** 家园经营：1锄2种3浇4收5砍6钓7采；草地锄两下成田；成熟度100/时+5；浇水每天≤2、浇后1h×2；砍树掷骰；水面钓鱼；采花可插室内花瓶；锄地无「锄」字特效
+- [x] **H-HOME-UI-SPLIT** 家园面板：窗口加大、格 32px；左栏操作 / 右栏房间
+- [x] **H-RPG-DIY-EXPORT** RPG DIY：编辑器保存/导出、Ctrl+S / Shift+S；副本 `%LOCALAPPDATA%\Vpet\userdata\exports\`
+- [x] **H-RPG-DIY-PICKUPS** DIY 笔刷：金币 / 加速蘑菇 / 无敌星；开局收成 pickups（有放置则不随机刷）
+- [x] **H-RPG-TRAP-FAINT** RPG 陷阱：游玩默认极淡，踩中后显示完整；编辑器始终完整
+- [x] **H-RPG-PALETTE-GREEN** DIY 底部素材栏：地物/公主/自创画抠外圈绿幕→透明（`flood_key` 清成 0,0,0,0；缩放后再抠；预览用棋盘格显透明底）
+- [x] **H-CREATOR-UPLOAD** 投稿创意：分模块勾选 +「仅打包新增」；首次弹投稿包说明；本机打包/导出后自行上传反馈通道（大文件可发网盘链接）；操作说明有「导出与投稿」专题；像素画「取色」自选颜色
 
-### I. 核对结果摘要（代码核验 · 2026-07-24）
+### I. 核对结果摘要（代码核验 · 2026-07-25）
 
 | 结论 | 编号 |
 |------|------|
-| ✅ 已实现 | **A～E**；**F** 含 G08/M01/F07/E05；**G** 文档；**H** 全段（含 **H-OWNER-*** / **H-BDAY-*** / **H-RESET-OWNER** / **H-NO-LEADERBOARD**）；**公开包 `DEMO_ALWAYS_SHOW_GUIDES=False`、`PET_ID_FEATURE=False`** |
+| ✅ 已实现 | **A～E**；**F** 含 G08/M01/F07/E05；**G** 文档；**H** 全段（含 **H-OWNER-*** / **H-BDAY-*** / **H-DAILY-LOGIN-COIN** / **H-COMMUNITY-MENU** / **H-TOOL-CLOCK-CTRL** / **H-FARM-TOOLS-V2** / **H-RPG-DIY-*** 等）；**公开包 `DEMO_ALWAYS_SHOW_GUIDES=False`、`PET_ID_FEATURE=False`** |
 | ❌ / ⚠️ 未达标 | （无） |
 
 ---
@@ -335,4 +350,4 @@
 | `bundled/Vpetgame/game.py` | Silent Oath RPG |
 | `panel_decor.py` | 面板主题色（含不透明内色） |
 
-**最后更新**：2026-07-24（所属人强制取名；生日祝福设定日/4.22礼物；重置保留所属人；去掉持有者排名；取名→再弹操作说明）
+**最后更新**：2026-07-25（所属人相伴天数/时长修复；社区菜单；工具秒表控件；经营/RPG DIY；登录礼；H 段必做补全）

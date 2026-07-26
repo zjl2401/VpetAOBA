@@ -71,7 +71,7 @@ if (Test-Path $TypeCacheSrc) {
     "pet_profile.json", "diary.json", "schedules.json", "food_inventory.json",
     "leaderboard.json", "vocab_notebook.json", "pet_id_registry.json",
     "ai_config.json", "app_config.json", "music_config.json",
-    "weather_cache.json", "achievements.json"
+    "weather_cache.json", "achievements.json", "home_layout.json"
 ) | ForEach-Object {
     $p = Join-Path $DataDst $_
     if (Test-Path $p) { Remove-Item -Force $p -ErrorAction SilentlyContinue }
@@ -83,6 +83,21 @@ Get-ChildItem $AudioDst -File -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
 
 Set-Content -Path (Join-Path $OutDir "BUILD_STAMP.txt") -Value ("build=" + $Stamp) -Encoding UTF8
+
+Write-Host "== copy docs ==" -ForegroundColor Cyan
+$docNames = @("README.md", "INSTALL.txt", "FEATURES.md", "安装说明.txt", "启动说明.txt")
+foreach ($doc in $docNames) {
+    $src = Join-Path $Root $doc
+    if (Test-Path -LiteralPath $src) {
+        Copy-Item -LiteralPath $src -Destination (Join-Path $OutDir $doc) -Force
+    }
+}
+# 兜底：按通配拷贝中文安装/启动说明（避免脚本编码导致文件名对不上）
+Get-ChildItem -LiteralPath $Root -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "*说明*.txt" -or $_.Name -eq "INSTALL.txt" } |
+    ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $OutDir $_.Name) -Force
+    }
 
 $batLines = @(
     "@echo off",

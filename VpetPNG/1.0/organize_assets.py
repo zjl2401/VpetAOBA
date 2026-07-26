@@ -26,6 +26,8 @@ DATA_JSON = {
     "app_config.json",
     "pet_profile.json",
     "food_inventory.json",
+    "wallet.json",
+    "home_layout.json",
     "diary.json",
     "schedules.json",
     "music_config.json",
