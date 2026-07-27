@@ -138,7 +138,10 @@ def load_walker_frames(
             raw = load_raw(name).convert("RGBA")
         else:
             raw = Image.open(sprites_dir / name).convert("RGBA")
-        return _remove_outer_green(raw)
+        # 先缩到时钟尺寸再抠绿：整图 flood-fill 会在首次开音乐/工作时钟卡十几秒
+        work = raw.copy()
+        work.thumbnail((max(size * 2, 48), max(size * 2, 48)), Image.Resampling.NEAREST)
+        return _remove_outer_green(work)
 
     def scale(im: Image.Image) -> ImageTk.PhotoImage:
         im = im.copy()
@@ -189,7 +192,9 @@ def load_sleep_frames(
             raw = load_raw(name).convert("RGBA")
         else:
             raw = Image.open(sprites_dir / name).convert("RGBA")
-        return _remove_outer_green(raw)
+        work = raw.copy()
+        work.thumbnail((max(size * 2, 48), max(size * 2, 48)), Image.Resampling.NEAREST)
+        return _remove_outer_green(work)
 
     def scale(im: Image.Image) -> ImageTk.PhotoImage:
         im = im.copy()

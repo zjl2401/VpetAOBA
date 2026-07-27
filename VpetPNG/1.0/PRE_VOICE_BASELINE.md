@@ -298,8 +298,9 @@
 - [x] **H-LOCAL-CACHE** 语音/音乐/打字音/工作道具优先本地+`data/` 缓存；天气联网失败回退 `weather_cache.json`；启动 `_seed_local_runtime_assets` 落盘缺文件
 - [x] **H-DEMO-GUIDES** 录实况可用 `DEMO_ALWAYS_SHOW_GUIDES=True`；**正式/公开包为 `False`**（仅首次弹操作说明）
 - [x] **H-HINT-TOAST** 玩法说明 / RPG 宝箱·小屋·关卡等**说明类**文案用 toast，不对白文本框打断操作；角色台词/系统对话仍可走文本框
+- [x] **H-STARTUP-WARMUP-HINT** 首次进自由：toast 温馨提示「开场后台预热缓存，前一两分钟可能略卡」；开场预热（时钟/工作/采集/语音/多尺寸）错开执行
 - [x] **H-VOICE-FORCE-SCENE** 开语音且有资源时强制播：`hurt`（游戏失败）/`dizzy`（采集晕眩·跟随晕眩）/`call`/`你好`/`eat`/`hungry`（不再 50/50 丢掉）
-- [x] **H-ABOUT-FREE** 操作说明 / 关于标明**免费**；开发者**翛然而往**以更小字贴在面板**下方角落**
+- [x] **H-ABOUT-FREE** 操作说明 / 关于标明**免费**；作者菌**翛然而往**以更小字贴在面板**下方角落**
 - [x] **H-RPG-DIY-NOMUSIC** 加载 DIY / 自建地图试玩（`campaign=False`）**不放**冒险 BGM；仅战役 START 播音乐
 - [x] **H-RPG-PLAYER-KIND** 游玩中 **C** 切换：**knight / aoba(Vpet·`assets/vpet`)** / **ren(Allmate·`assets/allmate`)**；WASD 可控移动
 - [x] **H-RPG-SPAWN-WALK** 出生/起点/读档落点若在湖/墙等不可走格，自动挪到最近可走格；DIY 放起点同规则
@@ -317,7 +318,10 @@
 - [x] **H-OWNER-STATS** 我的→所属人：显示**相伴天数**、**相伴时长**（各模式合计）；可点「查看详细」展开一起听歌/工作/跟随/漫步/自由/睡眠/游戏；须有 `owner_set_at` 登记时间；时长靠 `achievements.stats.mode_seconds` 累计
 - [x] **H-OWNER-LAUNCH-GREET** 启动问候：首次认主欢迎词；约超 3 天未开则「好想你」类台词（走生日问候链路 `_maybe_owner_launch_greeting`）
 - [x] **H-COMMUNITY-MENU** 系统→社区：**关于 / 问题反馈 / 投稿创意 / 操作说明**；「投稿与创意」改名「投稿创意」；操作说明不在系统根菜单（F1 仍可开）
-- [x] **H-TOOL-CLOCK-CTRL** 互动→工具打开的秒表：**开始/暂停/结束**；计时器：**开始/暂停**；默认暂停待点开始；睡眠/音乐/工作自动时钟**不加**按钮
+- [x] **H-TOOL-CLOCK-CTRL** 互动→工具打开的秒表：**开始/暂停/结束**；计时器：**开始/暂停/关闭**；默认暂停待点开始；睡眠/音乐/工作自动时钟**不加**按钮
+- [x] **H-TOOL-POMODORO** 互动→工具→番茄钟：设定工作/休息分钟；工作=定时运送，休息=睡眠+倒计时，循环；轮次 toast（满 4 轮额外提示）；任一阶段可「结束」；再点菜单可取消
+- [x] **H-WORK-REWARD-BOX** 生涯累计每满 25 箱发 `work_reward_box` 进背包；点击开启随机金币/经营物资；toast 带进度与分档（小收获/不错/好运）
+- [x] **H-HOME-UI-HANDY** 家园左栏：区切/模式/经营工具固定；「更多」折叠存档·移动·配色；室内「去经营」；记住上次编辑模式；导出开创作导出中心
 - [x] **H-CLOCK-WALKER-GREEN** 秒表/计时器绕圈小人抠掉与边缘连通的**绿色外圈**（`desktop_clock._remove_outer_green`）
 - [x] **H-AI-INVITE-STUB** 互动→对话→AI 对话、面板→邀请：toast「尚未开发完全」（不进完整功能）
 - [x] **H-FARM-TOOLS-V2** 家园经营：1锄2种3浇4收5砍6钓7采；草地锄两下成田；成熟度100/时+5；浇水每天≤2、浇后1h×2；砍树掷骰；水面钓鱼；采花可插室内花瓶；锄地无「锄」字特效
@@ -326,13 +330,20 @@
 - [x] **H-RPG-DIY-PICKUPS** DIY 笔刷：金币 / 加速蘑菇 / 无敌星；开局收成 pickups（有放置则不随机刷）
 - [x] **H-RPG-TRAP-FAINT** RPG 陷阱：游玩默认极淡，踩中后显示完整；编辑器始终完整
 - [x] **H-RPG-PALETTE-GREEN** DIY 底部素材栏：地物/公主/自创画抠外圈绿幕→透明（`flood_key` 清成 0,0,0,0；缩放后再抠；预览用棋盘格显透明底）
-- [x] **H-CREATOR-UPLOAD** 投稿创意：分模块勾选 +「仅打包新增」；首次弹投稿包说明；本机打包/导出后自行上传反馈通道（大文件可发网盘链接）；操作说明有「导出与投稿」专题；像素画「取色」自选颜色
+- [x] **H-CREATOR-UPLOAD** 投稿创意：分模块勾选 +「仅打包新增」；首次弹投稿包说明；本机打包/导出后自行上传反馈通道（大文件可发网盘链接）；操作说明有「导出与投稿」专题；像素画「取色」自选颜色；**投稿即默认同意无偿公开**；文案称**作者菌**（非「开发者」）
+- [x] **H-WORK-DEST-FOOT** 工作运送：**旗脚 = 实际终点**（`work_end` 存旗脚屏幕坐标）；拖旗则终点跟着变；送达以脚底靠近旗脚判定
+- [x] **H-WORK-FREE-END** 工作·**自由**：持续运送；有「结束」键，贴旗脚旁并随旗/终点移动；点结束回自由；模式/互动入口相同
+- [x] **H-WORK-CUSTOM-AUTO** 工作·**自定义**：箱数或时间二选一；**无**结束键；到量/到点自动回自由；模式/互动入口相同；终点同样跟旗脚
+- [x] **H-WORK-PROPS-SETTING** 仅 **模式→工作→设置** 可开关「显示目的地（旗）」「显示运送货物（箱）」
+- [x] **H-WORK-DRAG-HANDLE** 可拖旗时提供实心「终点（可拖）」拖柄（色键旗窗点不到时仍可拖）；拖柄/旗/结束钮叠在桌宠之上
+- [x] **H-MODE-WAIT-HINT** 切模式 / 进工作须先刷出「请耐心等待…」提示（主线程卡顿前可见）
+- [x] **H-MODE-TOTAL-PERSIST** 模式累计时长（工作/睡眠/音乐等）写入成就 default 并加载合并，禁止更新后从头丢弃；可用 `mode_seconds` 回填
 
-### I. 核对结果摘要（代码核验 · 2026-07-25）
+### I. 核对结果摘要（代码核验 · 2026-07-26）
 
 | 结论 | 编号 |
 |------|------|
-| ✅ 已实现 | **A～E**；**F** 含 G08/M01/F07/E05；**G** 文档；**H** 全段（含 **H-OWNER-*** / **H-BDAY-*** / **H-DAILY-LOGIN-COIN** / **H-COMMUNITY-MENU** / **H-TOOL-CLOCK-CTRL** / **H-FARM-TOOLS-V2** / **H-RPG-DIY-*** 等）；**公开包 `DEMO_ALWAYS_SHOW_GUIDES=False`、`PET_ID_FEATURE=False`** |
+| ✅ 已实现 | **A～E**；**F** 含 G08/M01/F07/E05；**G** 文档；**H** 全段（含 **H-WORK-DEST-FOOT** / **H-WORK-FREE-END** / **H-WORK-CUSTOM-AUTO** / **H-WORK-DRAG-HANDLE** / **H-MODE-WAIT-HINT** / **H-OWNER-*** 等）；**公开包 `DEMO_ALWAYS_SHOW_GUIDES=False`、`PET_ID_FEATURE=False`** |
 | ❌ / ⚠️ 未达标 | （无） |
 
 ---
@@ -350,4 +361,4 @@
 | `bundled/Vpetgame/game.py` | Silent Oath RPG |
 | `panel_decor.py` | 面板主题色（含不透明内色） |
 
-**最后更新**：2026-07-25（所属人相伴天数/时长修复；社区菜单；工具秒表控件；经营/RPG DIY；登录礼；H 段必做补全）
+**最后更新**：2026-07-26（工作旗脚/自由结束键/自定义自动结束；拖柄；切模式等待提示；累计时长持久化；性能节流）
