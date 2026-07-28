@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF0D1520">
+
+    <com.vpet.mobile.RpgView
+        android:id="@+id/rpgView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <ScrollView
+        android:id="@+id/rpgMenu"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="24dp"
+            android:gravity="center_horizontal">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Silent Oath"
+                android:textColor="@color/accent_pink"
+                android:textSize="24sp"
+                android:gravity="center"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="战役：双层·陷阱·宝箱骰/猜拳·选角·BGM\nDIY 编辑器可双层导出"
+                android:textColor="#AAB8C8"
+                android:textSize="12sp"
+                android:gravity="center"
+                android:layout_marginBottom="16dp" />
+
+            <LinearLayout
+                android:id="@+id/rpgLevelList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <Button
+                android:id="@+id/btnRpgDiy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="DIY · diy_001"
+                android:layout_marginTop="8dp" />
+
+            <Button
+                android:id="@+id/btnRpgEditor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="打开 DIY 编辑器"
+                android:layout_marginTop="8dp" />
+
+            <Button
+                android:id="@+id/btnRpgMenuBack"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="返回"
+                android:layout_marginTop="8dp" />
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/rpgPlayHud"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/rpgHud"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#FFFFFFFF"
+            android:textSize="13sp"
+            android:text="HP 100" />
+
+        <Button
+            android:id="@+id/btnRpgBack"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="菜单" />
+    </LinearLayout>
+</FrameLayout>

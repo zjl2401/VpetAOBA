@@ -1,0 +1,14 @@
+# Ignore local SDK path and build outputs
+/.gradle/
+/local.properties
+/.idea/
+*.iml
+/app/build/
+/build/
+/captures/
+/.android-sdk/
+/dist/
+.DS_Store
+*.apk
+*.ap_
+*.dex

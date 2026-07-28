@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.VpetMobile">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.VpetMobile">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".RoomActivity"
+            android:exported="false"
+            android:label="@string/room_title" />
+
+        <activity
+            android:name=".ToolsActivity"
+            android:exported="false"
+            android:label="工具与档案" />
+
+        <activity
+            android:name=".HomeActivity"
+            android:exported="false"
+            android:label="家园" />
+
+        <activity
+            android:name=".RpgActivity"
+            android:exported="false"
+            android:label="RPG" />
+
+        <activity
+            android:name=".RpgDiyEditorActivity"
+            android:exported="false"
+            android:label="DIY 编辑器" />
+
+        <activity
+            android:name=".SystemHubActivity"
+            android:exported="false"
+            android:label="系统" />
+
+        <activity
+            android:name=".PanelActivity"
+            android:exported="false"
+            android:label="状态面板" />
+
+        <activity
+            android:name=".CollectActivity"
+            android:exported="false"
+            android:label="采集"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".RhythmActivity"
+            android:exported="false"
+            android:label="音游"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".RhymeActivity"
+            android:exported="false"
+            android:label="莱姆" />
+
+        <activity
+            android:name=".ExposeActivity"
+            android:exported="false"
+            android:label="暴露" />
+
+        <service
+            android:name=".PetOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="desktop_pet_overlay" />
+        </service>
+    </application>
+</manifest>

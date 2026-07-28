@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vpet 手机试做</string>
+    <string name="room_title">调试·房间模式</string>
+    <string name="overlay_channel">桌宠悬浮</string>
+    <string name="overlay_notify">苍叶悬浮中 · 点桌宠打开菜单</string>
+    <string name="overlay_notify_action_menu">打开菜单</string>
+    <string name="overlay_notify_action_stop">关闭桌宠</string>
+    <string name="overlay_started_hint">桌宠已开启</string>
+    <string name="need_overlay">需要「显示在其他应用上层」权限才能开悬浮桌宠</string>
+    <string name="desktop_note">本工程与电脑版 VpetPNG/1.0 独立；电脑版不受影响。</string>
+    <string name="launcher_blurb">认主并开启桌宠后，本页会关掉；在任意界面点桌宠操作（等同电脑右键菜单）。</string>
+    <string name="launcher_usage">用法：拖动立绘移动；轻点弹出菜单。大小/设置也可在菜单→系统里改。网易云云端歌单无法直连，请导入本机音频。</string>
+</resources>

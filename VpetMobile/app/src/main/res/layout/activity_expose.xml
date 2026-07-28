@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_dark">
+
+    <LinearLayout
+        android:id="@+id/exposePlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="暴露 QTE"
+            android:textColor="@color/accent_pink"
+            android:textSize="22sp"
+            android:gravity="center"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="指针进入绿色区时点判定 · 失手即败"
+            android:textColor="#AAB8C8"
+            android:gravity="center"
+            android:layout_marginBottom="16dp" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:background="#FF334455"
+            android:layout_marginBottom="8dp">
+
+            <View
+                android:id="@+id/exposeZone"
+                android:layout_width="72dp"
+                android:layout_height="match_parent"
+                android:layout_gravity="center"
+                android:background="#8844FF88" />
+
+            <View
+                android:id="@+id/exposeCursor"
+                android:layout_width="6dp"
+                android:layout_height="match_parent"
+                android:background="#FFFFCC66" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/exposeHud"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_main"
+            android:gravity="center"
+            android:layout_marginBottom="16dp"
+            android:text="连击 0/3" />
+
+        <Button
+            android:id="@+id/btnJudge"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="判定"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnExposeExit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="取消" />
+    </LinearLayout>
+
+    <!-- 失败故障层：对照 EXPOSE_FAIL_HOLD_MS=900，不用 game_clear -->
+    <FrameLayout
+        android:id="@+id/exposeFailLayer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#E0100810"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true">
+
+        <TextView
+            android:id="@+id/exposeFailText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="暴露失败…"
+            android:textColor="#FF6688"
+            android:textSize="28sp"
+            android:padding="24dp"
+            android:background="#CC220818" />
+    </FrameLayout>
+</FrameLayout>

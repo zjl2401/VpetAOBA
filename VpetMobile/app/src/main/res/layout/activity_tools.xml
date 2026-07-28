@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_dark"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="工具与档案"
+            android:textColor="@color/accent_pink"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:id="@+id/profileSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_main"
+            android:textSize="14sp"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/btnExportProfile"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="导出 pet_profile.json（对齐电脑）"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnImportProfile"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="从电脑导入 pet_profile.json"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnForceOwner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="导入并强制覆盖所属人"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnExportAch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="导出 achievements（模式时长）"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnImportAch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="导入 achievements.json（合并时长）"
+            android:layout_marginBottom="20dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="音乐（本地文件）"
+            android:textColor="@color/accent_pink"
+            android:textSize="16sp"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="无法直连网易云云端曲库。若歌已下载到手机，点下方导入选中即可。模式→音乐会播放此曲并漫步。"
+            android:textColor="#AAB8C8"
+            android:textSize="12sp"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/musicLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_main"
+            android:textSize="13sp"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnPickMusic"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="导入本地歌曲"
+            android:layout_marginBottom="20dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="日程提醒"
+            android:textColor="@color/accent_pink"
+            android:textSize="16sp"
+            android:layout_marginBottom="6dp" />
+
+        <EditText
+            android:id="@+id/scheduleTime"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="时间 HH:MM"
+            android:inputType="time"
+            android:textColor="@color/text_main"
+            android:textColorHint="#88A0B0" />
+
+        <EditText
+            android:id="@+id/scheduleText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="提醒内容"
+            android:textColor="@color/text_main"
+            android:textColorHint="#88A0B0" />
+
+        <Button
+            android:id="@+id/btnAddSchedule"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="添加日程"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/scheduleList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_main"
+            android:textSize="13sp"
+            android:layout_marginBottom="20dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="生日祝福"
+            android:textColor="@color/accent_pink"
+            android:textSize="16sp"
+            android:layout_marginBottom="6dp" />
+
+        <EditText
+            android:id="@+id/blessMonth"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="所属人生日·月 (1-12)"
+            android:inputType="number"
+            android:textColor="@color/text_main"
+            android:textColorHint="#88A0B0" />
+
+        <EditText
+            android:id="@+id/blessDay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="所属人生日·日 (1-31)"
+            android:inputType="number"
+            android:textColor="@color/text_main"
+            android:textColorHint="#88A0B0" />
+
+        <EditText
+            android:id="@+id/blessMsg"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="祝福语"
+            android:textColor="@color/text_main"
+            android:textColorHint="#88A0B0" />
+
+        <Button
+            android:id="@+id/btnSaveBless"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="保存所属人生日"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/giftText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="赠予苍叶的礼物名（4/22 触发）"
+            android:textColor="@color/text_main"
+            android:textColorHint="#88A0B0" />
+
+        <Button
+            android:id="@+id/btnSaveGift"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="保存生日礼物"
+            android:layout_marginBottom="24dp" />
+    </LinearLayout>
+</ScrollView>

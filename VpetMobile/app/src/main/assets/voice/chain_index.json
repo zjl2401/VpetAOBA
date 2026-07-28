@@ -1,0 +1,36 @@
+{
+  "vpet": {
+    "11": "voice/chain/vpet_digit_11.wav",
+    "2": "voice/chain/vpet_digit_2.wav",
+    "3": "voice/chain/vpet_digit_3.wav",
+    "1": "voice/chain/vpet_digit_1.wav",
+    "6": "voice/chain/vpet_digit_6.wav",
+    "7": "voice/chain/vpet_digit_7.wav",
+    "8": "voice/chain/vpet_digit_8.wav",
+    "4": "voice/chain/vpet_digit_4.wav",
+    "9": "voice/chain/vpet_digit_9.wav",
+    "a": "voice/chain/vpet_letter_a.wav",
+    "b": "voice/chain/vpet_letter_b.wav",
+    "c": "voice/chain/vpet_letter_c.wav",
+    "10": "voice/chain/vpet_digit_10.wav",
+    "5": "voice/chain/vpet_digit_5.wav",
+    "d": "voice/chain/vpet_letter_d.wav"
+  },
+  "allmate": {
+    "1": "voice/chain/allmate_digit_1.wav",
+    "10": "voice/chain/allmate_digit_10.wav",
+    "11": "voice/chain/allmate_digit_11.wav",
+    "2": "voice/chain/allmate_digit_2.wav",
+    "3": "voice/chain/allmate_digit_3.wav",
+    "4": "voice/chain/allmate_digit_4.wav",
+    "5": "voice/chain/allmate_digit_5.wav",
+    "6": "voice/chain/allmate_digit_6.wav",
+    "7": "voice/chain/allmate_digit_7.wav",
+    "8": "voice/chain/allmate_digit_8.wav",
+    "9": "voice/chain/allmate_digit_9.wav",
+    "a": "voice/chain/allmate_letter_a.wav",
+    "b": "voice/chain/allmate_letter_b.wav",
+    "c": "voice/chain/allmate_letter_c.wav",
+    "d": "voice/chain/allmate_letter_d.wav"
+  }
+}

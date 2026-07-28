@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/homeRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF121820">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingTop="36dp">
+
+        <TextView
+            android:id="@+id/homeTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="家园"
+            android:textColor="@color/accent_pink"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/homeHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="4dp"
+            android:textColor="#AAB8C8"
+            android:textSize="12sp"
+            android:text="点格子移动 · 点门切换室内外 · 点宠打招呼" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="8dp">
+
+            <com.vpet.mobile.HomeSceneView
+                android:id="@+id/homeScene"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <ImageView
+                android:id="@+id/homePet"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="@string/app_name" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:id="@+id/farmBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:paddingHorizontal="6dp"
+            android:paddingBottom="4dp">
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/farmTools"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/farmSeeds"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+
+            <TextView
+                android:id="@+id/farmHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#AAB8C8"
+                android:textSize="11sp"
+                android:gravity="center"
+                android:paddingTop="2dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center">
+
+                <Button android:id="@+id/btnFarmShop" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="商店" android:textSize="12sp" android:layout_marginEnd="2dp" />
+                <Button android:id="@+id/btnFarmCraft" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="合成" android:textSize="12sp" android:layout_marginEnd="2dp" />
+                <Button android:id="@+id/btnFarmSell" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="出售" android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingHorizontal="8dp"
+            android:paddingTop="4dp">
+
+            <Button android:id="@+id/btnHomeSave" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="保存" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnHomeImport" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="导入" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnHomeExport" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="导出" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnHomeReset" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="重置" android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:padding="8dp">
+
+            <Button android:id="@+id/btnIndoor" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="室内" android:layout_marginEnd="4dp" />
+            <Button android:id="@+id/btnOutdoor" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="室外" android:layout_marginEnd="4dp" />
+            <Button android:id="@+id/btnFarmMode" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="经营" android:layout_marginEnd="4dp" />
+            <Button android:id="@+id/btnHomeBack" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="返回" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingBottom="12dp">
+
+            <Button android:id="@+id/btnUp" android:layout_width="64dp" android:layout_height="40dp" android:text="↑" android:layout_margin="2dp" />
+            <Button android:id="@+id/btnLeft" android:layout_width="64dp" android:layout_height="40dp" android:text="←" android:layout_margin="2dp" />
+            <Button android:id="@+id/btnDown" android:layout_width="64dp" android:layout_height="40dp" android:text="↓" android:layout_margin="2dp" />
+            <Button android:id="@+id/btnRight" android:layout_width="64dp" android:layout_height="40dp" android:text="→" android:layout_margin="2dp" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

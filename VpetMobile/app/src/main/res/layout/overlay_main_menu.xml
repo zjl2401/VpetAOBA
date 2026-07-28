@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 对照桌面 pack_menu_chrome：蓝外框 + 粉顶条 + 深蓝底线 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/menuChrome"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#FF66CCFF"
+    android:padding="1dp">
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:background="#FFFF88CC" />
+
+    <LinearLayout
+        android:id="@+id/menuRoot"
+        android:layout_width="248dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#FF141824"
+        android:padding="6dp">
+
+        <!-- 四大骨架：等宽等高校 -->
+        <LinearLayout
+            android:id="@+id/moduleRow"
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical" />
+
+        <com.vpet.mobile.PixelDividerView
+            android:id="@+id/menuDivider"
+            android:layout_width="match_parent"
+            android:layout_height="5dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="4dp" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
+            android:fillViewport="true"
+            android:overScrollMode="never">
+
+            <LinearLayout
+                android:id="@+id/subList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+
+        <TextView
+            android:id="@+id/btnMenuClose"
+            android:layout_width="match_parent"
+            android:layout_height="32dp"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:text="收起"
+            android:textColor="#FFEEF2FF"
+            android:textSize="12sp"
+            android:background="#FF181F34" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#FF4488DD" />
+</LinearLayout>

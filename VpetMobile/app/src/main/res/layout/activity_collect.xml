@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/collectRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF1A2030">
+
+    <TextView
+        android:id="@+id/collectHud"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="16sp"
+        android:text="采集 0 · 剩余 30s" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:padding="16dp"
+        android:gravity="center"
+        android:textColor="#AAB8C8"
+        android:text="点下落的食物接住！" />
+</FrameLayout>

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FF0D1520"
+    android:paddingTop="28dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="DIY 地图编辑器"
+        android:textColor="@color/accent_pink"
+        android:textSize="18sp"
+        android:gravity="center" />
+
+    <com.vpet.mobile.RpgDiyCanvas
+        android:id="@+id/diyCanvas"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_margin="8dp" />
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/diyPalette"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="4dp" />
+    </HorizontalScrollView>
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="6dp">
+
+            <Button android:id="@+id/btnDiyLayer" android:layout_width="wrap_content" android:layout_height="40dp" android:text="地面" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnDiyStart" android:layout_width="wrap_content" android:layout_height="40dp" android:text="起点" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnDiyGoal" android:layout_width="wrap_content" android:layout_height="40dp" android:text="出口" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnDiyErase" android:layout_width="wrap_content" android:layout_height="40dp" android:text="擦除" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnDiyPrincess" android:layout_width="wrap_content" android:layout_height="40dp" android:text="公主" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnDiyNew" android:layout_width="wrap_content" android:layout_height="40dp" android:text="新建" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnDiySave" android:layout_width="wrap_content" android:layout_height="40dp" android:text="保存" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnDiyExport" android:layout_width="wrap_content" android:layout_height="40dp" android:text="导出" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnDiyPlay" android:layout_width="wrap_content" android:layout_height="40dp" android:text="试玩" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnDiyBack" android:layout_width="wrap_content" android:layout_height="40dp" android:text="返回" android:textSize="12sp" />
+        </LinearLayout>
+    </HorizontalScrollView>
+</LinearLayout>

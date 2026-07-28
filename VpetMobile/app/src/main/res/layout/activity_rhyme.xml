@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="20dp"
+    android:background="@color/bg_dark">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="莱姆练习对战"
+        android:textColor="@color/accent_pink"
+        android:textSize="22sp"
+        android:gravity="center"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:id="@+id/rhymeLog"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/text_main"
+        android:textSize="15sp"
+        android:gravity="center"
+        android:minLines="4"
+        android:layout_marginBottom="16dp" />
+
+    <Button
+        android:id="@+id/btnAttack"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="攻击"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btnHeal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="回复"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btnRhymeExit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="撤退" />
+</LinearLayout>

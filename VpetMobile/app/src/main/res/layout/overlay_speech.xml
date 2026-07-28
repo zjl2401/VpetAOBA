@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/speechRoot"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:padding="10dp"
+    android:background="#EE1A1A22">
+
+    <ImageView
+        android:id="@+id/speechBorder"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:scaleType="fitXY"
+        android:visibility="gone"
+        android:contentDescription="@null" />
+
+    <TextView
+        android:id="@+id/speechText"
+        android:layout_width="240dp"
+        android:layout_height="wrap_content"
+        android:textColor="#FFFFFFFF"
+        android:textSize="13sp"
+        android:lineSpacingExtra="2dp" />
+</FrameLayout>

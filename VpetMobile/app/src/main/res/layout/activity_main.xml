@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="@color/bg_dark">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:gravity="center_horizontal">
+
+        <ImageView
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:src="@drawable/app_cover"
+            android:contentDescription="@string/app_name"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="12dp"
+            android:scaleType="fitCenter" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/accent_pink"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/launcher_blurb"
+            android:textColor="@color/text_main"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:layout_marginBottom="24dp" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_main"
+            android:textSize="15sp"
+            android:gravity="center"
+            android:layout_marginBottom="20dp"
+            android:text="检查悬浮权限…" />
+
+        <Button
+            android:id="@+id/btnOverlayPermission"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="打开悬浮窗权限设置"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btnStartOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="开启桌宠"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnLeaveToPet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="桌宠已开 · 关掉此页"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btnStopOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="关闭悬浮桌宠"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="首次可调大小（之后也可在菜单→系统→设置）"
+            android:textColor="@color/text_main"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="24dp">
+
+            <Button
+                android:id="@+id/btnSizeS"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="小"
+                android:layout_marginEnd="6dp" />
+
+            <Button
+                android:id="@+id/btnSizeM"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="中"
+                android:layout_marginEnd="6dp" />
+
+            <Button
+                android:id="@+id/btnSizeL"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="大" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnOpenTools"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="工具与档案（音乐导入 / 同步）"
+            android:layout_marginBottom="24dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#33FFFFFF"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="调试旁路（非主路径）"
+            android:textColor="#8899AA"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnOpenRoom"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="调试·房间模式"
+            android:alpha="0.75"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/launcher_usage"
+            android:textColor="#AAB8C8"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:layout_marginTop="8dp" />
+    </LinearLayout>
+</ScrollView>

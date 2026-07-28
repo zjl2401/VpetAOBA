@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FF121820"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/rhythmHud"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#FFFFFFFF"
+        android:textSize="16sp"
+        android:text="音游 · 分数 0"
+        android:layout_marginBottom="8dp" />
+
+    <FrameLayout
+        android:id="@+id/rhythmField"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#FF1A2430" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button android:id="@+id/btnD" android:layout_width="0dp" android:layout_height="64dp" android:layout_weight="1" android:text="D" />
+        <Button android:id="@+id/btnF" android:layout_width="0dp" android:layout_height="64dp" android:layout_weight="1" android:text="F" />
+        <Button android:id="@+id/btnJ" android:layout_width="0dp" android:layout_height="64dp" android:layout_weight="1" android:text="J" />
+        <Button android:id="@+id/btnK" android:layout_width="0dp" android:layout_height="64dp" android:layout_weight="1" android:text="K" />
+    </LinearLayout>
+</LinearLayout>
