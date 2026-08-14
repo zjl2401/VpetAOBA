@@ -28,6 +28,8 @@ class WorkEngine(
         fun toast(msg: String)
         fun onFlagMovedFar() {}
         fun onBoxDelivered() {}
+        /** 对照 `_try_voice_work`：每 [WORK_VOICE_STEP_INTERVAL] 步抽检一次。 */
+        fun onWorkVoiceTick() {}
     }
 
     companion object {
@@ -35,7 +37,9 @@ class WorkEngine(
         const val WORK_MIN_SPAN = 300
         const val WORK_BOX_TOTAL_DEFAULT = 5
         const val WORK_MOVE_INTERVAL_MS = 55L
-        const val WORK_PROP_SIZE = 72
+        const val WORK_PROP_SIZE = 96
+        const val WORK_STACK_OFFSET = 64
+        const val WORK_VOICE_STEP_INTERVAL = 24
         const val MOVE_STEP = 2
     }
 
@@ -44,6 +48,7 @@ class WorkEngine(
     var active = false
         private set
     private val continuous = continuous
+    val isContinuous: Boolean get() = continuous
     private val workTotal = total.coerceIn(1, 30)
     private var phase = Phase.TO_START
     private var delivered = 0
@@ -53,6 +58,7 @@ class WorkEngine(
     private var startY = 0
     private var endFootX = 0
     private var endFootY = 0
+    private var voiceSteps = 0
     private val handler = Handler(Looper.getMainLooper())
     private var tick: Runnable? = null
 
@@ -75,7 +81,7 @@ class WorkEngine(
             val ey = Random.nextInt(margin, maxY + 1)
             val d = hypot(
                 (ex + pet / 2 - startCx).toDouble(),
-                (ey + pet - startCy).toDouble(),
+                (ey + pet / 2 - startCy).toDouble(),
             )
             if (d >= WORK_MIN_SPAN && d > bestDist) {
                 bestDist = d
@@ -88,6 +94,7 @@ class WorkEngine(
         delivered = 0
         carrying = false
         stack = 0
+        voiceSteps = 0
         phase = Phase.TO_START
         active = true
         host.setPetTopLeft(startX, startY)
@@ -160,36 +167,55 @@ class WorkEngine(
                 return
             }
             Phase.TO_START -> {
+                // 对照桌面：中心点走到起点中心
                 val tx = startX + pet / 2
                 val ty = startY + pet / 2
-                val feet = feetNow()
-                if (hypot((tx - feet.x).toDouble(), (ty - feet.y).toDouble()) <= WORK_ARRIVE_DIST) {
+                syncProps()
+                if (distCenterTo(tx, ty) <= WORK_ARRIVE_DIST) {
                     arrivedStart()
                 } else {
                     moveToward(tx, ty, stepPx)
                     host.onWorkVisual(carrying = false, useWorkSprites = false)
+                    maybeVoiceTick()
                 }
             }
             Phase.TO_END -> {
                 val feet = feetNow()
+                syncProps()
                 if (hypot((endFootX - feet.x).toDouble(), (endFootY - feet.y).toDouble()) <= WORK_ARRIVE_DIST) {
                     arrivedEnd()
                 } else {
-                    // 目标：脚踩旗脚 → 顶左
+                    // 寻路目标：脚踩旗脚时的中心（_work_dest_center_xy）
                     val tx = endFootX
                     val ty = endFootY - pet / 2
                     moveToward(tx, ty, stepPx)
                     host.onWorkVisual(carrying = true, useWorkSprites = true)
+                    maybeVoiceTick()
                 }
             }
         }
         if (active) schedule()
     }
 
+    private fun maybeVoiceTick() {
+        voiceSteps += 1
+        if (voiceSteps % WORK_VOICE_STEP_INTERVAL == 0) {
+            host.onWorkVoiceTick()
+        }
+    }
+
     private fun feetNow(): Point {
         val tl = host.petTopLeft()
         val pet = host.petSize()
         return Point(tl.x + pet / 2, tl.y + pet)
+    }
+
+    private fun distCenterTo(tx: Int, ty: Int): Double {
+        val tl = host.petTopLeft()
+        val pet = host.petSize()
+        val cx = tl.x + pet / 2
+        val cy = tl.y + pet / 2
+        return hypot((tx - cx).toDouble(), (ty - cy).toDouble())
     }
 
     private fun moveToward(tx: Int, ty: Int, stepPx: Int) {
@@ -221,6 +247,7 @@ class WorkEngine(
             return
         }
         if (!carrying) {
+            // 搬走起点箱；若未达总量，立刻再生成下一箱（_work_should_keep_start_box）
             carrying = true
         }
         phase = Phase.TO_END
@@ -238,11 +265,6 @@ class WorkEngine(
         }
         if (continuous) {
             phase = Phase.TO_START
-            // 再生起点箱：微调起点避免重叠
-            val pet = host.petSize()
-            val scr = host.screenSize()
-            startX = (startX + Random.nextInt(-40, 41)).coerceIn(40, (scr.x - pet - 40).coerceAtLeast(40))
-            startY = (startY + Random.nextInt(-40, 41)).coerceIn(40, (scr.y - pet - 40).coerceAtLeast(40))
         } else if (delivered >= workTotal) {
             phase = Phase.FINISH
         } else {
@@ -252,18 +274,30 @@ class WorkEngine(
         host.onWorkVisual(false, false)
     }
 
+    /** 对照 `_work_should_keep_start_box`。 */
+    private fun shouldKeepStartBox(): Boolean {
+        if (phase == Phase.FINISH) return false
+        if (continuous) return true
+        val carry = if (carrying) 1 else 0
+        return (delivered + carry) < workTotal
+    }
+
     private fun syncProps() {
         val prop = WORK_PROP_SIZE
-        val showStart = !carrying && phase != Phase.FINISH
-        // flag 顶左 ≈ 旗脚上方
+        val pet = host.petSize()
+        val showStart = shouldKeepStartBox()
+        // 旗顶左：旗脚在底边中心
         val flagX = endFootX - prop / 2
         val flagY = endFootY - prop
+        // 起点箱：坐在起点顶边之上（对照 work_start_y - ph）
+        val boxX = startX + pet / 2 - prop / 2
+        val boxY = startY - prop
         host.onProps(
             startBoxVisible = showStart,
             flagX = flagX,
             flagY = flagY,
-            startX = startX + host.petSize() / 2 - prop / 2,
-            startY = startY + host.petSize() - prop / 2,
+            startX = boxX,
+            startY = boxY,
             stack = stack,
         )
     }

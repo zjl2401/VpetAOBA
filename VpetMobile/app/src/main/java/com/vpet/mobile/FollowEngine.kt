@@ -23,13 +23,14 @@ class FollowEngine(private val host: Host) {
     }
 
     companion object {
-        const val FOLLOW_MOVE_INTERVAL_MS = 40L
+        /** 位移加快；立绘切帧仍由 PetAnimator.WALK_FRAME_MS 控制，不随此加速。 */
+        const val FOLLOW_MOVE_INTERVAL_MS = 45L
         const val FOLLOW_STOP_DIST = 65
-        const val FOLLOW_FAR_DIST = 220
+        const val FOLLOW_FAR_DIST = 280
         const val FOLLOW_DIZZY_STAND_MS = 3000L
         const val FOLLOW_DIZZY_SPIN_STEPS = 4
         const val FOLLOW_DIZZY_TEXT = "我晕了……"
-        const val MOVE_STEP = 2
+        const val MOVE_STEP = 3
     }
 
     var active = false
@@ -135,8 +136,8 @@ class FollowEngine(private val host: Host) {
             else -> SpriteAssets.Dir.FRONT
         }
         host.onFollowDir(dir)
-        val mx = dir.dx * stepPx * (if (dist > FOLLOW_FAR_DIST) 2 else 1)
-        val my = dir.dy * stepPx * (if (dist > FOLLOW_FAR_DIST) 2 else 1)
+        val mx = dir.dx * stepPx
+        val my = dir.dy * stepPx
         val nx = (tl.x + mx).coerceIn(0, (scr.x - pet).coerceAtLeast(0))
         val ny = (tl.y + my).coerceIn(0, (scr.y - pet).coerceAtLeast(0))
         host.setPetTopLeft(nx, ny)

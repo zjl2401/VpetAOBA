@@ -33,9 +33,10 @@ object WalletStore {
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
 
     private fun loadObj(ctx: Context): JSONObject {
+        PersistVault.bootstrap(ctx)
         val raw = prefs(ctx).getString(KEY_JSON, null)
         if (raw.isNullOrBlank()) {
-            return JSONObject().apply {
+            val seeded = JSONObject().apply {
                 put("coins", 20)
                 put("items", JSONObject().apply {
                     SEED_START.forEach { (k, v) -> put(k, v) }
@@ -44,6 +45,9 @@ object WalletStore {
                 put("work_boxes_total", 0)
                 put("work_reward_boxes_granted", 0)
             }
+            // 首装立刻落盘，避免下次被当成「空档」反复重置种子
+            saveObj(ctx, seeded)
+            return seeded
         }
         return try {
             JSONObject(raw)
@@ -54,6 +58,7 @@ object WalletStore {
 
     private fun saveObj(ctx: Context, o: JSONObject) {
         prefs(ctx).edit().putString(KEY_JSON, o.toString()).apply()
+        PersistVault.snapshot(ctx)
     }
 
     fun coins(ctx: Context): Int = loadObj(ctx).optInt("coins", 0).coerceAtLeast(0)

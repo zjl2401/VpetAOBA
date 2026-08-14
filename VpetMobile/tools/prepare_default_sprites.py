@@ -22,6 +22,11 @@ files = [
     "happy.jpg",
     "walkfront1.jpg",
     "walkfront2.jpg",
+    "play_game1.jpg",
+    "play_game2.jpg",
+    "watch_video1.jpg",
+    "video.jpg",
+    "allmate.jpg",
 ]
 
 
@@ -59,7 +64,7 @@ def remove_outer_green(img: Image.Image) -> Image.Image:
     return rgba
 
 
-MAX = 512
+# 只抠外圈绿幕并裁包围盒，不缩放（显示尺寸由 App 运行时控制）
 for name in files:
     src = src_dir / name
     if not src.exists():
@@ -69,13 +74,6 @@ for name in files:
     bbox = keyed.getbbox()
     if bbox:
         keyed = keyed.crop(bbox)
-    w, h = keyed.size
-    scale = min(MAX / w, MAX / h, 1.0)
-    if scale < 1.0:
-        keyed = keyed.resize(
-            (max(1, int(w * scale)), max(1, int(h * scale))),
-            Image.Resampling.LANCZOS,
-        )
     out_name = name.replace(".jpg", ".png")
     keyed.save(out_dir / out_name, "PNG")
     keyed.save(shared / out_name, "PNG")
@@ -84,28 +82,23 @@ for name in files:
 
 icon_src = Path(r"C:\Users\36255\Desktop\VpetAOBA\VpetPNG\1.0\app_icon.png")
 res = Path(r"C:\Users\36255\Desktop\VpetAOBA\VpetMobile\app\src\main\res")
-icon = Image.open(icon_src).convert("RGBA")
-for folder, side in {
-    "mipmap-mdpi": 48,
-    "mipmap-hdpi": 72,
-    "mipmap-xhdpi": 96,
-    "mipmap-xxhdpi": 144,
-    "mipmap-xxxhdpi": 192,
-}.items():
-    d = res / folder
-    d.mkdir(parents=True, exist_ok=True)
-    im = icon.resize((side, side), Image.Resampling.LANCZOS)
-    im.save(d / "ic_launcher.png", "PNG")
-    im.save(d / "ic_launcher_round.png", "PNG")
-
-drawable = res / "drawable"
-drawable.mkdir(parents=True, exist_ok=True)
-icon.resize((432, 432), Image.Resampling.LANCZOS).save(
-    drawable / "ic_launcher_foreground.png", "PNG"
-)
-# 通知小图标需简洁；仍用桌面图标缩小版
-icon.resize((96, 96), Image.Resampling.LANCZOS).save(
-    drawable / "ic_pet_notify.png", "PNG"
-)
-print("icons ok")
+# 启动图标改由 tools/gen_launcher_icons.py 生成（透明抠图）；此处仅同步通知小图
+if icon_src.is_file():
+    icon = Image.open(icon_src).convert("RGBA")
+    drawable = res / "drawable"
+    drawable.mkdir(parents=True, exist_ok=True)
+    # 若仍是旧深色底，尽量去掉近黑不透明底
+    px = icon.load()
+    w, h = icon.size
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a > 200 and r <= 24 and g <= 28 and b <= 40:
+                px[x, y] = (0, 0, 0, 0)
+    icon.resize((96, 96), Image.Resampling.LANCZOS).save(
+        drawable / "ic_pet_notify.png", "PNG"
+    )
+    print("notify icon synced from app_icon (transparent-safe)")
+else:
+    print("skip icons: app_icon.png missing")
 print("done")

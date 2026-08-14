@@ -218,3 +218,117 @@ def walker_progress(elapsed_ms: float, *, lap_ms: float = 6200.0) -> float:
     """按毫秒推进绕圈进度 [0,1)。"""
     lap = max(800.0, float(lap_ms))
     return (max(0.0, float(elapsed_ms)) / lap) % 1.0
+
+
+def _bayer_keep_level(transparency: float) -> int:
+    """transparency 0=全不透明，1=全挖空；返回 Bayer 矩阵保留阈值。"""
+    tr = max(0.0, min(0.95, float(transparency)))
+    return int(round((1.0 - tr) * 16))
+
+
+_BAYER_4X4 = (
+    (0, 8, 2, 10),
+    (12, 4, 14, 6),
+    (3, 11, 1, 9),
+    (15, 7, 13, 5),
+)
+
+
+def make_keyed_fill(
+    width: int,
+    height: int,
+    fill_hex: str,
+    *,
+    transparency: float = 0.2,
+    key_rgb: tuple[int, int, int] = (255, 0, 255),
+) -> Image.Image:
+    """单色底板 + 品红键色抖动挖空（按钮等小块半透明）。"""
+    w = max(1, int(width))
+    h = max(1, int(height))
+    keep_level = _bayer_keep_level(transparency)
+
+    def _rgb(hx: str) -> tuple[int, int, int]:
+        s = (hx or "").strip().lstrip("#")
+        if len(s) != 6:
+            return (74, 144, 216)
+        try:
+            return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+        except Exception:
+            return (74, 144, 216)
+
+    rgb = _rgb(fill_hex)
+    img = Image.new("RGB", (w, h))
+    px = img.load()
+    for y in range(h):
+        row = _BAYER_4X4[y & 3]
+        for x in range(w):
+            px[x, y] = rgb if row[x & 3] < keep_level else key_rgb
+    return img
+
+
+def make_panel_gradient(
+    width: int,
+    height: int,
+    *,
+    left_hex: str = "#ff9ec8",
+    right_hex: str = "#7eb8ff",
+    transparency: float = 0.18,
+    key_rgb: tuple[int, int, int] = (255, 0, 255),
+) -> Image.Image:
+    """粉→蓝水平渐变底板（供秒表/计时器数字框）。
+
+    transparency: 透明度 0~1（默认 0.18，与面板轻微玻璃感接近）。色键窗无法真·半透明，
+    用品红键色像素抖动挖空，视觉上约等于该透明度。
+    """
+    w = max(1, int(width))
+    h = max(1, int(height))
+    keep_level = _bayer_keep_level(transparency)
+
+    def _rgb(hx: str) -> tuple[int, int, int]:
+        s = (hx or "").strip().lstrip("#")
+        if len(s) != 6:
+            return (255, 158, 200)
+        try:
+            return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+        except Exception:
+            return (255, 158, 200)
+
+    r0, g0, b0 = _rgb(left_hex)
+    r1, g1, b1 = _rgb(right_hex)
+    img = Image.new("RGB", (w, h))
+    px = img.load()
+    denom = max(1, w - 1)
+    for x in range(w):
+        t = x / denom
+        r = int(r0 + (r1 - r0) * t)
+        g = int(g0 + (g1 - g0) * t)
+        b = int(b0 + (b1 - b0) * t)
+        col = (r, g, b)
+        for y in range(h):
+            if _BAYER_4X4[y & 3][x & 3] < keep_level:
+                px[x, y] = col
+            else:
+                px[x, y] = key_rgb
+    return img
+
+
+
+def trail_points(
+    t: float,
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+    count: int = 10,
+    spacing: float = 0.012,
+) -> list[tuple[float, float, int]]:
+    """绕圈小人后方采样点（越靠后 index 越大），用于像素流星尾迹。"""
+    n = max(1, int(count))
+    step = max(0.004, float(spacing))
+    out: list[tuple[float, float, int]] = []
+    for i in range(1, n + 1):
+        ti = (float(t) - i * step) % 1.0
+        x, y, _edge = perimeter_point(ti, left=left, top=top, width=width, height=height)
+        out.append((x, y, i))
+    return out

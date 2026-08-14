@@ -29,10 +29,13 @@ class PetOverlayService : Service() {
         const val ACTION_START = "com.vpet.mobile.START_OVERLAY"
         const val ACTION_STOP = "com.vpet.mobile.STOP_OVERLAY"
         const val ACTION_RESIZE = "com.vpet.mobile.RESIZE_OVERLAY"
+        const val ACTION_APPLY_FONT = "com.vpet.mobile.APPLY_FONT"
         const val ACTION_OPEN_MENU = "com.vpet.mobile.OPEN_MENU"
         const val ACTION_FEED = "com.vpet.mobile.FEED_PET"
         const val ACTION_FEED_DRAG = "com.vpet.mobile.FEED_DRAG"
         const val ACTION_SYNC_FLOWER = "com.vpet.mobile.SYNC_FLOWER"
+        const val ACTION_PAUSE = "com.vpet.mobile.PAUSE_OVERLAY"
+        const val ACTION_RESUME = "com.vpet.mobile.RESUME_OVERLAY"
         const val EXTRA_FOOD_ID = "food_id"
         private const val CHANNEL_ID = "vpet_overlay"
         private const val NOTIFY_ID = 1001
@@ -47,11 +50,14 @@ class PetOverlayService : Service() {
     private var menuActions: PetMenuActions? = null
     private var hub: PetModeHub? = null
     private var scheduleTicker: ScheduleTicker? = null
+    private var lockScreenPet: LockScreenPetOverlay? = null
     private var pendingFeedFoodId: String? = null
     private var feedHintToast: Toast? = null
 
     private var screenW = 1080
     private var screenH = 1920
+    /** 开心跳起：记录起跳前的窗口 y（对照桌面 happy_base_y） */
+    private var happyJumpBaseY: Int? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -64,13 +70,16 @@ class PetOverlayService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_RESIZE -> {
-                animator?.applyDisplaySize()
+                hub?.applyDisplaySizeToPetAndCompanion()
                 try {
                     windowManager?.updateViewLayout(binding?.root, layoutParams)
                 } catch (_: Exception) {
                 }
-                hub?.refreshCompanionSize()
                 hub?.playSizeDissolve()
+            }
+            ACTION_APPLY_FONT -> {
+                hub?.applyFontScaleToOverlay()
+                menuPanel?.refreshFonts()
             }
             ACTION_OPEN_MENU -> {
                 if (binding == null) {
@@ -100,6 +109,8 @@ class PetOverlayService : Service() {
             ACTION_SYNC_FLOWER -> {
                 hub?.syncHeadFlower()
             }
+            ACTION_PAUSE -> setOverlayVisible(false)
+            ACTION_RESUME -> setOverlayVisible(true)
             else -> {
                 startForeground(NOTIFY_ID, buildNotification())
                 if (binding == null) showOverlay()
@@ -108,9 +119,19 @@ class PetOverlayService : Service() {
         return START_STICKY
     }
 
+    private fun setOverlayVisible(visible: Boolean) {
+        val vis = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        binding?.root?.visibility = vis
+        hub?.setOverlayChromeVisible(visible)
+        if (!visible) menuPanel?.hide()
+    }
+
     override fun onDestroy() {
         scheduleTicker?.stop()
         scheduleTicker = null
+        lockScreenPet?.stop()
+        lockScreenPet = null
+        hub?.onLockScreenPoseChanged = null
         hub?.destroy()
         hub = null
         menuPanel?.hide()
@@ -177,9 +198,25 @@ class PetOverlayService : Service() {
             y = 280
         }
 
-        animator = PetAnimator(this, binding!!.overlayPet) {
-            if (hub?.onWalkAnimStep() == true) stepLocomotion()
-        }
+        animator = PetAnimator(
+            this,
+            binding!!.overlayPet,
+            onWalkMove = {
+                if (hub?.onWalkAnimStep() == true) stepLocomotion()
+            },
+            onJumpLift = { lift ->
+                val lp = layoutParams ?: return@PetAnimator
+                if (happyJumpBaseY == null) happyJumpBaseY = lp.y
+                val base = happyJumpBaseY ?: lp.y
+                lp.y = base - lift
+                if (lift <= 0) happyJumpBaseY = null
+                try {
+                    windowManager?.updateViewLayout(binding?.root, lp)
+                } catch (_: Exception) {
+                }
+                hub?.syncAttachedFx()
+            },
+        )
         animator!!.applyDisplaySize()
         animator!!.setMode(PetAnimator.Mode.STAND)
 
@@ -212,7 +249,36 @@ class PetOverlayService : Service() {
                 }
             },
         )
+        hub!!.raiseToolbars = {
+            menuPanel?.raiseLayer()
+        }
+        hub!!.setPetTouchable = fun(touchable: Boolean) {
+            val lp = layoutParams ?: return
+            val root = binding?.root ?: return
+            if (touchable) {
+                lp.flags = lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            } else {
+                lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            }
+            try {
+                windowManager?.updateViewLayout(root, lp)
+            } catch (_: Exception) {
+            }
+        }
+        hub!!.onLockScreenPoseChanged = {
+            lockScreenPet?.onPoseChanged()
+        }
         hub!!.attach()
+
+        val wm = windowManager
+        if (wm != null) {
+            lockScreenPet?.stop()
+            lockScreenPet = LockScreenPetOverlay(
+                context = this,
+                windowManager = wm,
+                overlayRunning = { !exiting && binding != null },
+            ).also { it.start() }
+        }
 
         scheduleTicker?.stop()
         scheduleTicker = ScheduleTicker(this) { text ->
@@ -230,6 +296,7 @@ class PetOverlayService : Service() {
                 }
             },
             onExitOverlay = { requestExit() },
+            onFontChanged = { menuPanel?.refreshFonts() },
         )
         menuPanel = PetMenuPanel(
             context = this,
@@ -296,6 +363,11 @@ class PetOverlayService : Service() {
         }
         lp.x = nx.coerceIn(0, maxX)
         lp.y = ny.coerceIn(0, maxY)
+        hub?.let { h ->
+            val clamped = h.clampPetForVideo(lp.x, lp.y, petW, petH)
+            lp.x = clamped.x
+            lp.y = clamped.y
+        }
         try {
             windowManager?.updateViewLayout(binding?.root, lp)
         } catch (_: Exception) {
@@ -340,7 +412,7 @@ class PetOverlayService : Service() {
                     if (abs(dx) > CLICK_SLOP || abs(dy) > CLICK_SLOP) {
                         if (!moved) {
                             moved = true
-                            animator?.setMode(PetAnimator.Mode.WALK)
+                            animator?.startDragMove()
                         }
                     }
                     lp.x = startX + dx
@@ -371,8 +443,11 @@ class PetOverlayService : Service() {
                             if (part != null) h?.tryInterjection(part)
                             h?.noteUserActivity()
                             menuPanel?.toggle()
+                            h?.restackDisplayLayers()
                         }
+                        if (wasLoco) h?.resumeWalkingAfterPause()
                     } else if (!busy && h?.isQuiet != true) {
+                        animator?.stopDragMove()
                         // 拖拽落地 settle
                         h?.playLandSettle { ny ->
                             lp.y = ny.coerceIn(0, (screenH - (pet.height.coerceAtLeast(1))).coerceAtLeast(0))
@@ -380,7 +455,13 @@ class PetOverlayService : Service() {
                                 windowManager?.updateViewLayout(binding?.root, lp)
                             } catch (_: Exception) {
                             }
+                            h.resumeWalkingAfterPause()
                         }
+                    } else if (wasLoco) {
+                        animator?.stopDragMove()
+                        h?.resumeWalkingAfterPause()
+                    } else {
+                        animator?.stopDragMove()
                     }
                     true
                 }

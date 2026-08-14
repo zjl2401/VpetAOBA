@@ -7,7 +7,8 @@ object DifficultyParams {
     data class Params(
         val gameSpeed: Float,
         val gameSpawnMs: Long,
-        val gameCatchBonus: Int, // unused for tap collect; reserved
+        val gameCatchDistDp: Float,
+        val gameCatchBonus: Int, // unused; reserved
         val exposeZoneWidthFrac: Float, // 相对父宽
         val exposePointerSpeedDp: Float,
         val exposeHitsNeed: Int,
@@ -22,6 +23,7 @@ object DifficultyParams {
         "低" -> Params(
             gameSpeed = 4f,
             gameSpawnMs = 1350L,
+            gameCatchDistDp = 58f,
             gameCatchBonus = 0,
             exposeZoneWidthFrac = 0.42f,
             exposePointerSpeedDp = 3.4f,
@@ -33,6 +35,7 @@ object DifficultyParams {
         "高" -> Params(
             gameSpeed = 7f,
             gameSpawnMs = 820L,
+            gameCatchDistDp = 40f,
             gameCatchBonus = 0,
             exposeZoneWidthFrac = 0.22f,
             exposePointerSpeedDp = 6.2f,
@@ -44,6 +47,7 @@ object DifficultyParams {
         else -> Params( // 中
             gameSpeed = 5f,
             gameSpawnMs = 1100L,
+            gameCatchDistDp = 48f,
             gameCatchBonus = 0,
             exposeZoneWidthFrac = 0.32f,
             exposePointerSpeedDp = 4.5f,

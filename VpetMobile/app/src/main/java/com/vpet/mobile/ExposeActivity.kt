@@ -30,6 +30,8 @@ class ExposeActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityExposeBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        OverlayGate.pause(this)
+        FirstPlayGuides.maybeShow(this, "expose")
         params = DifficultyParams.of(this)
         binding.exposeHud.text = "连击 0/${params.exposeHitsNeed} · 难度 ${AppDataStore.difficulty(this)}"
         binding.btnJudge.setOnClickListener { judge() }
@@ -46,6 +48,7 @@ class ExposeActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        OverlayGate.resume(this)
         super.onDestroy()
     }
 
@@ -55,7 +58,8 @@ class ExposeActivity : AppCompatActivity() {
             if (ended) return@postDelayed
             val parent = binding.exposeCursor.parent as FrameLayout
             val max = (parent.width - binding.exposeCursor.width).coerceAtLeast(1)
-            val step = params.exposePointerSpeedDp * resources.displayMetrics.density
+            val step = params.exposePointerSpeedDp * resources.displayMetrics.density *
+                (1f + hits * 0.42f)
             x += dir * step
             if (x < 0) {
                 x = 0f; dir = 1

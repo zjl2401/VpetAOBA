@@ -8,4 +8,19 @@
         <item name="android:navigationBarColor">@color/bg_dark</item>
         <item name="android:windowBackground">@color/bg_dark</item>
     </style>
+
+    <!-- 状态面板：半透明浮窗，不挡整屏（对照桌面 PANEL_VIEW ≈ 268×360） -->
+    <style name="Theme.VpetMobile.PanelDialog" parent="Theme.MaterialComponents.DayNight.Dialog">
+        <item name="colorPrimary">@color/accent_pink</item>
+        <item name="colorPrimaryVariant">@color/btn_bg</item>
+        <item name="colorOnPrimary">@color/text_main</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.35</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
 </resources>

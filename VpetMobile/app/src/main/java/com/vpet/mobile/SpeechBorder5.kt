@@ -30,8 +30,9 @@ object SpeechBorder5 {
         return try {
             context.assets.open("ui/border5.jpg").use { stream ->
                 val raw = BitmapFactory.decodeStream(stream) ?: return null
-                // 去外圈近黑，近似桌面 _strip_border_outer_black 的简化版
+                // 对照桌面 _strip_border2_outer_white：抠掉贴边白圈
                 base = stripNearBlackEdge(raw)
+                cache.clear()
                 base
             }
         } catch (_: Exception) {
@@ -141,25 +142,33 @@ object SpeechBorder5 {
     }
 
     private fun stripNearBlackEdge(src: Bitmap): Bitmap {
+        // 桌面 border5 用外圈白色洪水填充透明（_strip_border2_outer_white）
+        return stripOuterKey(src) { r, g, b, a ->
+            a > 80 && r > 198 && g > 198 && b > 198
+        }
+    }
+
+    /** 从四边洪水抠色为透明。 */
+    private fun stripOuterKey(src: Bitmap, isKey: (r: Int, g: Int, b: Int, a: Int) -> Boolean): Bitmap {
         val w = src.width
         val h = src.height
         val out = src.copy(Bitmap.Config.ARGB_8888, true)
         val px = IntArray(w * h)
         out.getPixels(px, 0, w, 0, 0, w, h)
-        fun dark(i: Int): Boolean {
+        fun key(i: Int): Boolean {
             val c = px[i]
             val a = (c ushr 24) and 0xFF
             val r = (c ushr 16) and 0xFF
             val g = (c ushr 8) and 0xFF
             val b = c and 0xFF
-            return a > 64 && maxOf(r, g, b) < 52
+            return isKey(r, g, b, a)
         }
         val visited = BooleanArray(w * h)
         val q = ArrayDeque<Int>()
         fun enq(x: Int, y: Int) {
             if (x !in 0 until w || y !in 0 until h) return
             val i = y * w + x
-            if (visited[i] || !dark(i)) return
+            if (visited[i] || !key(i)) return
             visited[i] = true
             q.add(i)
         }

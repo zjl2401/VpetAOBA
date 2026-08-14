@@ -49,7 +49,8 @@ class TypeSoundPlayer(private val context: Context) {
         if (now - lastPlay < TYPE_SOUND_MIN_GAP_MS) return
         lastPlay = now
         try {
-            sp.play(soundId, 0.55f, 0.55f, 1, 0, 1f)
+            val vol = AppDataStore.sfxVolumeF(context)
+            sp.play(soundId, vol, vol, 1, 0, 1f)
         } catch (_: Exception) {
         }
     }

@@ -15,11 +15,12 @@ object ModeTimeStore {
     private const val KEY_BUCKET = "active_bucket"
     private const val KEY_START = "bucket_start_elapsed"
 
-    val KEYS = listOf("free", "follow", "stroll", "quiet", "work", "game", "music")
+    val KEYS = listOf("free", "follow", "stroll", "quiet", "work", "game", "music", "video")
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
 
     fun secondsMap(ctx: Context): MutableMap<String, Double> {
+        PersistVault.bootstrap(ctx)
         flush(ctx)
         val raw = prefs(ctx).getString(KEY_SECONDS, null)
         val map = KEYS.associateWith { 0.0 }.toMutableMap()
@@ -57,6 +58,7 @@ object ModeTimeStore {
             "work" to "工作",
             "game" to "游戏",
             "music" to "音乐",
+            "video" to "视频",
         )
         return buildString {
             appendLine("相伴时长合计：${formatDuration(totalSeconds(ctx))}")
@@ -112,6 +114,7 @@ object ModeTimeStore {
         val o = JSONObject()
         for (k in KEYS) o.put(k, map[k] ?: 0.0)
         prefs(ctx).edit().putString(KEY_SECONDS, o.toString()).apply()
+        PersistVault.snapshot(ctx)
     }
 
     /** 导出可合并进桌面 achievements.json 的片段。 */

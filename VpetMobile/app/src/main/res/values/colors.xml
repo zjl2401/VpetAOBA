@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="bg_dark">#FF1A2030</color>
-    <color name="launcher_bg">#FF000000</color>
+    <!-- 自适应图标背景：透明，避免黑底；外圈由前景抠图承担 -->
+    <color name="launcher_bg">#00000000</color>
     <color name="accent_pink">#FFFF88CC</color>
     <color name="theme_blue">#FF66CCFF</color>
     <color name="theme_blue_deep">#FF4488DD</color>
     <color name="text_main">#FFEEF2FF</color>
-    <color name="menu_bg">#FF141824</color>
+    <!-- 面板深色底 ~88% 不透明，与桌面 PANEL_WINDOW_ALPHA 对齐 -->
+    <color name="menu_bg">#E0141824</color>
     <color name="menu_fg">#FFEEF2FF</color>
-    <color name="menu_item_bg">#FF181F34</color>
+    <color name="menu_item_bg">#E0181F34</color>
     <color name="btn_bg">#FF2A4060</color>
     <color name="room_wall">#FF243044</color>
 </resources>

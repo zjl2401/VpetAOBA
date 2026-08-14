@@ -1,4 +1,5 @@
-"""从桌面版 app_icon1 生成 Android 启动图标。"""
+"""从桌面版 stand 立绘生成 Android 启动图标（抠绿幕、等比例缩放/裁剪，禁止非等比拉伸）。"""
+from collections import deque
 from pathlib import Path
 
 from PIL import Image
@@ -8,38 +9,90 @@ DESKTOP = ROOT.parent / "VpetPNG" / "1.0"
 RES = ROOT / "app" / "src" / "main" / "res"
 
 
-def load_source() -> Image.Image:
-    for name in ("app_icon1.jpg", "app_icon1.png", "app_icon.png"):
-        p = DESKTOP / name
-        if p.exists():
-            src = Image.open(p).convert("RGBA")
-            print("source:", p)
-            return src
-    raise SystemExit("desktop app icon not found")
+def _is_chroma_green(r: int, g: int, b: int, a: int = 255) -> bool:
+    if a < 8:
+        return False
+    if g > 200 and r < 90 and b < 90:
+        return True
+    return g > 100 and g >= r + 15 and g >= b + 25
 
 
-def normalize_bg(im: Image.Image) -> Image.Image:
-    pixels = im.load()
-    w, h = im.size
+def remove_outer_green(img: Image.Image) -> Image.Image:
+    rgba = img.convert("RGBA")
+    w, h = rgba.size
+    px = rgba.load()
+    visited = [[False] * w for _ in range(h)]
+    q: deque[tuple[int, int]] = deque()
+    for x in range(w):
+        q.append((x, 0))
+        q.append((x, h - 1))
     for y in range(h):
-        for x in range(w):
-            r, g, b, a = pixels[x, y]
-            if r < 18 and g < 18 and b < 18:
-                pixels[x, y] = (0, 0, 0, 255)
-    return im
+        q.append((0, y))
+        q.append((w - 1, y))
+    while q:
+        x, y = q.popleft()
+        if x < 0 or y < 0 or x >= w or y >= h or visited[y][x]:
+            continue
+        r, g, b, a = px[x, y]
+        if not _is_chroma_green(r, g, b, a):
+            continue
+        visited[y][x] = True
+        px[x, y] = (r, g, b, 0)
+        q.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
+    return rgba
 
 
-def fit_square(im: Image.Image, size: int, pad_ratio: float = 0.0) -> Image.Image:
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 255))
-    inner = max(1, int(size * (1 - pad_ratio)))
-    scaled = im.resize((inner, inner), Image.Resampling.LANCZOS)
-    off = (size - inner) // 2
-    canvas.paste(scaled, (off, off), scaled)
+def prepare_stand(im: Image.Image) -> Image.Image:
+    keyed = remove_outer_green(im)
+    bbox = keyed.getbbox()
+    if bbox:
+        keyed = keyed.crop(bbox)
+    return keyed
+
+
+def load_source() -> Image.Image:
+    for rel in (
+        "assets/sprites/stand.jpg",
+        "assets/sprites/stand.png",
+        "gallery/stand.png",
+        "gallery/stand.jpg",
+    ):
+        p = DESKTOP / rel
+        if p.is_file():
+            print("source:", p)
+            return prepare_stand(Image.open(p))
+    raise SystemExit("desktop stand sprite not found")
+
+
+def fit_square_cover(im: Image.Image, size: int) -> Image.Image:
+    w, h = im.size
+    side = min(w, h)
+    left = (w - side) // 2
+    top = (h - side) // 2
+    cropped = im.crop((left, top, left + side, top + side))
+    return cropped.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def fit_square_contain(
+    im: Image.Image,
+    size: int,
+    *,
+    bg: tuple[int, int, int, int] = (0, 0, 0, 0),
+    pad_ratio: float = 0.0,
+) -> Image.Image:
+    inner = max(1, int(size * (1.0 - pad_ratio)))
+    w, h = im.size
+    scale = min(inner / max(w, 1), inner / max(h, 1))
+    nw = max(1, int(round(w * scale)))
+    nh = max(1, int(round(h * scale)))
+    scaled = im.resize((nw, nh), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (size, size), bg)
+    canvas.paste(scaled, ((size - nw) // 2, (size - nh) // 2), scaled)
     return canvas
 
 
 def main() -> None:
-    src = normalize_bg(load_source())
+    src = load_source()
     sizes = {
         "mipmap-mdpi": 48,
         "mipmap-hdpi": 72,
@@ -48,7 +101,8 @@ def main() -> None:
         "mipmap-xxxhdpi": 192,
     }
     for folder, size in sizes.items():
-        out = fit_square(src, size)
+        # 透明底抠图，不要黑底
+        out = fit_square_contain(src, size, bg=(0, 0, 0, 0), pad_ratio=0.06)
         d = RES / folder
         d.mkdir(parents=True, exist_ok=True)
         out.save(d / "ic_launcher.png")
@@ -57,9 +111,18 @@ def main() -> None:
 
     drawable = RES / "drawable"
     drawable.mkdir(parents=True, exist_ok=True)
-    fit_square(src, 432, pad_ratio=0.18).save(drawable / "ic_launcher_foreground.png")
-    fit_square(src, 256).save(drawable / "app_cover.png")
-    print("foreground + app_cover ok")
+    # 自适应图标前景：透明底 + 等比安全区
+    fit_square_contain(src, 432, bg=(0, 0, 0, 0), pad_ratio=0.18).save(
+        drawable / "ic_launcher_foreground.png"
+    )
+    fit_square_contain(src, 256, bg=(0, 0, 0, 0), pad_ratio=0.06).save(
+        drawable / "app_cover.png"
+    )
+    # 通知小图标：多数机型要求不透明，用浅底避免纯黑块
+    fit_square_contain(src, 96, bg=(0, 0, 0, 0), pad_ratio=0.06).save(
+        drawable / "ic_pet_notify.png"
+    )
+    print("foreground + app_cover + notify ok")
 
 
 if __name__ == "__main__":

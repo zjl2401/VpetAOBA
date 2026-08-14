@@ -2,10 +2,6 @@ package com.vpet.mobile
 
 /** 音游评级：对照 RHYTHM_GRADE_TIERS / coin_map。 */
 object RhythmGrades {
-    const val HIT_PERFECT_PX = 28f
-    const val HIT_GREAT_PX = 52f
-    const val HIT_GOOD_PX = 80f
-
     const val SCORE_PERFECT = 300
     const val SCORE_GREAT = 200
     const val SCORE_GOOD = 100

@@ -14,6 +14,7 @@ object FoodInventoryStore {
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
 
     fun ensureSeeded(ctx: Context) {
+        PersistVault.bootstrap(ctx)
         val p = prefs(ctx)
         val first = !p.getBoolean(KEY_SEEDED, false)
         val ver = p.getInt(KEY_CATALOG_VER, 0)
@@ -64,6 +65,7 @@ object FoodInventoryStore {
         val o = JSONObject()
         for ((k, v) in map) o.put(k, v.coerceAtLeast(0))
         prefs(ctx).edit().putString(KEY_JSON, o.toString()).apply()
+        PersistVault.snapshot(ctx)
     }
 
     fun count(ctx: Context, id: String): Int = load(ctx)[id] ?: 0

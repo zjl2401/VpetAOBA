@@ -2,6 +2,7 @@ package com.vpet.mobile
 
 import android.content.Context
 import android.content.res.AssetFileDescriptor
+import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.SystemClock
 import org.json.JSONObject
@@ -9,7 +10,7 @@ import java.io.IOException
 
 /**
  * 本地语音：对照桌面 voice_system / `_voice_enabled`。
- * 支持数字→伴侣 / 字母→苍叶 链式对答（[chain_index.json]）。
+ * 使用 ASSISTANCE_SONIFICATION，避免被 AmbientMusicMonitor 当成媒体音乐。
  */
 class VoicePlayer(private val context: Context) {
     companion object {
@@ -20,6 +21,12 @@ class VoicePlayer(private val context: Context) {
         private val CHAIN_AMBIENT = setOf(
             "normal", "walk", "work", "game", "hungry", "forget", "error", "email", "ren",
         )
+
+        private fun voiceAudioAttributes(): AudioAttributes =
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
     }
 
     private var player: MediaPlayer? = null
@@ -27,6 +34,9 @@ class VoicePlayer(private val context: Context) {
     var musicBlocked: Boolean = false
     /** 伴侣是否在场（数字链需要）。 */
     var hasCompanion: () -> Boolean = { false }
+    /** 播语音时弹出标题框：(title, durationMs, source)。 */
+    var onSubtitle: ((String, Int, String) -> Unit)? = null
+    var onHideSubtitle: (() -> Unit)? = null
 
     private data class ChainIndex(
         val vpet: Map<String, String>,
@@ -184,6 +194,7 @@ class VoicePlayer(private val context: Context) {
         stop()
         return try {
             val mp = MediaPlayer()
+            mp.setAudioAttributes(voiceAudioAttributes())
             mp.setDataSource(file.absolutePath)
             val vol = AppDataStore.voiceVolumeF(context)
             mp.setVolume(vol, vol)
@@ -268,6 +279,7 @@ class VoicePlayer(private val context: Context) {
             val afd: AssetFileDescriptor = context.assets.openFd(assetPath)
             val mp = MediaPlayer()
             player = mp
+            mp.setAudioAttributes(voiceAudioAttributes())
             mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
             afd.close()
             mp.setOnCompletionListener {
@@ -283,6 +295,7 @@ class VoicePlayer(private val context: Context) {
             mp.prepare()
             val vol = AppDataStore.voiceVolumeF(context)
             mp.setVolume(vol, vol)
+            emitSubtitle(assetPath, mp.duration.coerceAtLeast(400))
             mp.start()
             true
         } catch (_: IOException) {
@@ -292,5 +305,20 @@ class VoicePlayer(private val context: Context) {
             stop()
             false
         }
+    }
+
+    private fun emitSubtitle(assetPath: String, durationMs: Int) {
+        if (VoiceTitle.suppressSubtitle(assetPath)) {
+            onHideSubtitle?.invoke()
+            return
+        }
+        val title = VoiceTitle.displayTitle(assetPath)
+        // normal_14 等占位名 / 无有效台词：不弹框（对照桌面只展示可读标题）
+        if (title.isBlank() || title == "……") {
+            onHideSubtitle?.invoke()
+            return
+        }
+        val source = VoiceTitle.sourceOf(assetPath)
+        onSubtitle?.invoke(title, durationMs, source)
     }
 }

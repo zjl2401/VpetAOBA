@@ -6,13 +6,13 @@ import android.os.SystemClock
 
 /**
  * 番茄钟：对照 `_start_pomodoro` —— 工作=运送，休息=睡眠，到点循环。
- * 满 4 轮额外提示；可随时结束。
+ * 支持 ▶ 开始 / ⏸ 暂停 / ⏹ 结束（对齐桌面 desk clock controls）。
  */
 class PomodoroSession(private val host: Host) {
     interface Host {
         fun onPomoWorkStart(round: Int, workMs: Long)
         fun onPomoRestStart(round: Int, restMs: Long)
-        fun onPomoTick(phase: String, round: Int, remainMs: Long)
+        fun onPomoTick(phase: String, round: Int, remainMs: Long, phaseTotalMs: Long, paused: Boolean)
         fun onPomoRoundDone(completed: Int, nextRound: Int)
         fun onPomoEnded(completed: Int)
         fun toast(msg: String)
@@ -29,6 +29,8 @@ class PomodoroSession(private val host: Host) {
 
     var active = false
         private set
+    var paused = false
+        private set
     var phase: String = ""
         private set
     var round = 1
@@ -36,9 +38,14 @@ class PomodoroSession(private val host: Host) {
     var completed = 0
         private set
 
+    /** 当前阶段总时长（绕圈进度 = total - remain）。 */
+    val phaseTotalMs: Long
+        get() = if (phase == "rest") restMs else workMs
+
     private var workMs = 25 * 60_000L
     private var restMs = 5 * 60_000L
     private var phaseEndsAt = 0L
+    private var remainWhenPaused = 0L
     private val handler = Handler(Looper.getMainLooper())
     private var tick: Runnable? = null
     private var phaseJob: Runnable? = null
@@ -48,6 +55,7 @@ class PomodoroSession(private val host: Host) {
         workMs = workMinutes.coerceIn(1, 180) * 60_000L
         restMs = restMinutes.coerceIn(1, 60) * 60_000L
         active = true
+        paused = false
         round = 1
         completed = 0
         phase = "work"
@@ -57,10 +65,33 @@ class PomodoroSession(private val host: Host) {
         beginWork()
     }
 
+    fun pause() {
+        if (!active || paused) return
+        paused = true
+        remainWhenPaused = (phaseEndsAt - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+        clearJobs()
+        emitTick()
+    }
+
+    fun resume() {
+        if (!active || !paused) return
+        paused = false
+        phaseEndsAt = SystemClock.elapsedRealtime() + remainWhenPaused
+        val remain = remainWhenPaused
+        if (phase == "rest") {
+            schedulePhaseEnd(remain) { onRestDone() }
+        } else {
+            schedulePhaseEnd(remain) { onWorkDone() }
+        }
+        scheduleTick()
+        emitTick()
+    }
+
     fun stop(internal: Boolean = false) {
         val was = active
         val done = completed
         active = false
+        paused = false
         phase = ""
         clearJobs()
         if (was && !internal) host.onPomoEnded(done)
@@ -77,6 +108,7 @@ class PomodoroSession(private val host: Host) {
     private fun beginWork() {
         if (!active) return
         phase = "work"
+        paused = false
         phaseEndsAt = SystemClock.elapsedRealtime() + workMs
         host.onPomoWorkStart(round, workMs)
         schedulePhaseEnd(workMs) { onWorkDone() }
@@ -86,6 +118,7 @@ class PomodoroSession(private val host: Host) {
     private fun beginRest() {
         if (!active) return
         phase = "rest"
+        paused = false
         phaseEndsAt = SystemClock.elapsedRealtime() + restMs
         host.onPomoRestStart(round, restMs)
         schedulePhaseEnd(restMs) { onRestDone() }
@@ -93,13 +126,13 @@ class PomodoroSession(private val host: Host) {
     }
 
     private fun onWorkDone() {
-        if (!active || phase != "work") return
+        if (!active || phase != "work" || paused) return
         host.toast("第 $round 轮工作结束，进入休息")
         beginRest()
     }
 
     private fun onRestDone() {
-        if (!active || phase != "rest") return
+        if (!active || phase != "rest" || paused) return
         completed += 1
         val next = completed + 1
         round = next
@@ -116,18 +149,27 @@ class PomodoroSession(private val host: Host) {
     private fun schedulePhaseEnd(delay: Long, block: () -> Unit) {
         phaseJob?.let { handler.removeCallbacks(it) }
         phaseJob = Runnable { block() }
-        handler.postDelayed(phaseJob!!, delay)
+        handler.postDelayed(phaseJob!!, delay.coerceAtLeast(0L))
     }
 
     private fun scheduleTick() {
         tick?.let { handler.removeCallbacks(it) }
         tick = Runnable {
-            if (!active) return@Runnable
-            val remain = (phaseEndsAt - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
-            host.onPomoTick(phase, round, remain)
+            if (!active || paused) return@Runnable
+            emitTick()
             scheduleTick()
         }
         handler.postDelayed(tick!!, 500L)
+    }
+
+    private fun emitTick() {
+        if (!active) return
+        val remain = if (paused) {
+            remainWhenPaused
+        } else {
+            (phaseEndsAt - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+        }
+        host.onPomoTick(phase, round, remain, phaseTotalMs, paused)
     }
 
     private fun clearJobs() {

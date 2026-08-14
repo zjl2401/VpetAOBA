@@ -4,6 +4,119 @@
     android:layout_height="match_parent"
     android:background="#FF0D1520">
 
+    <!-- 开场 / Start：纯色蓝底 + 双 logo 上移 + 像素白字菜单（不用整张 start.png） -->
+    <FrameLayout
+        android:id="@+id/rpgStart"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/rpgStartBgColor"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#FF456890" />
+
+        <ImageView
+            android:id="@+id/rpgStartLogo1"
+            android:layout_width="160dp"
+            android:layout_height="160dp"
+            android:layout_gravity="center_horizontal|top"
+            android:layout_marginTop="48dp"
+            android:alpha="0"
+            android:scaleType="fitCenter" />
+
+        <ImageView
+            android:id="@+id/rpgStartLogo2"
+            android:layout_width="240dp"
+            android:layout_height="96dp"
+            android:layout_gravity="center_horizontal|top"
+            android:layout_marginTop="160dp"
+            android:alpha="0"
+            android:scaleType="fitCenter" />
+
+        <LinearLayout
+            android:id="@+id/rpgStartMenu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingBottom="72dp"
+            android:alpha="0">
+
+            <TextView
+                android:id="@+id/btnRpgStartPlay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:padding="12dp"
+                android:text="START"
+                android:textColor="#FFFFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnRpgStartDiy"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:padding="12dp"
+                android:text="MAP EDITOR"
+                android:textColor="#FFFFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnRpgStartBack"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:padding="12dp"
+                android:text="EXIT"
+                android:textColor="#CCFFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/rpgIntroSkip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:fontFamily="monospace"
+            android:padding="16dp"
+            android:text="SKIP ›"
+            android:textColor="#AAFFFFFF"
+            android:textSize="12sp" />
+    </FrameLayout>
+
+    <!-- 保留空壳避免旧引用炸；默认隐藏 -->
+    <FrameLayout
+        android:id="@+id/rpgIntro"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/rpgIntroBg"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/rpgIntroLogo1"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/rpgIntroLogo2"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone" />
+    </FrameLayout>
+
     <com.vpet.mobile.RpgView
         android:id="@+id/rpgView"
         android:layout_width="match_parent"
@@ -14,7 +127,8 @@
         android:id="@+id/rpgMenu"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:visibility="gone">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -26,16 +140,16 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Silent Oath"
+                android:text="Silent Oath · 战役"
                 android:textColor="@color/accent_pink"
-                android:textSize="24sp"
+                android:textSize="22sp"
                 android:gravity="center"
                 android:layout_marginBottom="8dp" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="战役：双层·陷阱·宝箱骰/猜拳·选角·BGM\nDIY 编辑器可双层导出"
+                android:text="双层·陷阱·宝箱骰/猜拳·选角·BGM\n地图瓦片对齐电脑版素材"
                 android:textColor="#AAB8C8"
                 android:textSize="12sp"
                 android:gravity="center"

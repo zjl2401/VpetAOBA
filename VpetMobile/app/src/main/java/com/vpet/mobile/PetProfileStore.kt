@@ -31,6 +31,7 @@ object PetProfileStore {
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
 
     fun profile(ctx: Context): JSONObject {
+        PersistVault.bootstrap(ctx)
         val raw = prefs(ctx).getString(KEY_JSON, null)
         if (!raw.isNullOrBlank()) {
             try {
@@ -38,7 +39,8 @@ object PetProfileStore {
             } catch (_: Exception) {
             }
         }
-        return defaultProfile().also { saveProfile(ctx, it) }
+        // 勿在此自动写入空档案，避免覆盖安装恢复窗口被空档冲掉
+        return defaultProfile()
     }
 
     private fun defaultProfile(): JSONObject =
@@ -79,6 +81,7 @@ object PetProfileStore {
 
     fun saveProfile(ctx: Context, obj: JSONObject) {
         prefs(ctx).edit().putString(KEY_JSON, obj.toString()).apply()
+        PersistVault.snapshot(ctx)
     }
 
     fun ownerName(ctx: Context): String =

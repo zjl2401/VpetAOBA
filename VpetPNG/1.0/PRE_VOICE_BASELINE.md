@@ -78,9 +78,9 @@
 
 | # | 动作 | 特效 | 对话 | 代码锚点 |
 |---|------|------|------|----------|
-| F01 | 开心 | 跳跃 + 身后像素小花 | 无 | `_play_happy` / `_show_happy_fx` |
-| F02 | 生气 | walkback 上移 + 怒 mark | 有 | `_play_expression_angry` |
-| F03 | 伤心 | 头上像素下雨 | 有 | `_play_expression_sad` / `_show_rain_fx` |
+| F01 | 开心 | happy 上移 / stand 原位，0.28s×3 轮；身后像素小花钉原位 | 无 | `_play_happy` / `_show_happy_fx`；见 **J-HAPPY-BOUNCE** |
+| F02 | 生气 | walkback 上移 + 怒 mark；整窗轻弹 **3** 次 | 有 | `_play_expression_angry`；见 **J-EXPR-BOUNCE** |
+| F03 | 伤心 | 头上像素下雨；整窗轻弹 **3** 次 | 有 | `_play_expression_sad` / `_show_rain_fx`；见 **J-EXPR-BOUNCE** |
 | F04 | 有主意 | 左上角灯泡亮 → eat2 | 无 | `_play_expression_idea` / `_show_bulb_fx` |
 | F05 | 侧踢 | 粒子 3s | 有 banter | `_show_interact_fx` / `_interact_flair("kick")` |
 | F06 | 点赞 | 背景像素发光 | 无 | `_show_like_fx` |
@@ -262,7 +262,7 @@
 - [x] **H-DRAG-YUQI** 拖动 move 超过 **3s** 强制随机播 `yuqi` 一条（长拖可再触发）；无资源退回台词框
 - [x] **H-VOICE-PRELOAD** 特定触发（`yuqi`/eat/kick/sleep/hurt/hungry/work/walk/dizzy/call/你好/end）与 **normal 整组**一并 `preload_priority_clips` 提前缓存
 - [x] **H-VOICE-TRIM-CACHE** 语音**只去开头静音**（保留结尾）+ loudnorm，写入 `*_p4.wav`；**处理过一次后直接读缓存，不再二次 ffmpeg**；声音设置可调 `voice_volume` 并持久化
-- [x] **H-SIZE-ALLMATE** 设置三档大小：主宠与 Allmate **并行预热、同帧切换**；有 Allmate 时一起缩放
+- [x] **H-SIZE-ALLMATE** 设置桌宠大小：**七档按钮**（特小/小/中小/中/中大/大/特大，**无滑条**）；主宠与 Allmate **并行预热、同帧切换**；有 Allmate 时一起缩放
 - [x] **H-KEYOUT** 精灵抠图**只扣与外圈连通**的键色（边缘泛洪，不伤内色）
 - [x] **H-LOAD-FIXED** 入场/出场/加载像素动画**固定风格**（溶解 `radial`、加载 `pulse`），禁止随机换场
 - [x] **H-EXPOSE-NOSUB** 暴露失败：hurt 语音**无字幕**；故障反馈不得被全屏 clear 替代
@@ -298,9 +298,9 @@
 - [x] **H-LOCAL-CACHE** 语音/音乐/打字音/工作道具优先本地+`data/` 缓存；天气联网失败回退 `weather_cache.json`；启动 `_seed_local_runtime_assets` 落盘缺文件
 - [x] **H-DEMO-GUIDES** 录实况可用 `DEMO_ALWAYS_SHOW_GUIDES=True`；**正式/公开包为 `False`**（仅首次弹操作说明）
 - [x] **H-HINT-TOAST** 玩法说明 / RPG 宝箱·小屋·关卡等**说明类**文案用 toast，不对白文本框打断操作；角色台词/系统对话仍可走文本框
-- [x] **H-STARTUP-WARMUP-HINT** 首次进自由：toast 温馨提示「开场后台预热缓存，前一两分钟可能略卡」；开场预热（时钟/工作/采集/语音/多尺寸）错开执行
+- [x] **H-STARTUP-WARMUP-HINT** 首次启动：留出预热时段并显示**给人看的**等待文案（非提示词腔）；开场预热（时钟/工作/采集/语音/多尺寸/自由走动）错开执行
 - [x] **H-VOICE-FORCE-SCENE** 开语音且有资源时强制播：`hurt`（游戏失败）/`dizzy`（采集晕眩·跟随晕眩）/`call`/`你好`/`eat`/`hungry`（不再 50/50 丢掉）
-- [x] **H-ABOUT-FREE** 操作说明 / 关于标明**免费**；作者菌**翛然而往**以更小字贴在面板**下方角落**
+- [x] **H-ABOUT-FREE** 操作说明 / 关于标明**免费**；署名用「**作者**：翛然而往」（不用「作者菌」），更小字贴在面板**下方角落**
 - [x] **H-RPG-DIY-NOMUSIC** 加载 DIY / 自建地图试玩（`campaign=False`）**不放**冒险 BGM；仅战役 START 播音乐
 - [x] **H-RPG-PLAYER-KIND** 游玩中 **C** 切换：**knight / aoba(Vpet·`assets/vpet`)** / **ren(Allmate·`assets/allmate`)**；WASD 可控移动
 - [x] **H-RPG-SPAWN-WALK** 出生/起点/读档落点若在湖/墙等不可走格，自动挪到最近可走格；DIY 放起点同规则
@@ -308,7 +308,7 @@
 - [x] **H-WINK-FREE-NO** 自由：心情池与 `_try_free_random_action` **不抽 wink**；互动菜单「wink」仍可用
 - [x] **H-OWNER-ONCE** 去掉桌宠编号（正式包 `PET_ID_FEATURE=False`）；改为**所属人昵称**：启动后强制弹窗填写，**不可跳过**；仅可填一次、不可更改；重置也**不得**改动所属人
 - [x] **H-OWNER-FRONT** 所属人取名窗必须置顶可见：禁止 `transient` 到无边框主窗；强制 `-topmost`；不参与底部层级下压；`_keep_owner_name_win_front` 防启动刷新盖住
-- [x] **H-OWNER-THEN-GUIDE** 启动顺序：**先所属人 → 填完后再弹首次操作说明**；取名确认后**强制**弹一次（忽略旧包已写的 `seen_hints.operation_guide`）；另用 `post_owner_guide` 保证「已取名但未走过取名后说明」的老存档补弹一次；之后启动不再弹
+- [x] **H-OWNER-THEN-GUIDE** 启动顺序：**先所属人 → 填完后再弹首次操作说明**；取名确认后**强制**弹一次（忽略旧包已写的 `seen_hints.operation_guide`）；另用 `post_owner_guide` 保证「已取名但未走过取名后说明」的老存档补弹一次；之后启动不再弹；**所属人与操作说明仅首次出现**
 - [x] **H-BDAY-SET** 互动→工具→生日祝福→**设定日期**：月/日 + 祝福语；到日触发文本框「生日快乐，+祝福语」（同日最多一次）
 - [x] **H-BDAY-GIFT** 互动→工具→生日祝福→**赠送礼物**：输入礼物文本；每年 **4/22**（桌宠生日）触发俏皮感谢（含所属人昵称、第几个生日、礼物名；同日最多一次）
 - [x] **H-RESET-OWNER** 恢复初始：清空设置/存档/生日礼物等，**仅保留所属人**（及登记时间）
@@ -318,33 +318,130 @@
 - [x] **H-OWNER-STATS** 我的→所属人：显示**相伴天数**、**相伴时长**（各模式合计）；可点「查看详细」展开一起听歌/工作/跟随/漫步/自由/睡眠/游戏；须有 `owner_set_at` 登记时间；时长靠 `achievements.stats.mode_seconds` 累计
 - [x] **H-OWNER-LAUNCH-GREET** 启动问候：首次认主欢迎词；约超 3 天未开则「好想你」类台词（走生日问候链路 `_maybe_owner_launch_greeting`）
 - [x] **H-COMMUNITY-MENU** 系统→社区：**关于 / 问题反馈 / 投稿创意 / 操作说明**；「投稿与创意」改名「投稿创意」；操作说明不在系统根菜单（F1 仍可开）
-- [x] **H-TOOL-CLOCK-CTRL** 互动→工具打开的秒表：**开始/暂停/结束**；计时器：**开始/暂停/关闭**；默认暂停待点开始；睡眠/音乐/工作自动时钟**不加**按钮
-- [x] **H-TOOL-POMODORO** 互动→工具→番茄钟：设定工作/休息分钟；工作=定时运送，休息=睡眠+倒计时，循环；轮次 toast（满 4 轮额外提示）；任一阶段可「结束」；再点菜单可取消
+- [x] **H-TOOL-CLOCK-CTRL** 互动→工具打开的秒表：**开始/暂停/结束**；计时器：**开始/暂停/关闭**；默认暂停待点开始；睡眠/音乐/工作自动时钟**不加**按钮；**暂停/开始须真实可用**
+- [x] **H-TOOL-POMODORO** 互动→工具→番茄钟：设定工作/休息分钟；工作=定时运送，休息=睡眠+倒计时，循环；轮次 toast（满 4 轮额外提示）；任一阶段可「结束」；再点菜单可取消；休息倒计时小人与睡眠模式秒表小人一致
 - [x] **H-WORK-REWARD-BOX** 生涯累计每满 25 箱发 `work_reward_box` 进背包；点击开启随机金币/经营物资；toast 带进度与分档（小收获/不错/好运）
 - [x] **H-HOME-UI-HANDY** 家园左栏：区切/模式/经营工具固定；「更多」折叠存档·移动·配色；室内「去经营」；记住上次编辑模式；导出开创作导出中心
 - [x] **H-CLOCK-WALKER-GREEN** 秒表/计时器绕圈小人抠掉与边缘连通的**绿色外圈**（`desktop_clock._remove_outer_green`）
-- [x] **H-AI-INVITE-STUB** 互动→对话→AI 对话、面板→邀请：toast「尚未开发完全」（不进完整功能）
+- [x] **H-AI-INVITE-STUB** 互动→对话→AI 对话、面板→邀请：现阶段 toast「尚未开发完全」（完整版见 **K**）
 - [x] **H-FARM-TOOLS-V2** 家园经营：1锄2种3浇4收5砍6钓7采；草地锄两下成田；成熟度100/时+5；浇水每天≤2、浇后1h×2；砍树掷骰；水面钓鱼；采花可插室内花瓶；锄地无「锄」字特效
 - [x] **H-HOME-UI-SPLIT** 家园面板：窗口加大、格 32px；左栏操作 / 右栏房间
 - [x] **H-RPG-DIY-EXPORT** RPG DIY：编辑器保存/导出、Ctrl+S / Shift+S；副本 `%LOCALAPPDATA%\Vpet\userdata\exports\`
 - [x] **H-RPG-DIY-PICKUPS** DIY 笔刷：金币 / 加速蘑菇 / 无敌星；开局收成 pickups（有放置则不随机刷）
 - [x] **H-RPG-TRAP-FAINT** RPG 陷阱：游玩默认极淡，踩中后显示完整；编辑器始终完整
 - [x] **H-RPG-PALETTE-GREEN** DIY 底部素材栏：地物/公主/自创画抠外圈绿幕→透明（`flood_key` 清成 0,0,0,0；缩放后再抠；预览用棋盘格显透明底）
-- [x] **H-CREATOR-UPLOAD** 投稿创意：分模块勾选 +「仅打包新增」；首次弹投稿包说明；本机打包/导出后自行上传反馈通道（大文件可发网盘链接）；操作说明有「导出与投稿」专题；像素画「取色」自选颜色；**投稿即默认同意无偿公开**；文案称**作者菌**（非「开发者」）
+- [x] **H-CREATOR-UPLOAD** 投稿创意：分模块勾选 +「仅打包新增」；首次弹投稿包说明；**zip 直接放到本机桌面**；文件名含致谢署名（若有）与内容模块；自行上传反馈通道（大文件可发网盘链接）；操作说明有「导出与投稿」专题；像素画「取色」自选颜色；**投稿即默认同意无偿公开**
 - [x] **H-WORK-DEST-FOOT** 工作运送：**旗脚 = 实际终点**（`work_end` 存旗脚屏幕坐标）；拖旗则终点跟着变；送达以脚底靠近旗脚判定
-- [x] **H-WORK-FREE-END** 工作·**自由**：持续运送；有「结束」键，贴旗脚旁并随旗/终点移动；点结束回自由；模式/互动入口相同
+- [x] **H-WORK-FREE-END** 工作·**自由**：持续运送；有「结束」键，贴旗脚旁并随旗/终点移动；点结束回自由；模式/互动入口相同；结束键中间方块为**白色**
 - [x] **H-WORK-CUSTOM-AUTO** 工作·**自定义**：箱数或时间二选一；**无**结束键；到量/到点自动回自由；模式/互动入口相同；终点同样跟旗脚
 - [x] **H-WORK-PROPS-SETTING** 仅 **模式→工作→设置** 可开关「显示目的地（旗）」「显示运送货物（箱）」
-- [x] **H-WORK-DRAG-HANDLE** 可拖旗时提供实心「终点（可拖）」拖柄（色键旗窗点不到时仍可拖）；拖柄/旗/结束钮叠在桌宠之上
-- [x] **H-MODE-WAIT-HINT** 切模式 / 进工作须先刷出「请耐心等待…」提示（主线程卡顿前可见）
+- [x] **H-WORK-DRAG-HANDLE** 可拖旗时提供实心「终点（可拖）」拖柄（色键旗窗点不到时仍可拖）；拖柄/旗/结束钮叠在桌宠之上；**进工作瞬间旗与可拖终点须贴桌宠**（禁止甩在屏幕左上角）
+- [x] **H-MODE-WAIT-HINT** 切模式 / 进工作 / 启动等须先刷出等待条；文案为**使用者语言**（如「切换模式中」），禁止「请耐心等待…」提示词腔
 - [x] **H-MODE-TOTAL-PERSIST** 模式累计时长（工作/睡眠/音乐等）写入成就 default 并加载合并，禁止更新后从头丢弃；可用 `mode_seconds` 回填
 
-### I. 核对结果摘要（代码核验 · 2026-07-26）
+### J. 2026-07-26 之后会话追加（写入必做 · 逐条核对）
+
+> 下列为正式发布前陆续提出的**最终规格**。打包前须核对；**缺项不得按已完成发布。**
+
+#### J1. 场景检测 / 音乐 / 伴侣
+- [x] **J-SCENE-GAME-VIDEO** 检测到使用者在**玩游戏 / 刷视频**时切对应原地动画（`play_game*` / `watch_video*`，外圈绿幕抠图；游戏/视频侧道具位与滑动换色效果按既定资源）；**非独立菜单模式**，是检测切换
+- [x] **J-MUSIC-HOLD** 环境识别为音乐后须**持续留在音乐模式**；放完一首换下一首**不得**因此退出；暂停时桌宠与智能伴侣音乐背景特效暂时去掉，恢复播放再回来
+- [x] **J-MATE-HEART** 多次开启智能伴侣：送爱心飞向莲；送完后再触发开心等正向表情；开伴侣时的开心不得掐断莲的加载
+- [x] **J-HOLD-ALLMATE** 多次点伴侣抱起：桌宠**先走到伴侣身后**再切抱姿图；移速与切图速度保持既定，不额外变慢/加快；约 3s 恢复
+- [x] **J-SPEECH-LAYER** 对话/语音文本框在桌宠与智能伴侣**下层**；禁止频闪；叠层规则稳定
+
+#### J2. 语音 / 设置 / 性能
+- [x] **J-VOICE-INTERVAL** 语音触发间隔设置（含约 10s 等档）须真实生效；档位拉开；改档清冷却；自由走路也可触发；到点优先于表情
+- [x] **J-VOICE-STICKY** 语音模式开启后不得无故静默失效（需再到设置重开）；异常时自愈或明确可感知状态
+- [x] **J-META-DARK** Meta「屏幕暗了」类台词：仅灭屏/变暗/屏保后触发；订阅显示器电源；亮屏闲置不得乱说
+- [x] **J-SIZE-7BTN** 桌宠大小：**七档按钮**即时切换（无滑条）；点一下就要开始切；可先停自由再切完恢复；切尺寸可用 sleep 类替位；预热优先
+- [x] **J-SETTINGS-PREWARM** 设置相关（大小/字体等）启动期预热；改字体后面板须能看出变化且尽量不卡
+- [x] **J-STARTUP-PERF** 首次启动可加长预热并出文案；自由走动帧预热；右键菜单不得把桌宠「卡没」；操作说明滚动/取名输入须可操作
+- [x] **J-STARTUP-SLEEP-BUDGET** 首次预热可约十几秒；**非首次** sleep 占位目标 **15s 内**（走动帧齐即结束；硬上限 `STARTUP_REPEAT_TO_FREE_CAP_MS`）
+- [x] **J-STARTUP-SFX-TYPE** 开场音效与打字机动画须保留/可恢复
+- [x] **J-GUIDE-COPY** 操作说明专题文案简洁、像说明书不像提示语；转换/等待 toast 用给人看的话
+
+#### J3. 装扮 / 家园 / RPG 素材
+- [x] **J-OUTFIT-USER-ART** 装扮可选**全部**自创画（RPG/装扮/礼物/家园来源均持久保存）；禁止栏目只留一张、后画覆盖前画；装扮页浅色底
+- [x] **J-RPG-PALETTE-SCROLL** RPG 地图编辑底栏素材可用左右键滑动选择；自创画**不要草地底**；自创画可命名（非只能默认名）；点选须对应正确素材（禁止点 A 出 B）
+- [x] **J-HOME-COLOR** 家园家具：**每个家具单独改色** + 自选色显示且可用；室外场景底不要透明；画素材底栏按钮随字体放大
+- [x] **J-HOME-ACTION-TIP** 家园床/椅等动作提示贴家园窗旁 + 小人头顶，不居中 toast；自由/操控均可随机动作表情
+- [x] **J-THEME-PAGES** 家园 / 装扮 / 日程 / 所属人 / 生日祝福等页：纸质功能向背景（对齐日记）；日程可加闹钟暗纹；生日可加蛋糕暗纹；赠送礼物背景按既定恢复
+
+#### J4. 工具 / 暴露 / 莱姆 / 其它互动
+- [x] **J-CLOCK-LOOK** 时间工具底轻微透明（勿过透）；音乐栏按钮略透；绕圈小人后有蓝色像素流星尾迹；音乐模式时钟勿被光圈挡住
+  - 时钟 Z 序：桌宠背景特效之上、立绘之下（`_restack_display_z`）
+  - 音乐时钟 `glass=DESK_CLOCK_BTN_TRANSPARENCY`（禁止未定义变量导致「界面异常已拦截」）
+- [x] **J-SCHEDULE-FIRE** 日程提醒须在设定时间**真实提醒**
+- [x] **J-DIARY-FLIP** 日记顶装订圆环；过往页单页翻页；报讯时勿异常红字
+- [x] **J-SLEEP-ZZZ** 睡眠模式背景 Zzz 效果须在
+- [x] **J-EXPOSE-BLUE** 暴露故障窗：蓝色；开局数量约 **12**、完美通关可再加、上限约 **28**；散落更密；成功结算去掉「故障清光」那行
+  - 常量：`EXPOSE_TAPS_FIRST=12` / `EXPOSE_TAPS_MAX=28` / `EXPOSE_FAULT_START=12` / `EXPOSE_FAULT_MAX=28`
+- [x] **J-RHYME-PACING** 莱姆：单次作用点数加大、对局勿过久；开场语音保留；减少卡顿
+- [x] **J-YESNO-KEY** 判断「是/否」立绘：`no.jpg` 与 `yes.jpg` **同样**抠外圈青草绿幕（禁止「否」留绿底）
+- [x] **J-HAPPY-BOUNCE** 开心：多段上下跳动须可用（勿被音乐/场景门禁整段掐掉）
+  - **切图**：`happy` ↔ `stand`（`sprites.happy[0]` / `sprites.stand`；缺 happy 时回退 `happy.jpg`）
+  - **位移**：切 happy 时 `happy_bounce_offset = -HAPPY_BOUNCE_PX`（14px），切 stand 时回 0；与切图同帧；无需额外动态缓动
+  - **节奏**：每张 `HAPPY_HALF_MS=280`；共 `HAPPY_CYCLES=3` 轮（交替 3 次）
+  - **实现**：`_place_window(light=True)` 只移立绘；背景小花不跟 `happy_bounce`；禁止完整 place/lift 把位移冲掉
+  - **锚点**：`_play_happy` / `_happy_bounce_up` / `_happy_bounce_down`
+- [x] **J-EXPR-BOUNCE** 表情弹动次数：开心 / 伤心 / 生气 = **3 次**；其余表情（疑问/有主意/点赞/比心/wink/脸红等）= **1 次**
+  - 伤心/生气：`_play_expression_pop(times=3)`（`click_bounce_offset`）
+  - 其余走 `_play_expression_pop()` 或 wink/shy 专用单次弹
+- [x] **J-IDLE-QUICK** 动作/表情/模式等结束后尽快回自由走动（`_resume_idle(quick=True)`）；减卡顿不得靠砍功能；常态站立间隔略缩短（`STAND_IDLE_*`）
+- [x] **J-WINK-BOUNCE** wink：触发时整窗弹跳一下
+- [x] **J-SHY-BOUNCE** 脸红：出现与连点加深时均弹跳一下
+- [x] **J-GALLERY-LOOK** 画廊：画展墙/地板背景；预览与缩略金色像素画框
+- [x] **J-PHONO-LOOK** 留声：点播不整表刷新；音乐厅背景 + 像素留声机顶栏
+- [x] **J-EMOTE-RATE** 各类动作/表情触发频率可略提高（含家园）
+- [x] **J-CLEAN-PACK** 公开干净包：无手机版、无个人路径/隐私信息；打包前关旧进程
+
+#### J5. 手机版（并行工程 · 对照电脑必做项）
+- [x] **J-MOBILE-DEMO** 手机版可展示 demo；**千粉后**再正式制作完整版（产品节奏，非本桌面包阻塞项）
+- [ ] **J-MOBILE-ALIGN** 手机与电脑对齐的剩余项：伴侣正面/侧面抠图同高、开心跳起显示完整、看视频/听音乐为**检测切换**非菜单模式、面板按电脑整理等（见 `VpetMobile` 清单；未齐项打包前在手机侧单独核对）
+
+#### J6. 2026-08-14 会话追加（启动体感 / 开心节奏 / 时间显示 / 干净包）
+
+- [x] **J-SPAWN-FEEDBACK** 点快捷方式/托盘出宠：立刻「正在打开桌宠…」反馈；首次 spawn **不**空等 1.4s（仅连点错开）
+  - 锚点：`vpet_launcher._show_spawn_feedback` / `spawn_pet`
+- [x] **J-STARTUP-ENTRANCE** 开场原地加载动画须可见：像素聚拢 + 早摆窗脉冲；资源就绪后可提前收束，但禁止 0 帧掐掉
+  - 最短可见：`STARTUP_ENTRANCE_VISIBLE_MIN_MS` / `STARTUP_MIN_MS`；`abort` 至少先画若干帧
+- [x] **J-STARTUP-SLEEP-BUDGET**（见上）非首次 sleep 占位目标 **15s 内**
+- [x] **J-HAPPY-BOUNCE**（见上）happy↔stand、0.28s×3、只移立绘
+- [x] **J-CLOCK-GLASS** 音乐时钟媒体键须定义 `glass`；未定义会炸 toast「界面异常已拦截」
+- [x] **J-CLEAN-ZIP** 干净电脑版：`build_app.py --zip` → 桌面 `Vpet_update_时间戳.zip`（已 scrub 个人存档）
+
+#### J7. 2026-08-14 切模式/动作清背景特效
+
+- [x] **J-FX-CLEAR-ON-SWITCH** 切模式、切动作/表情/功能时，须去掉**前一**模式/动作/表情/功能的背景特效（开心花、雨、灯泡、点赞/害羞/眨眼/比心、互动粒子、晕眩、礼物像素、喂食粒子等）；音乐光圈随音乐开停；佩戴花常驻不随打断销毁
+  - 锚点：`_clear_all_action_fx`（补 happy/food）；`_mode_switch_light_prepare` 轻量切模式也清特效；`_interrupt_current_interaction` 统一走清特效
+- [x] **J-TIMERS-OFF** 设置「时间显示」关：去掉睡眠/音乐/工作（自由）**秒表面**（数字+绕圈小人）；工具秒表/计时器/番茄与自定义·番茄倒计时仍可用
+  - 锚点：`_set_timers_display` / `_sync_auto_desk_clocks`
+- [x] **J-MUSIC-MEDIA-KEEP** 音乐模式关「时间显示」时：**只关秒表，保留**下方媒体键 ⏮ ⏯ ⏭ ⏹；开显示则秒表+媒体键同窗
+  - 锚点：`_start_desk_clock(show_timer_face=…)` / `_sync_auto_desk_clocks`
+- [x] **J-DIFFICULTY-SETTING** 设置页「游戏难度」滑条 + 低/中/高可调，写入 `difficulty_t` 并 `_apply_difficulty_runtime`（接食物/暴露/对战等）
+
+### K. 完整版目标（必做 · 尚未完成）
+
+> 菜单可先占位，但下列为**最终要实现**的功能，未完成前不得对外宣称「已完整」。
+
+- [ ] **K-AI-CHAT** AI 对话完整版（非 stub toast）
+- [ ] **K-INVITE** 跨电脑邀请 / 联机相关完整版（非 stub toast）
+- [ ] **K-RHYME-ONLINE** 莱姆真·联机对战（房间匹配与状态同步）
+- [ ] **K-CLOUD-SAVE** 整包云端存档（若产品确认要做）
+- [ ] **K-GAME-HISTORY** 个人游戏历史明细页
+- [ ] **K-VIDEO-ASR** 视频 ASR 自动抽词进词库（可选增强）
+- [ ] **K-RHYME-SPRITE** 莱姆独立立绘精灵
+
+### I. 核对结果摘要（代码核验 · 2026-08-14）
 
 | 结论 | 编号 |
 |------|------|
-| ✅ 已实现 | **A～E**；**F** 含 G08/M01/F07/E05；**G** 文档；**H** 全段（含 **H-WORK-DEST-FOOT** / **H-WORK-FREE-END** / **H-WORK-CUSTOM-AUTO** / **H-WORK-DRAG-HANDLE** / **H-MODE-WAIT-HINT** / **H-OWNER-*** 等）；**公开包 `DEMO_ALWAYS_SHOW_GUIDES=False`、`PET_ID_FEATURE=False`** |
-| ❌ / ⚠️ 未达标 | （无） |
+| ✅ 已写入必做 | **A～H**；**J1～J4**；**J6**；**J7**（切模式清特效 / 时间显示关秒表留媒体键 / 难度设置） |
+| ✅ 本轮已修对齐 | **J-EXPOSE-BLUE**；**J-CLOCK-LOOK**；**J-CLOCK-GLASS**；**J-TIMERS-OFF**；**J-MUSIC-MEDIA-KEEP** |
+| ⚠️ 手机对齐 | **J-MOBILE-ALIGN**（手机工程持续对照） |
+| ❌ 完整版未做 | **K-AI-CHAT** / **K-INVITE** / **K-RHYME-ONLINE** / **K-CLOUD-SAVE** / **K-GAME-HISTORY** / **K-VIDEO-ASR** / **K-RHYME-SPRITE** |
+| 公开包 | `DEMO_ALWAYS_SHOW_GUIDES=False`、`PET_ID_FEATURE=False`；干净包无个信、默认无手机版 |
 
 ---
 
@@ -352,13 +449,17 @@
 
 | 文件 | 用途 |
 |------|------|
-| `PRE_VOICE_BASELINE.md` | **本文件**：语音前基线 + 最终必做核对表 |
+| `PRE_VOICE_BASELINE.md` | **本文件**：语音前基线 + 最终必做核对表（含 H / J / K） |
 | `IMMUTABLE_FILES.md` | 禁止破坏的函数与语音接入规则 |
 | `REQUIREMENTS.md` | 原始需求（只读） |
-| `FEATURES.md` | 功能清单（只读） |
+| `FEATURES.md` | 功能清单；暂未实现与必做维护指针 |
 | `pet.py` | 主程序实现 |
+| `desktop_clock.py` | 桌面秒表/计时器绘制 |
+| `vpet_launcher.py` | 托盘启动器 / spawn 反馈 |
+| `build_app.py` | 打包；`--zip` 干净电脑版 |
 | `voice_system.py` | 仅语音逻辑 |
 | `bundled/Vpetgame/game.py` | Silent Oath RPG |
 | `panel_decor.py` | 面板主题色（含不透明内色） |
+| `VpetMobile/` | 手机并行工程（J5 / 千粉正式版节奏） |
 
-**最后更新**：2026-07-26（工作旗脚/自由结束键/自定义自动结束；拖柄；切模式等待提示；累计时长持久化；性能节流）
+**最后更新**：2026-08-14（J7：切模式清特效；时间显示关秒表留音乐媒体键；难度设置）

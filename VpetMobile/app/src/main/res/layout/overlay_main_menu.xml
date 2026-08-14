@@ -18,7 +18,7 @@
         android:layout_width="248dp"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="#FF141824"
+        android:background="@color/menu_bg"
         android:padding="6dp">
 
         <!-- 四大骨架：等宽等高校 -->
@@ -58,7 +58,7 @@
             android:text="收起"
             android:textColor="#FFEEF2FF"
             android:textSize="12sp"
-            android:background="#FF181F34" />
+            android:background="@color/menu_item_bg" />
     </LinearLayout>
 
     <View

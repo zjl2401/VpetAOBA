@@ -19,7 +19,7 @@ VOICE_CHANNEL_ID = 1
 VOICE_PRIORITY_AMBIENT = 1
 VOICE_PRIORITY_SCENE = 2
 VOICE_GLOBAL_COOLDOWN_MS = 10_000
-VOICE_COOLDOWN_MIN_MS = 3_000
+VOICE_COOLDOWN_MIN_MS = 1_500
 VOICE_COOLDOWN_MAX_MS = 60_000
 VOICE_HI_CATEGORY = "你好"
 
@@ -377,6 +377,10 @@ class VoicePlayer:
     def set_global_cooldown_ms(self, ms: int) -> None:
         self.global_cooldown_ms = max(VOICE_COOLDOWN_MIN_MS, min(VOICE_COOLDOWN_MAX_MS, int(ms)))
 
+    def clear_global_cooldown(self) -> None:
+        """设置改间隔后立刻按新档位可触发，不被旧冷却卡住。"""
+        self._last_session_end_ms = 0
+
     def reload_catalog_async(self, *, on_done: Callable[[], None] | None = None) -> None:
         if on_done:
             self._catalog_on_done = on_done
@@ -418,6 +422,10 @@ class VoicePlayer:
             return True
         return int(time.time() * 1000) - self._last_session_end_ms >= int(self.global_cooldown_ms)
 
+    def global_cooldown_ready(self) -> bool:
+        """对外：随机语音间隔是否已到。"""
+        return self._global_cooldown_ready()
+
     def _mark_session_end(self) -> None:
         self._last_session_end_ms = int(time.time() * 1000)
 
@@ -439,6 +447,37 @@ class VoicePlayer:
 
     def is_busy(self) -> bool:
         return self._playing or bool(self._queue)
+
+    def _channel_busy(self) -> bool:
+        try:
+            import pygame
+
+            if pygame.mixer.get_init():
+                return bool(pygame.mixer.Channel(VOICE_CHANNEL_ID).get_busy())
+        except Exception:
+            pass
+        return False
+
+    def _heal_stuck_playing(self) -> None:
+        """声道已空但 _playing 仍为真时清掉卡死状态，避免后续语音全部被挡。"""
+        if not self._playing:
+            return
+        if self._queue:
+            return
+        if self._channel_busy():
+            deadline = int(getattr(self, "_clip_deadline_ms", 0) or 0)
+            if deadline <= 0 or int(time.time() * 1000) < deadline + 1500:
+                return
+        self._playing = False
+        self._current = None
+        self._session_priority = 0
+        if self._watch_job:
+            try:
+                self.root.after_cancel(self._watch_job)
+            except Exception:
+                pass
+            self._watch_job = None
+        self._mark_session_end()
 
     def _can_start(self, priority: int) -> bool:
         if not self._playing and not self._queue:
@@ -575,6 +614,7 @@ class VoicePlayer:
     ) -> bool:
         if not self.enabled or not clips:
             return False
+        self._heal_stuck_playing()
         if self.is_busy():
             # 仅 interrupt_busy 可打断；ignore_cooldown 只跳过全局冷却，不得误掐正在播的场景语音
             if interrupt_busy:
@@ -751,12 +791,24 @@ class VoicePlayer:
             interrupt_busy=interrupt_busy,
         )
 
-    def play_laimu_open(self, *, on_done=None, priority: int = VOICE_PRIORITY_SCENE, ignore_cooldown: bool = False) -> bool:
+    def play_laimu_open(
+        self,
+        *,
+        on_done=None,
+        priority: int = VOICE_PRIORITY_SCENE,
+        ignore_cooldown: bool = False,
+        interrupt_busy: bool = False,
+    ) -> bool:
         clip = self.catalog.pick_open_laimu()
         if not clip:
             return False
         return self.play_clips(
-            [clip], chain=False, on_done=on_done, priority=priority, ignore_cooldown=ignore_cooldown
+            [clip],
+            chain=False,
+            on_done=on_done,
+            priority=priority,
+            ignore_cooldown=ignore_cooldown,
+            interrupt_busy=interrupt_busy,
         )
 
     def play_call(
@@ -1023,6 +1075,9 @@ class VoicePlayer:
         def tick() -> None:
             self._watch_job = None
             if play_gen != self._play_gen:
+                # 代际已作废：若仍挂着旧 playing，清掉以免永久挡播
+                if self._playing and not self._queue:
+                    self._heal_stuck_playing()
                 return
             now_ms = int(time.time() * 1000)
             deadline_ms = getattr(self, "_clip_deadline_ms", now_ms)
@@ -1032,14 +1087,7 @@ class VoicePlayer:
             if now_ms >= deadline_ms:
                 self._end_current_clip(chain=chain, force_stop=True, play_gen=play_gen)
                 return
-            busy = False
-            try:
-                import pygame
-
-                if pygame.mixer.get_init():
-                    busy = pygame.mixer.Channel(VOICE_CHANNEL_ID).get_busy()
-            except Exception:
-                busy = False
+            busy = self._channel_busy()
             if busy or elapsed < min_play_ms:
                 self._watch_job = self.root.after(80, tick)
                 return

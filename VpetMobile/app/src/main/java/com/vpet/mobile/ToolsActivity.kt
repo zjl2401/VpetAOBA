@@ -183,6 +183,17 @@ class ToolsActivity : AppCompatActivity() {
             binding.blessMsg.setText(p.optString("bless_message"))
         }
         binding.giftText.setText(p.optString("gift_text"))
+        try {
+            assets.open("home/gift_art.png").use { stream ->
+                binding.giftArtPreview.setImageBitmap(android.graphics.BitmapFactory.decodeStream(stream))
+            }
+        } catch (_: Exception) {
+            binding.giftArtPreview.setImageDrawable(null)
+        }
+        val bundledN = BundledMusic.tracks(this).size
+        binding.musicLabel.text = PetProfileStore.musicUri(this)?.let {
+            "当前：${PetProfileStore.musicTitle(this).ifEmpty { it }}"
+        } ?: "当前：未导入（将使用内置曲库 $bundledN 首）"
     }
 
     private fun queryDisplayName(uri: Uri): String? {

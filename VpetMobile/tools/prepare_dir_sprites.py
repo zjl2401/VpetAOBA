@@ -62,7 +62,7 @@ def flood_key(img: Image.Image) -> Image.Image:
     return rgba
 
 
-def export_jpg(name: str, max_side=512):
+def export_jpg(name: str):
     src = SRC / name
     if not src.exists():
         print("MISSING", name)
@@ -71,30 +71,22 @@ def export_jpg(name: str, max_side=512):
     bbox = keyed.getbbox()
     if bbox:
         keyed = keyed.crop(bbox)
-    w, h = keyed.size
-    scale = min(max_side / w, max_side / h, 1.0)
-    if scale < 1:
-        keyed = keyed.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
     out_name = name.replace(".jpg", ".png")
     keyed.save(OUT / out_name, "PNG")
     print("ok", out_name, keyed.size)
 
 
-def copy_nc(name: str, max_side=512):
+def copy_nc(name: str):
     src = SRC / name
     if not src.exists():
         print("MISSING", name)
         return
     im = Image.open(src).convert("RGBA")
-    # nc 已是透明 PNG；若仍有绿边再抠
+    # nc 已是透明 PNG；若仍有绿边再抠；不缩放
     keyed = flood_key(im)
     bbox = keyed.getbbox()
     if bbox:
         keyed = keyed.crop(bbox)
-    w, h = keyed.size
-    scale = min(max_side / w, max_side / h, 1.0)
-    if scale < 1:
-        keyed = keyed.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
     keyed.save(OUT / name, "PNG")
     print("ok", name, keyed.size)
 

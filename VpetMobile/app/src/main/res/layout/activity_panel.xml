@@ -1,80 +1,122 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 紧凑浮窗面板：默认只露状态条+折叠背包，展开后内部滚动 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:fillViewport="true"
-    android:background="@color/bg_dark">
+    android:layout_height="wrap_content"
+    android:padding="10dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:background="@drawable/bg_panel_card"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:elevation="8dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="状态面板"
-            android:textColor="@color/accent_pink"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="12dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:id="@+id/panelTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="状态面板"
+                android:textColor="@color/accent_pink"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnPanelClose"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="关闭"
+                android:textColor="#AAB8C8"
+                android:textSize="13sp"
+                android:padding="6dp"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/panelStats"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/text_main"
-            android:textSize="15sp"
-            android:layout_marginBottom="12dp" />
+            android:textSize="12sp"
+            android:lineSpacingExtra="2dp"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:id="@+id/labelStamina"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="体力"
+            android:textColor="#AAB8C8"
+            android:textSize="11sp" />
 
         <ProgressBar
             android:id="@+id/barStamina"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="8dp"
+            android:layout_marginBottom="6dp"
             android:max="100" />
 
         <TextView
+            android:id="@+id/labelMood"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="体力"
+            android:text="心情"
             android:textColor="#AAB8C8"
-            android:layout_marginBottom="12dp" />
+            android:textSize="11sp" />
 
         <ProgressBar
             android:id="@+id/barMood"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="8dp"
+            android:layout_marginBottom="10dp"
             android:max="100" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="心情"
-            android:textColor="#AAB8C8"
-            android:layout_marginBottom="16dp" />
 
         <Button
             android:id="@+id/btnToggleBag"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="40dp"
             android:text="背包 ▶"
-            android:layout_marginBottom="8dp" />
+            android:textSize="13sp"
+            android:layout_marginBottom="2dp" />
 
-        <LinearLayout
-            android:id="@+id/bagList"
+        <TextView
+            android:id="@+id/bagHint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
+            android:text="点按直喂 · 长按拖到桌宠"
+            android:textColor="#88A0B8"
+            android:textSize="10sp"
             android:visibility="gone"
-            android:layout_marginBottom="12dp" />
+            android:layout_marginBottom="4dp" />
 
-        <Button
-            android:id="@+id/btnPanelClose"
+        <ScrollView
+            android:id="@+id/bagScroll"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="关闭" />
+            android:visibility="gone"
+            android:fillViewport="false"
+            android:overScrollMode="ifContentScrolls">
+
+            <LinearLayout
+                android:id="@+id/bagList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="4dp" />
+        </ScrollView>
     </LinearLayout>
-</ScrollView>
+</FrameLayout>

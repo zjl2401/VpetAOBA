@@ -11,8 +11,8 @@ android {
         applicationId = "com.vpet.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0-overlay"
+        versionCode = 63
+        versionName = "0.2.61-squat-scale"
     }
 
     buildTypes {
@@ -37,6 +37,9 @@ android {
     }
     buildFeatures {
         viewBinding = true
+    }
+    androidResources {
+        noCompress += listOf("wav", "mp3")
     }
 }
 

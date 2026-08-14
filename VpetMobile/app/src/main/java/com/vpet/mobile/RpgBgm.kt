@@ -11,6 +11,12 @@ class RpgBgm(private val context: Context) {
     private var player: MediaPlayer? = null
     private var looping = false
 
+    /** 开场/标题页只播 startmusic（循环）。 */
+    fun playIntroOnly() {
+        stop()
+        playAsset("rpg/startmusic.mp3", loop = true)
+    }
+
     fun startAdventure() {
         stop()
         playAsset("rpg/startmusic.mp3", loop = false) {

@@ -74,7 +74,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="无法直连网易云云端曲库。若歌已下载到手机，点下方导入选中即可。模式→音乐会播放此曲并漫步。"
+            android:text="内置默认曲 RADICAL MAT。也可导入本机歌曲；有导入曲时优先播导入曲。模式→音乐：漫步+光圈+秒表。"
             android:textColor="#AAB8C8"
             android:textSize="12sp"
             android:layout_marginBottom="8dp" />
@@ -141,6 +141,15 @@
             android:textColor="@color/accent_pink"
             android:textSize="16sp"
             android:layout_marginBottom="6dp" />
+
+        <ImageView
+            android:id="@+id/giftArtPreview"
+            android:layout_width="match_parent"
+            android:layout_height="120dp"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
+            android:contentDescription="生日像素画"
+            android:layout_marginBottom="8dp" />
 
         <EditText
             android:id="@+id/blessMonth"

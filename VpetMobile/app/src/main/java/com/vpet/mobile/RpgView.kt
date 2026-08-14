@@ -377,43 +377,17 @@ class RpgView @JvmOverloads constructor(
     }
 
     private fun drawTile(c: Canvas, t: Int, l: Float, t0: Float, r: Float, b: Float) {
-        floorPaint.color = when (t) {
-            RpgMapLoader.LAND -> Color.parseColor("#6B5A3E")
-            RpgMapLoader.WATER -> Color.parseColor("#2A6090")
-            RpgMapLoader.BRICK -> Color.parseColor("#5A4A4A")
-            RpgMapLoader.GRASS -> if (layer == "underground") Color.parseColor("#2A2A32") else Color.parseColor("#2A5030")
-            else -> if (layer == "underground") Color.parseColor("#1E1E28") else Color.parseColor("#1E2A3A")
-        }
-        c.drawRect(l, t0, r, b, floorPaint)
-        when (t) {
-            in RpgMapLoader.WALLS, RpgMapLoader.TREE -> {
-                wallPaint.color = when (t) {
-                    RpgMapLoader.WATER -> Color.parseColor("#2266AA")
-                    RpgMapLoader.TREE -> Color.parseColor("#1A6030")
-                    RpgMapLoader.HOUSE -> Color.parseColor("#8B5A2B")
-                    else -> Color.parseColor("#4A6078")
-                }
-                c.drawRect(l + 1, t0 + 1, r - 1, b - 1, wallPaint)
-            }
-            RpgMapLoader.PICKUP_COIN ->
-                c.drawCircle((l + r) / 2, (t0 + b) / 2, (r - l) * 0.18f, coinPaint)
-            RpgMapLoader.TREASURE -> {
-                val bmp = treasureBmp
-                if (bmp != null) {
-                    c.drawBitmap(bmp, null, RectF(l + 2, t0 + 2, r - 2, b - 2), null)
-                } else {
-                    c.drawRoundRect(RectF(l + 4, t0 + 6, r - 4, b - 4), 4f, 4f, chestPaint)
-                }
-            }
-            RpgMapLoader.TREASURE_OPEN ->
-                c.drawRoundRect(RectF(l + 4, t0 + 8, r - 4, b - 4), 4f, 4f, openChestPaint)
-            RpgMapLoader.GATE ->
-                c.drawRoundRect(RectF(l + 3, t0 + 3, r - 3, b - 3), 6f, 6f, exitPaint)
-            RpgMapLoader.STAIRS, RpgMapLoader.CAVE ->
-                c.drawRoundRect(RectF(l + 4, t0 + 4, r - 4, b - 4), 4f, 4f, stairsPaint)
-            in RpgMapLoader.TRAPS ->
-                c.drawCircle((l + r) / 2, (t0 + b) / 2, (r - l) * 0.2f, trapPaint)
-        }
+        RpgTileAtlas.draw(
+            context = context,
+            c = c,
+            tileId = t,
+            l = l,
+            t = t0,
+            r = r,
+            b = b,
+            underground = layer == "underground",
+            floorPaint = floorPaint,
+        )
     }
 
     private fun currentSprite(): Bitmap? {

@@ -41,6 +41,7 @@ class RpgDiyEditorActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityRpgDiyBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        OverlayGate.pause(this)
 
         if (!loadUserDiy()) binding.diyCanvas.resetBlank()
         refreshLayerBtn()
@@ -122,6 +123,11 @@ class RpgDiyEditorActivity : AppCompatActivity() {
             )
         }
         binding.btnDiyBack.setOnClickListener { finish() }
+    }
+
+    override fun onDestroy() {
+        OverlayGate.resume(this)
+        super.onDestroy()
     }
 
     private fun refreshLayerBtn() {

@@ -19,6 +19,8 @@ import kotlin.math.sin
 /**
  * 像素块进出场溶解。对照桌面 `_run_pixel_block_dissolve_animation`（radial 固定风格）。
  * reverse=false 入场；reverse=true 出场。
+ *
+ * 抓屏后 letterbox 成正方形再切块（勿把非正方形直接 sx/sy 拉扁）。
  */
 object PixelDissolve {
     const val FRAME_MS = 28L
@@ -41,12 +43,27 @@ object PixelDissolve {
         totalMs: Long? = null,
         onDone: (() -> Unit)? = null,
     ) {
-        val bmp = capture(target) ?: run {
+        if (target.width <= 0 || target.height <= 0) {
+            target.post { play(target, reverse, totalMs, onDone) }
+            return
+        }
+        val captured = capture(target) ?: run {
             onDone?.invoke()
             return
         }
-        val size = max(target.width, target.height).coerceAtLeast(PetPrefs.sizePx(target.context))
-        val (bs, specs) = buildSpecs(bmp, size)
+        val side = max(captured.width, captured.height).coerceAtLeast(1)
+        val square = letterboxToSquare(captured, side)
+        if (square !== captured) {
+            try {
+                captured.recycle()
+            } catch (_: Exception) {
+            }
+        }
+        val (bs, specs) = buildSpecs(square, side)
+        try {
+            square.recycle()
+        } catch (_: Exception) {
+        }
         if (specs.isEmpty()) {
             onDone?.invoke()
             return
@@ -65,6 +82,9 @@ object PixelDissolve {
         } else {
             FRAME_MS
         }
+        // 叠层对齐 ImageView 中心（letterbox 后边长可能 ≥ 视图边）
+        val left = target.left + (target.width - side) / 2
+        val top = target.top + (target.height - side) / 2
         val overlay = object : View(target.context) {
             private var phase = 0
             private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -88,7 +108,7 @@ object PixelDissolve {
             }
 
             override fun onDraw(canvas: Canvas) {
-                drawFrame(canvas, specs, bs, size, phase, frames, reverse, paint)
+                drawFrame(canvas, specs, bs, side, phase, frames, reverse, paint)
             }
 
             fun start() {
@@ -96,45 +116,52 @@ object PixelDissolve {
                 handler.post(tick)
             }
         }
-        val lp = android.widget.FrameLayout.LayoutParams(size, size)
-        // 对齐 ImageView 位置
+        val lp = android.widget.FrameLayout.LayoutParams(side, side)
         if (parent is android.widget.FrameLayout) {
             lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
-            lp.leftMargin = target.left
-            lp.topMargin = target.top
+            lp.leftMargin = left
+            lp.topMargin = top
         }
         parent.addView(overlay, lp)
         overlay.start()
     }
 
+    /** 按 ImageView 实际绘制抓屏（含 scaleType），避免 drawable.setBounds 二次拉伸。 */
     private fun capture(iv: ImageView): Bitmap? {
-        val d = iv.drawable ?: return null
         val w = iv.width.coerceAtLeast(1)
         val h = iv.height.coerceAtLeast(1)
+        if (iv.drawable == null) return null
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        d.setBounds(0, 0, w, h)
-        d.draw(c)
+        iv.draw(c)
         return bmp
     }
 
+    /** 保持宽高比贴入正方形，空白透明（对照桌面已是 size×size 的 rgba）。 */
+    private fun letterboxToSquare(src: Bitmap, side: Int): Bitmap {
+        if (src.width == side && src.height == side) return src
+        val out = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        val left = (side - src.width) / 2f
+        val top = (side - src.height) / 2f
+        c.drawBitmap(src, left, top, null)
+        return out
+    }
+
     private fun buildSpecs(img: Bitmap, size: Int): Pair<Int, List<Spec>> {
-        // 固定轨迹：由格点推导，不随机 shuffle（对照桌面固定种子）
+        // 图像已是 size×size：按桌面直接用格点坐标采样，禁止 sx/sy 非等比拉伸
         val bs = max(3, max(4, size / 18) - 1)
         val cols = max(1, (size + bs - 1) / bs)
         val rows = max(1, (size + bs - 1) / bs)
         val mid = size * 0.5f
         val specs = ArrayList<Spec>(cols * rows)
-        val sx = img.width / size.toFloat()
-        val sy = img.height / size.toFloat()
         for (row in 0 until rows) {
             for (col in 0 until cols) {
                 val x0 = col * bs
                 val y0 = row * bs
                 val x1 = min(size, x0 + bs)
                 val y1 = min(size, y0 + bs)
-                val color = avgColor(img, (x0 * sx).toInt(), (y0 * sy).toInt(), (x1 * sx).toInt(), (y1 * sy).toInt())
-                    ?: continue
+                val color = avgColor(img, x0, y0, x1, y1) ?: continue
                 val cx = x0 + bs * 0.5f
                 val cy = y0 + bs * 0.5f
                 val fromCx = cx - mid
@@ -197,7 +224,6 @@ object PixelDissolve {
                 val te = tLocal * tLocal * tLocal
                 Triple(te, 1f - te, 1f - te * 0.3f)
             } else {
-                // ease-in-out quad
                 val te = if (tLocal < 0.5f) {
                     2f * tLocal * tLocal
                 } else {

@@ -3,11 +3,33 @@
   "display_size": 128,
   "display_preset": "中",
   "difficulty": "中",
+  "rhythm_speed": "中",
+  "rhythm_chart_diff": "中",
+  "rhythm_auto": false,
+  "weather_city": "北京",
   "seen_hints": {
     "rhyme_invite": true,
     "companion_bar": true,
     "game_mode": true,
-    "music_mode": true
+    "music_mode": true,
+    "startup_warmup": true,
+    "operation_guide": true,
+    "post_owner_guide": true
   },
+  "work_mode": {
+    "show_props": true,
+    "show_stack": true
+  },
+  "show_timers": true,
+  "voice_mode": false,
+  "voice_interval_ms": 10000,
+  "difficulty_t": 0.5,
+  "strip_outer_black": false,
+  "display_layer": "top",
+  "persona": "default",
+  "pet_id_api_url": "",
+  "pet_id_activation_code": "",
+  "launch_at_login": true,
+  "spawn_on_launcher_start": true,
   "work_box_total": 5
 }

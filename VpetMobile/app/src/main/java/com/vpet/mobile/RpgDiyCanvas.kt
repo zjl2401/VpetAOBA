@@ -108,8 +108,17 @@ class RpgDiyCanvas @JvmOverloads constructor(
             for (x in 0 until cols) {
                 val l = ox + x * cell
                 val t = oy + y * cell
-                p.color = colorOf(grid[y][x])
-                canvas.drawRect(l, t, l + cell, t + cell, p)
+                RpgTileAtlas.draw(
+                    context = context,
+                    c = canvas,
+                    tileId = grid[y][x],
+                    l = l,
+                    t = t,
+                    r = l + cell,
+                    b = t + cell,
+                    underground = editLayer == "underground",
+                    floorPaint = p,
+                )
             }
         }
         p.color = Color.parseColor("#4488FF")

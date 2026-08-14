@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""打包 Vpet 为 Windows 桌面程序。默认不写桌面快捷方式（加 --shortcut 才写）。"""
+"""打包 Vpet 为 Windows 桌面程序。默认不写桌面快捷方式（加 --shortcut 才写）。
+加 --zip / --clean-zip 时额外打出桌面干净电脑版 Vpet_update_时间戳.zip。
+"""
 
 from __future__ import annotations
 
 import shutil
 import subprocess
 import sys
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -21,42 +24,25 @@ LEGACY_GAME_SRC = DESKTOP / "Vpetgame"
 
 
 def _ensure_icon() -> Path:
-    from PIL import Image
+    """用 stand 立绘生成图标：居中裁剪/等比缩放，禁止非等比拉伸。"""
+    try:
+        from make_app_icons import main as _make_icons
 
+        _make_icons()
+    except Exception as exc:
+        print(f"警告：make_app_icons 失败（{exc}），尝试沿用已有 ico")
     icon_ico = ROOT / "app_icon.ico"
     icon_png = ROOT / "app_icon.png"
-    # 优先使用 app_icon1（用户指定的新图标）
-    sources = (
-        ROOT / "app_icon1.jpg",
-        ROOT / "app_icon1.png",
-        ROOT / "app_icon1.ico",
-        ROOT / "gallery" / "stand.png",
-    )
-    src = next((p for p in sources if p.exists()), None)
-    if src is not None:
-        img = Image.open(src).convert("RGBA")
-        # 居中裁成正方形再缩放，避免 JPG 比例拉伸变形
-        w, h = img.size
-        side = min(w, h)
-        left = (w - side) // 2
-        top = (h - side) // 2
-        img = img.crop((left, top, left + side, top + side))
-        img_png = img.resize((256, 256), Image.Resampling.LANCZOS)
-        img_png.save(icon_png, format="PNG")
-        img_png.save(
-            icon_ico,
-            format="ICO",
-            sizes=[(256, 256), (128, 128), (64, 64), (32, 32), (16, 16)],
-        )
-    elif not icon_ico.exists():
-        img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
-        from PIL import ImageDraw
+    if icon_ico.exists():
+        return icon_ico
+    from PIL import Image, ImageDraw
 
-        draw = ImageDraw.Draw(img)
-        draw.rectangle((48, 40, 208, 216), fill="#4488ff")
-        draw.rectangle((88, 72, 168, 112), fill="#ffffff")
-        img.save(icon_png, format="PNG")
-        img.save(icon_ico, format="ICO", sizes=[(256, 256), (64, 64), (32, 32)])
+    img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle((48, 40, 208, 216), fill="#4488ff")
+    draw.rectangle((88, 72, 168, 112), fill="#ffffff")
+    img.save(icon_png, format="PNG")
+    img.save(icon_ico, format="ICO", sizes=[(256, 256), (64, 64), (32, 32)])
     return icon_ico
 
 
@@ -90,19 +76,49 @@ def _sync_vpetgame() -> None:
         return
     print(f"同步 RPG {src} → {dst} …")
     if dst.exists():
-        shutil.rmtree(dst)
-    dst.mkdir(parents=True)
+        try:
+            shutil.rmtree(dst)
+        except OSError as exc:
+            print(f"警告：无法直接清空 {dst}（{exc}），尝试强制清理…")
+            shutil.rmtree(dst, ignore_errors=True)
+            if dst.exists():
+                # 仍占用：改名旁路，避免整包失败
+                bak = dst.with_name(f"Vpetgame_old_{datetime.now().strftime('%H%M%S')}")
+                try:
+                    dst.rename(bak)
+                    print(f"  已将旧目录改名为 {bak.name}")
+                except OSError as exc2:
+                    print(f"警告：跳过 Vpetgame 同步（目录被占用：{exc2}）")
+                    return
+    dst.mkdir(parents=True, exist_ok=True)
     game_py = src / "game.py"
     if game_py.is_file():
         shutil.copy2(game_py, dst / "game.py")
     for name in ("assets", "maps"):
         folder = src / name
         if folder.is_dir():
-            shutil.copytree(folder, dst / name)
+            target = dst / name
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+            try:
+                shutil.copytree(folder, target)
+            except OSError as exc:
+                print(f"警告：复制 {name} 失败（{exc}）")
     for name in ("README.md", "requirements.txt", "process_assets.py"):
         file = src / name
         if file.is_file():
-            shutil.copy2(file, dst / name)
+            try:
+                shutil.copy2(file, dst / name)
+            except OSError:
+                pass
+    # 可选：桌面有 music 时再拷（失败不阻断）
+    for media_name in ("music.mp4", "music.mp3", "bgm.mp3"):
+        media = src / media_name
+        if media.is_file():
+            try:
+                shutil.copy2(media, dst / media_name)
+            except OSError as exc:
+                print(f"警告：跳过 {media_name}（{exc}）")
     has_game = (dst / "game.py").is_file()
     asset_n = sum(1 for _ in (dst / "assets").rglob("*") if _.is_file()) if (dst / "assets").is_dir() else 0
     map_n = sum(1 for _ in (dst / "maps").rglob("*") if _.is_file()) if (dst / "maps").is_dir() else 0
@@ -346,10 +362,66 @@ $Shortcut.Description = 'Vpet 桌宠 - 点击托盘图标生成桌宠'
     )
 
 
+def _copy_release_to_desktop(release_dir: Path) -> Path:
+    """把完整发布包（含 bundled 素材）拷到桌面 Vpet，方便用户找到。"""
+    desktop_dst = DESKTOP / "Vpet"
+    print(f"拷贝完整包到桌面：{release_dir} → {desktop_dst}")
+    try:
+        _deploy_tree(release_dir, desktop_dst)
+    except OSError as exc:
+        # 桌面旧包被占用时改放到带时间戳的新文件夹
+        alt = DESKTOP / f"Vpet_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        print(f"警告：无法覆盖桌面 Vpet（{exc}），改为 {alt.name}")
+        shutil.copytree(release_dir, alt)
+        desktop_dst = alt
+    bat = desktop_dst / "启动.bat"
+    bat.write_text(
+        "@echo off\nchcp 65001 >nul\n"
+        'cd /d "%~dp0"\n'
+        'start "" "%~dp0Vpet.exe"\n',
+        encoding="utf-8",
+    )
+    readme = desktop_dst / "请从这里打开.txt"
+    readme.write_text(
+        "Vpet 完整包已放在本文件夹。\n\n"
+        "打开方式：\n"
+        "1. 双击「启动.bat」或 Vpet.exe\n"
+        "2. 托盘出现图标后，左键点击即可生成桌宠\n\n"
+        "语音 / 音乐 / RPG 等素材在 bundled 子目录中。\n",
+        encoding="utf-8",
+    )
+    return desktop_dst
+
+
+def _zip_clean_pc_release(release_dir: Path) -> Path:
+    """干净电脑版压缩包：无个人存档（发布时已 scrub），zip 到桌面。"""
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_path = DESKTOP / f"Vpet_update_{stamp}.zip"
+    if zip_path.exists():
+        zip_path.unlink()
+    skip_names = {".DS_Store", "Thumbs.db", "desktop.ini"}
+    skip_parts = {"__pycache__", ".git"}
+    print(f"打包干净电脑版 zip：{zip_path}")
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for path in sorted(release_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.name in skip_names:
+                continue
+            if any(part in skip_parts for part in path.parts):
+                continue
+            arc = Path("Vpet") / path.relative_to(release_dir)
+            zf.write(path, arc.as_posix())
+    size_mb = zip_path.stat().st_size / (1024 * 1024)
+    print(f"干净包大小：{size_mb:.1f} MB")
+    return zip_path
+
+
 def main() -> None:
     args = set(sys.argv[1:])
     deploy_only = bool(args & {"--deploy-only", "--publish-only"})
     make_shortcut = "--shortcut" in args or "--with-shortcut" in args
+    make_zip = "--zip" in args or "--clean-zip" in args
 
     try:
         import PyInstaller  # noqa: F401
@@ -367,43 +439,17 @@ def main() -> None:
         if BUILD.exists():
             shutil.rmtree(BUILD, ignore_errors=True)
 
+        # 使用现有 Vpet.spec，避免 PyInstaller 重写 .spec 时 Errno 22
+        spec = ROOT / "Vpet.spec"
+        if not spec.is_file():
+            raise SystemExit(f"缺少打包配置：{spec}")
         cmd = [
             sys.executable,
             "-m",
             "PyInstaller",
             "--noconfirm",
             "--clean",
-            "--windowed",
-            "--name",
-            EXE_NAME.removesuffix(".exe"),
-            "--icon",
-            str(icon),
-            *_collect_data_args(),
-            "--hidden-import",
-            "pystray",
-            "--hidden-import",
-            "PIL.ImageTk",
-            "--hidden-import",
-            "pygame",
-            "--hidden-import",
-            "imageio_ffmpeg",
-            "--hidden-import",
-            "pet",
-            "--hidden-import",
-            "vpet_launcher",
-            "--hidden-import",
-            "panel_decor",
-            "--hidden-import",
-            "voice_audio",
-            "--hidden-import",
-            "voice_system",
-            "--hidden-import",
-            "bundled_paths",
-            "--hidden-import",
-            "media_bundled",
-            "--hidden-import",
-            "pet_id_cloud",
-            str(ROOT / "vpet_app.py"),
+            str(spec),
         ]
         print("执行打包命令：")
         print(" ".join(f'"{part}"' if " " in part else part for part in cmd))
@@ -426,31 +472,45 @@ def main() -> None:
             shutil.copy2(icon, release_dir / "app_icon.ico")
         except OSError:
             pass
-    # 始终写发布目录内启动脚本；桌面快捷方式需显式 --shortcut
-    if make_shortcut:
-        _create_shortcut(release_exe, icon if icon.exists() else None)
-    else:
-        local_bat = release_dir / "启动.bat"
-        local_bat.write_text(
-            "@echo off\nchcp 65001 >nul\n"
-            'cd /d "%~dp0"\n'
-            'start "" "%~dp0Vpet.exe"\n',
-            encoding="utf-8",
-        )
-        release_bat = release_dir.parent / "启动桌宠.bat"
-        release_bat.write_text(
-            "@echo off\nchcp 65001 >nul\n"
-            f'start "" "{release_exe}"\n',
-            encoding="utf-8",
-        )
+
+    # 完整包（含 bundled 素材）拷到桌面，方便用户找到
+    desktop_dir: Path | None
+    try:
+        desktop_dir = _copy_release_to_desktop(release_dir)
+        desktop_exe = desktop_dir / EXE_NAME
+    except Exception as exc:
+        print(f"警告：拷贝到桌面失败（{exc}），仍保留 release 目录")
+        desktop_dir = None
+        desktop_exe = release_exe
+
+    shortcut_exe = desktop_exe if desktop_dir and desktop_exe.exists() else release_exe
+    _create_shortcut(shortcut_exe, icon if icon.exists() else None)
+    local_bat = release_dir / "启动.bat"
+    local_bat.write_text(
+        "@echo off\nchcp 65001 >nul\n"
+        'cd /d "%~dp0"\n'
+        'start "" "%~dp0Vpet.exe"\n',
+        encoding="utf-8",
+    )
+    release_bat = release_dir.parent / "启动桌宠.bat"
+    release_bat.write_text(
+        "@echo off\nchcp 65001 >nul\n"
+        f'start "" "{shortcut_exe}"\n',
+        encoding="utf-8",
+    )
     print(f"\n打包完成：{release_exe}")
     print(f"发布目录：{release_dir}")
+    if desktop_dir is not None:
+        print(f"桌面完整包：{desktop_dir}")
+    if make_zip:
+        try:
+            zip_path = _zip_clean_pc_release(release_dir)
+            print(f"干净电脑版压缩包：{zip_path}")
+        except Exception as exc:
+            print(f"警告：打 zip 失败（{exc}）")
     print(f"构建版本：{stamp}")
-    if make_shortcut:
-        print(f"桌面快捷方式：{DESKTOP / 'Vpet.lnk'}")
-    else:
-        print("未写桌面快捷方式（需要时加参数 --shortcut）")
-    print("双击 启动.bat 或 Vpet.exe → 托盘出现图标 → 左键点击即可生成桌宠")
+    print(f"桌面快捷方式：{DESKTOP / 'Vpet.lnk'}")
+    print("请打开桌面「Vpet」文件夹，双击 启动.bat 或 Vpet.exe")
     print("若更新后改动未生效：请先托盘右键「退出启动器」，再重新打开。")
 
 

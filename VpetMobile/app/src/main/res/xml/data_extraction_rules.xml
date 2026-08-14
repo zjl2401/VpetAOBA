@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+：云备份 / 设备转移时保留进度 -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="vpet_persist_vault.json" />
+        <include domain="file" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="vpet_persist_vault.json" />
+        <include domain="file" path="." />
+    </device-transfer>
+</data-extraction-rules>

@@ -12,6 +12,7 @@ class PetMenuActions(
     private val hub: PetModeHub,
     private val onResize: (() -> Unit)? = null,
     private val onExitOverlay: (() -> Unit)? = null,
+    private val onFontChanged: (() -> Unit)? = null,
 ) {
     fun run(id: String): Boolean {
         when {
@@ -22,42 +23,46 @@ class PetMenuActions(
             }
             else -> when (id) {
                 "mode_free" -> hub.startFree()
-                "mode_stroll", "act_walk" -> hub.startStroll()
-                "mode_follow" -> hub.startFollow()
-                "mode_quiet" -> hub.startQuiet()
+                "mode_stroll", "act_walk" -> {
+                    if (hub.isStrollMode) hub.startFree()
+                    else hub.startStroll()
+                }
+                "mode_follow" -> hub.toggleFollow()
+                "mode_quiet" -> {
+                    if (hub.isQuiet) hub.endQuiet(fromMenu = true)
+                    else hub.startQuiet()
+                }
                 "act_sleep" -> hub.startSleepInteract()
                 "mode_music" -> hub.startMusic()
                 "act_stand" -> hub.playAction("act_stand")
                 "act_hi" -> hub.playAction("act_hi")
-                "act_squat", "act_kick", "act_yes", "act_no", "act_call", "act_eat", "act_judge",
+                "act_squat", "act_kick", "act_yes", "act_no", "act_call", "act_judge",
+                "act_adult",
                 -> hub.playAction(id)
-                "act_adult", "dialog_ai", "panel_invite" -> toast("尚未开发完全")
-                "game_type", "game_vocab" -> toast("手机版跳过打字/背单词")
+                "act_eat" -> hub.openEatFoodMenu()
+                "panel_invite" -> toast("尚未开发完全")
+                "panel_persona" -> hub.togglePersona()
                 "expr_happy", "expr_sad", "expr_shy", "expr_wink", "expr_like",
                 "expr_angry", "expr_idea", "expr_question", "expr_bixin",
                 -> hub.playExpression(id)
-                "work_free", "act_work" -> hub.startWorkFree()
-                "work_n3" -> hub.startWorkBoxes(3)
-                "work_n5" -> hub.startWorkBoxes(5)
-                "work_n8" -> hub.startWorkBoxes(8)
-                "work_t1" -> hub.startWorkTimed(60_000L)
-                "work_t3" -> hub.startWorkTimed(180_000L)
-                "work_t5" -> hub.startWorkTimed(300_000L)
+                "work_free", "act_work" -> {
+                    if (hub.isWorking && hub.isMenuChecked("work_free")) hub.endWork(fromMenu = true)
+                    else hub.startWorkFree()
+                }
+                "work_custom" -> hub.openWorkCustomSetup()
                 "work_end" -> hub.endWork(fromMenu = true)
                 "work_show_props" -> hub.toggleWorkShowProps()
                 "work_show_stack" -> hub.toggleWorkShowStack()
                 "tool_sw" -> hub.showStopwatch()
-                "tool_timer_1" -> hub.showTimer(1)
-                "tool_timer_5" -> hub.showTimer(5)
-                "tool_timer_10" -> hub.showTimer(10)
-                "tool_pomo_25_5" -> hub.startPomodoro(25, 5)
-                "tool_pomo_15_5" -> hub.startPomodoro(15, 5)
-                "tool_pomo_1_1" -> hub.startPomodoro(1, 1)
+                "tool_timer", "tool_timer_custom" -> hub.openTimerSetup()
+                "tool_pomo_custom" -> hub.openPomodoroSetup()
                 "tool_pomo_end" -> hub.endPomodoro(silent = false)
-                "tool_schedule", "tool_bday_set", "tool_archive", "sys_sync" -> hub.openTools()
+                "tool_schedule" -> hub.openScheduleSetup()
+                "tool_bday_set" -> hub.openBirthdaySetup()
+                "tool_archive", "sys_sync" -> hub.openTools()
                 "panel_open" -> hub.openPanel()
+                "panel_outfit" -> hub.openOutfitEditor()
                 "panel_companion" -> hub.toggleCompanion()
-                "panel_persona" -> hub.togglePersona()
                 "panel_home" -> hub.openHome()
                 "panel_rhyme" -> hub.openRhyme()
                 "panel_expose" -> hub.openExpose()
@@ -90,6 +95,8 @@ class PetMenuActions(
                     AppDataStore.setVoiceMode(context, !AppDataStore.voiceMode(context))
                     toast("语音模式：${if (AppDataStore.voiceMode(context)) "开" else "关"}")
                 }
+                "set_voice_vol" -> hub.openVoiceVolumeSetup()
+                "set_sfx_vol" -> hub.openSfxVolumeSetup()
                 "set_voice_vol_down" -> {
                     val v = (AppDataStore.voiceVolume(context) - 10).coerceAtLeast(0)
                     AppDataStore.setVoiceVolume(context, v)
@@ -109,7 +116,9 @@ class PetMenuActions(
                 "set_diff_high" -> {
                     AppDataStore.setDifficulty(context, "高"); toast("难度：高")
                 }
-                "set_layer" -> toast("手机悬浮已在系统叠加层，无需调整显示层级")
+                "set_layer" -> toast(
+                    DesktopGuideCopy.DISPLAY_LAYER_HINT + "（手机悬浮在系统叠加层）",
+                )
                 "sys_exit" -> onExitOverlay?.invoke()
                 else -> {
                     toast("（后期）${titleOf(id)}")
@@ -119,6 +128,8 @@ class PetMenuActions(
         }
         return true
     }
+
+    fun isChecked(id: String): Boolean = hub.isMenuChecked(id)
 
     private fun titleOf(id: String): String {
         fun find(items: List<DesktopMenuCatalog.Item>): String? {
@@ -133,15 +144,16 @@ class PetMenuActions(
 
     private fun applySize(label: String) {
         PetPrefs.setSizeLabel(context, label)
-        animator.applyDisplaySize()
-        hub.refreshCompanionSize()
+        hub.applyDisplaySizeToPetAndCompanion()
         onResize?.invoke()
         hub.playSizeDissolve()
-        toast("大小：$label（${PetPrefs.sizePx(context)}px）")
+        toast("大小：约$label（${PetPrefs.sizePx(context)}px）· 伴侣同步")
     }
 
     private fun applyFont(label: String) {
         AppDataStore.setFontLabel(context, label)
+        hub.applyFontScaleToOverlay()
+        onFontChanged?.invoke()
         toast("字体：$label")
     }
 

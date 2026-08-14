@@ -28,10 +28,10 @@ object MenuDecor {
     val THEME_BLUE_DEEP = Color.parseColor("#4488DD")
     val THEME_WHITE = Color.parseColor("#F4F8FF")
     val THEME_BLACK = Color.parseColor("#0A0C12")
-    val MENU_BG = Color.parseColor("#141824")
+    val MENU_BG = Color.parseColor("#E0141824")
     val MENU_FG = Color.parseColor("#EEF2FF")
-    val MENU_ACTIVE = Color.parseColor("#2A3558")
-    val THEME_ITEM_BG = Color.parseColor("#181F34")
+    val MENU_ACTIVE = Color.parseColor("#E02A3558")
+    val THEME_ITEM_BG = Color.parseColor("#E0181F34")
 
     private val glyphColors = intArrayOf(THEME_BLUE_DEEP, THEME_BLUE, THEME_PINK, THEME_BLACK, THEME_WHITE)
     private val glyphCache = HashMap<Pair<String, Int>, Bitmap>()

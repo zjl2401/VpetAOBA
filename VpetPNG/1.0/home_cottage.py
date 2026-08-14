@@ -20,8 +20,23 @@ HOME_FURN_DEFAULT = "#6aa8d8"  # 天蓝家具（画笔默认 / 旧格回退）
 HOME_COLS_MIN, HOME_COLS_MAX = 6, 24
 HOME_ROWS_MIN, HOME_ROWS_MAX = 6, 20
 HOME_ROOMS_MAX = 4
-# 自定义命名素材 kind 前缀：cm:{id}（1×1，不产生 @ 延伸格）
+# 自定义命名素材 kind 前缀：cm:{id}；占格 span×span（默认 1，最大 6）
 CUSTOM_KIND_PREFIX = "cm:"
+CUSTOM_SPAN_MIN = 1
+CUSTOM_SPAN_MAX = 6
+
+
+def clamp_material_span(value: object) -> int:
+    try:
+        return max(CUSTOM_SPAN_MIN, min(CUSTOM_SPAN_MAX, int(value)))
+    except Exception:
+        return CUSTOM_SPAN_MIN
+
+
+def material_span_of(entry: dict | None) -> int:
+    if not isinstance(entry, dict):
+        return CUSTOM_SPAN_MIN
+    return clamp_material_span(entry.get("span", 1))
 
 # 格子：None | "bed" | {"k":"bed","c":"#6aa8d8"} | "@bed:1,0"
 Cell = str | dict | None
@@ -31,6 +46,14 @@ HOME_BED_SLEEP_MS = 15_000
 HOME_SQUAT_MS = 2_500
 HOME_WALK_MS = 620  # 自由走动间隔；越大越慢
 HOME_CONTROL_STEP_MS = 220  # 操控模式最短步间隔
+# 家园昼夜：真实时间每 1 小时走完一轮（黎明→昼→黄昏→夜）
+HOME_DAY_CYCLE_SEC = 3600
+HOME_DAY_PERIOD_LABELS = {
+    "dawn": "黎明",
+    "day": "白天",
+    "dusk": "黄昏",
+    "night": "夜晚",
+}
 
 FLOOR_COLOR_PRESETS: tuple[tuple[str, str, str], ...] = (
     ("苔绿", "#3d5a45", "#35523e"),
@@ -109,8 +132,8 @@ HOME_FURNITURE: tuple[tuple[str, str, bool, int, int, str], ...] = (
     ("window", "窗户", False, 2, 1, "indoor"),
     ("vase", "花瓶", False, 1, 1, "indoor"),
     ("door", "门", False, 1, 1, "both"),
-    ("gift_art", "礼物画", False, 1, 1, "both"),
-    ("user_paint", "自创画", False, 1, 1, "both"),
+    ("gift_art", "最新礼物", False, 1, 1, "both"),
+    ("user_paint", "最新自创", False, 1, 1, "both"),
     ("grass", "草地", False, 1, 1, "outdoor"),
     ("land", "土地", False, 1, 1, "outdoor"),
     ("water", "水面", True, 1, 1, "outdoor"),
@@ -126,6 +149,7 @@ HOME_FURNITURE: tuple[tuple[str, str, bool, int, int, str], ...] = (
 
 _FURN_PHOTO_CACHE: dict[tuple, ImageTk.PhotoImage] = {}
 _RPG_IMG_CACHE: dict[tuple, Image.Image] = {}
+_PET_PHOTO_CACHE: dict[tuple, ImageTk.PhotoImage] = {}
 _rpg_assets_dir: Path | None = None
 _props_dir: Path | None = None
 _materials_dir: Path | None = None
@@ -153,25 +177,34 @@ FLOWER_PETAL_COLORS: tuple[str, ...] = (
 OUTDOOR_PROP_KINDS = frozenset({"tree", "flower", "fence", "bush", "plant", "gift_art", "user_paint"})
 # 室外铺地：背景层；可与地物叠放（地物存在 g 字段）
 OUTDOOR_GROUND_KINDS = frozenset({"grass", "land", "water", "rock", "brick", "path"})
-# 室外底色（空格 / 素材抠底透出）
-OUTDOOR_BASE_COLOR = "#000000"
-OUTDOOR_BASE_COLOR_B = "#0a0a0a"
+# 室外底色：不透明实色（勿用黑底当「透明洞」）
+OUTDOOR_BASE_COLOR = "#3a6a38"
+OUTDOOR_BASE_COLOR_B = "#325e32"
 
 
 def set_asset_roots(*, rpg_assets: Path | None = None, props_dir: Path | None = None) -> None:
+    """设置素材根目录；路径未变则保留家具/RPG 图缓存（避免每次开家园冷启动）。"""
     global _rpg_assets_dir, _props_dir
+    same = _rpg_assets_dir == rpg_assets and _props_dir == props_dir
     _rpg_assets_dir = rpg_assets
     _props_dir = props_dir
-    _FURN_PHOTO_CACHE.clear()
-    _RPG_IMG_CACHE.clear()
+    if not same:
+        _FURN_PHOTO_CACHE.clear()
+        _RPG_IMG_CACHE.clear()
+        _PET_PHOTO_CACHE.clear()
 
 
 def set_materials_root(materials_dir: Path | None, index: list[dict] | None = None) -> None:
-    """自定义命名素材目录 + 索引（id/name/file）。"""
+    """自定义命名素材目录 + 索引（id/name/file）。目录/索引未变则不清缓存。"""
     global _materials_dir, _materials_index
+    new_index = list(index or [])
+    same_dir = _materials_dir == materials_dir
+    old_ids = tuple(str(i.get("id") or "") for i in _materials_index)
+    new_ids = tuple(str(i.get("id") or "") for i in new_index)
     _materials_dir = materials_dir
-    _materials_index = list(index or [])
-    _FURN_PHOTO_CACHE.clear()
+    _materials_index = new_index
+    if not (same_dir and old_ids == new_ids):
+        _FURN_PHOTO_CACHE.clear()
 
 
 def is_custom_material_kind(kind: str | None) -> bool:
@@ -235,11 +268,13 @@ def furniture_meta(kind: str) -> tuple[str, bool, int, int, str] | None:
     if is_custom_material_kind(kind):
         mid = custom_material_id(kind)
         label = "自创"
+        span = CUSTOM_SPAN_MIN
         for item in _materials_index:
             if str(item.get("id") or "") == mid:
                 label = str(item.get("name") or "自创").strip()[:10] or "自创"
+                span = material_span_of(item)
                 break
-        return label, False, 1, 1, "both"
+        return label, False, span, span, "both"
     for k, label, solid, w, h, zone in HOME_FURNITURE:
         if k == kind:
             return label, solid, w, h, zone
@@ -263,8 +298,113 @@ def furniture_for_zone(zone: str, *, include_bg: bool = False) -> list[tuple[str
         if not mid:
             continue
         label = str(item.get("name") or "自创").strip()[:10] or "自创"
-        out.append((custom_kind(mid), label, False, 1, 1, "both"))
+        span = material_span_of(item)
+        out.append((custom_kind(mid), label, False, span, span, "both"))
     return out
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    s = (hex_color or "").strip().lstrip("#")
+    if len(s) == 3:
+        s = "".join(ch * 2 for ch in s)
+    if len(s) < 6:
+        return (40, 50, 70)
+    try:
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+    except Exception:
+        return (40, 50, 70)
+
+
+def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    r, g, b = (max(0, min(255, int(c))) for c in rgb)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _lerp_hex(a: str, b: str, t: float) -> str:
+    t = max(0.0, min(1.0, float(t)))
+    ar, ag, ab = _hex_to_rgb(a)
+    br, bg, bb = _hex_to_rgb(b)
+    return _rgb_to_hex(
+        (
+            int(ar + (br - ar) * t),
+            int(ag + (bg - ag) * t),
+            int(ab + (bb - ab) * t),
+        )
+    )
+
+
+def home_day_phase(now: float | None = None) -> float:
+    """0..1，一小时一轮。"""
+    t = float(time.time() if now is None else now)
+    return (t % float(HOME_DAY_CYCLE_SEC)) / float(HOME_DAY_CYCLE_SEC)
+
+
+def home_day_period(phase: float | None = None) -> str:
+    p = home_day_phase() if phase is None else float(phase) % 1.0
+    if p < 0.18:
+        return "dawn"
+    if p < 0.48:
+        return "day"
+    if p < 0.62:
+        return "dusk"
+    return "night"
+
+
+def home_day_period_label(phase: float | None = None) -> str:
+    return HOME_DAY_PERIOD_LABELS.get(home_day_period(phase), "白天")
+
+
+def home_day_sky_state(phase: float | None = None) -> dict:
+    """
+    室外天空/明暗：随 1h 周期平滑过渡。
+    返回 sky、trim、celestial(sun|moon|none)、cx 相对 0..1、night_veil 0..1、period。
+    """
+    p = home_day_phase() if phase is None else float(phase) % 1.0
+    period = home_day_period(p)
+    # 关键色关键：黎明粉橙 → 昼蓝 → 黄昏紫橙 → 夜深蓝
+    if p < 0.18:
+        t = p / 0.18
+        sky = _lerp_hex("#2a2848", "#7eb8e8", t)
+        trim = _lerp_hex("#c89878", "#e8d090", t)
+        celestial = "sun"
+        cx = 0.12 + 0.28 * t
+        veil = max(0.0, 0.35 * (1.0 - t))
+    elif p < 0.48:
+        t = (p - 0.18) / 0.30
+        sky = _lerp_hex("#7eb8e8", "#5a9fd4", t * 0.4)
+        trim = "#e8d090"
+        celestial = "sun"
+        cx = 0.40 + 0.35 * t
+        veil = 0.0
+    elif p < 0.62:
+        t = (p - 0.48) / 0.14
+        sky = _lerp_hex("#5a9fd4", "#3a2848", t)
+        trim = _lerp_hex("#e8d090", "#e89868", t)
+        celestial = "sun"
+        cx = 0.75 + 0.18 * t
+        veil = 0.15 + 0.35 * t
+    else:
+        t = (p - 0.62) / 0.38
+        sky = _lerp_hex("#1a1830", "#12182a", min(1.0, t * 1.2))
+        trim = _lerp_hex("#6a5888", "#3a4060", t)
+        celestial = "moon"
+        cx = 0.18 + 0.55 * t
+        veil = 0.45 + 0.25 * min(1.0, t * 1.4)
+    indoor_wall = HOME_WALL if veil < 0.2 else _lerp_hex(HOME_WALL, "#2a2838", min(1.0, veil))
+    indoor_trim = HOME_WALL_TRIM if veil < 0.25 else _lerp_hex(HOME_WALL_TRIM, "#c8a878", min(1.0, veil * 1.2))
+    return {
+        "phase": p,
+        "period": period,
+        "label": HOME_DAY_PERIOD_LABELS.get(period, "白天"),
+        "sky": sky,
+        "trim": trim,
+        "celestial": celestial,
+        "cx": cx,
+        "night_veil": max(0.0, min(0.75, veil)),
+        "indoor_wall": indoor_wall,
+        "indoor_trim": indoor_trim,
+        "stars": period == "night" or (period == "dusk" and p > 0.56),
+    }
 
 
 def default_bg_colors() -> dict[str, str]:
@@ -562,6 +702,7 @@ def default_layout() -> dict:
         "floor_a": HOME_FLOOR_A,
         "floor_b": HOME_FLOOR_B,
         "furn_color": HOME_FURN_DEFAULT,
+        "furn_custom_colors": [],
         "bg_colors": default_bg_colors(),
         "indoor_tiles": indoor,
         "outdoor_tiles": outdoor,
@@ -691,6 +832,14 @@ def normalize_layout(raw: dict | None) -> dict:
     floor_b = str(raw.get("floor_b") or HOME_FLOOR_B)
     furn_color = str(raw.get("furn_color") or HOME_FURN_DEFAULT)
     bg_colors = normalize_bg_colors(raw.get("bg_colors"))
+    furn_custom_colors: list[str] = []
+    raw_custom = raw.get("furn_custom_colors")
+    if isinstance(raw_custom, list):
+        for c in raw_custom:
+            if isinstance(c, str) and c.startswith("#") and len(c) in (4, 7):
+                furn_custom_colors.append(c)
+                if len(furn_custom_colors) >= 6:
+                    break
 
     indoor = raw.get("indoor_tiles")
     outdoor = raw.get("outdoor_tiles")
@@ -809,6 +958,7 @@ def normalize_layout(raw: dict | None) -> dict:
         "floor_a": floor_a,
         "floor_b": floor_b,
         "furn_color": furn_color,
+        "furn_custom_colors": furn_custom_colors,
         "bg_colors": bg_colors,
         "indoor_tiles": indoor_tiles,
         "outdoor_tiles": outdoor_tiles,
@@ -1133,6 +1283,11 @@ def save_layout(path: Path, layout: dict) -> None:
         "floor_a": str(layout.get("floor_a") or HOME_FLOOR_A),
         "floor_b": str(layout.get("floor_b") or HOME_FLOOR_B),
         "furn_color": str(layout.get("furn_color") or HOME_FURN_DEFAULT),
+        "furn_custom_colors": [
+            c
+            for c in (layout.get("furn_custom_colors") or [])
+            if isinstance(c, str) and c.startswith("#")
+        ][:6],
         "bg_colors": normalize_bg_colors(layout.get("bg_colors")),
         "indoor_tiles": layout.get("indoor_tiles") or blank_tiles(),
         "outdoor_tiles": layout.get("outdoor_tiles") or blank_tiles(),
@@ -1150,7 +1305,8 @@ def save_layout(path: Path, layout: dict) -> None:
         "rooms": rooms_payload,
         "active_room": int(layout.get("active_room") or 0),
     }
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 紧凑 JSON：涂色/走动防抖写盘时更轻
+    path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
 def is_anchor(cell: Cell) -> bool:
@@ -1699,9 +1855,19 @@ def _gift_art_rgba(tile: int) -> Image.Image | None:
     path = _props_dir / "gift_art.png"
     if not path.is_file():
         return None
+    try:
+        mtime = path.stat().st_mtime_ns
+    except Exception:
+        mtime = 0
+    key = ("gift_art", tile, str(path), mtime)
+    hit = _RPG_IMG_CACHE.get(key)
+    if hit is not None:
+        return hit.copy()
     img = Image.open(path).convert("RGBA")
     img = _knock_outer_bg(img, tol=36.0)
-    return _fit_bottom(img, tile, tile)
+    img = _fit_bottom(img, tile, tile)
+    _RPG_IMG_CACHE[key] = img
+    return img.copy()
 
 
 def _user_paint_rgba(tile: int) -> Image.Image | None:
@@ -1710,9 +1876,19 @@ def _user_paint_rgba(tile: int) -> Image.Image | None:
     path = _props_dir / "user_paint.png"
     if not path.is_file():
         return None
+    try:
+        mtime = path.stat().st_mtime_ns
+    except Exception:
+        mtime = 0
+    key = ("user_paint", tile, str(path), mtime)
+    hit = _RPG_IMG_CACHE.get(key)
+    if hit is not None:
+        return hit.copy()
     img = Image.open(path).convert("RGBA")
     img = _knock_outer_bg(img, tol=36.0)
-    return _fit_bottom(img, tile, tile)
+    img = _fit_bottom(img, tile, tile)
+    _RPG_IMG_CACHE[key] = img
+    return img.copy()
 
 
 def _custom_material_rgba(kind: str, tile: int) -> Image.Image | None:
@@ -1720,16 +1896,30 @@ def _custom_material_rgba(kind: str, tile: int) -> Image.Image | None:
         return None
     mid = custom_material_id(kind)
     fname = f"{mid}.png"
+    span = CUSTOM_SPAN_MIN
     for item in _materials_index:
-        if str(item.get("id") or "") == mid and item.get("file"):
-            fname = str(item.get("file"))
+        if str(item.get("id") or "") == mid:
+            if item.get("file"):
+                fname = str(item.get("file"))
+            span = material_span_of(item)
             break
     path = _materials_dir / fname
     if not path.is_file():
         return None
+    try:
+        mtime = path.stat().st_mtime_ns
+    except Exception:
+        mtime = 0
+    side = max(tile, tile * span)
+    key = ("cm", mid, side, str(path), mtime)
+    hit = _RPG_IMG_CACHE.get(key)
+    if hit is not None:
+        return hit.copy()
     img = Image.open(path).convert("RGBA")
     img = _knock_outer_bg(img, tol=36.0)
-    return _fit_bottom(img, tile, tile)
+    img = _fit_bottom(img, side, side)
+    _RPG_IMG_CACHE[key] = img
+    return img.copy()
 
 
 def _tint_rgba(img: Image.Image, hex_color: str) -> Image.Image:
@@ -1758,14 +1948,21 @@ def _draw_furniture_rgb(
     tint_color: str | None = None,
     vary_seed: int | None = None,
 ) -> Image.Image:
+    def _maybe_tint_art(art: Image.Image) -> Image.Image:
+        """自创画/礼物画/素材：有自选色则按亮度上色，否则原样。"""
+        col = _valid_hex_color(tint_color) or _valid_hex_color(furn_color)
+        if not col or col.lower() == str(HOME_FURN_DEFAULT).lower():
+            return art
+        return _tint_rgba(art, col)
+
     if kind == "gift_art":
         art = _gift_art_rgba(tile)
         if art is not None:
-            return art
+            return _maybe_tint_art(art)
     if kind == "user_paint" or is_custom_material_kind(kind):
         art = _custom_material_rgba(kind, tile) if is_custom_material_kind(kind) else _user_paint_rgba(tile)
         if art is not None:
-            return art
+            return _maybe_tint_art(art)
         # 无自创画时给占位，方便先选笔刷再去画
         img = Image.new("RGBA", (tile, tile), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
@@ -1789,6 +1986,11 @@ def _draw_furniture_rgb(
         if rpg is not None:
             if mat_tint:
                 return _tint_rgba(rpg, mat_tint)
+            # 树等叠放地物：跟家具自选色
+            if kind in OUTDOOR_PROP_KINDS:
+                prop_col = _valid_hex_color(furn_color)
+                if prop_col and prop_col.lower() != str(HOME_FURN_DEFAULT).lower():
+                    return _tint_rgba(rpg, prop_col)
             return rpg
 
     meta = furniture_meta(kind)
@@ -1921,25 +2123,42 @@ def furniture_photo(
         return None
     tint_key = tint_color if kind in BG_MATERIAL_KINDS else None
     seed_key = int(vary_seed) if (kind == "flower" and vary_seed is not None) else None
-    key = (kind, tile, furn_color, tint_key, seed_key, str(_props_dir), str(_rpg_assets_dir))
+    key = (kind, tile, furn_color, tint_key, seed_key, str(_props_dir), str(_rpg_assets_dir), "opaque_bg")
     hit = _FURN_PHOTO_CACHE.get(key)
     if hit is not None:
         return hit
-    photo = ImageTk.PhotoImage(
-        _draw_furniture_rgb(kind, tile, furn_color, tint_color=tint_key, vary_seed=seed_key)
-    )
+    rgba = _draw_furniture_rgb(kind, tile, furn_color, tint_color=tint_key, vary_seed=seed_key)
+    # 铺地必须不透明：RGBA 透明区会在 Tk 上露黑/透景
+    if kind in BG_MATERIAL_KINDS:
+        base = _valid_hex_color(tint_key) or DEFAULT_BG_COLORS.get(kind) or OUTDOOR_BASE_COLOR
+        flat = Image.new("RGBA", rgba.size, _hex(base) + (255,))
+        flat.paste(rgba, (0, 0), rgba)
+        photo = ImageTk.PhotoImage(flat.convert("RGB"))
+    else:
+        photo = ImageTk.PhotoImage(rgba)
     _FURN_PHOTO_CACHE[key] = photo
     return photo
 
 
-def pet_photo_from_rgba(rgba: Image.Image, size: int) -> ImageTk.PhotoImage:
+def pet_photo_from_rgba(rgba: Image.Image, size: int, *, cache_key: tuple | None = None) -> ImageTk.PhotoImage:
+    if cache_key is not None:
+        hit = _PET_PHOTO_CACHE.get(cache_key)
+        if hit is not None:
+            return hit
     img = rgba.convert("RGBA")
     img.thumbnail((size, size), Image.Resampling.NEAREST)
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     ox = (size - img.size[0]) // 2
     oy = size - img.size[1]
     canvas.paste(img, (ox, max(0, oy)), img)
-    return ImageTk.PhotoImage(canvas)
+    photo = ImageTk.PhotoImage(canvas)
+    if cache_key is not None:
+        _PET_PHOTO_CACHE[cache_key] = photo
+        # 防止无限膨胀：只保留最近一批
+        if len(_PET_PHOTO_CACHE) > 64:
+            for k in list(_PET_PHOTO_CACHE.keys())[:16]:
+                _PET_PHOTO_CACHE.pop(k, None)
+    return photo
 
 
 def gift_pixels_to_rgba(cells: list[int], palette: tuple[str | None, ...], *, scale: int = 4) -> Image.Image | None:
@@ -2078,6 +2297,7 @@ def load_materials_index(path: Path) -> list[dict]:
                 "name": str(item.get("name") or "自创").strip()[:16] or "自创",
                 "file": str(item.get("file") or f"{mid}.png"),
                 "source": str(item.get("source") or "home")[:12],
+                "span": clamp_material_span(item.get("span", 1)),
                 "cells": cells,
                 "palette": palette,
             }
@@ -2097,6 +2317,7 @@ def save_materials_index(path: Path, items: list[dict]) -> None:
             "name": str(item.get("name") or "自创").strip()[:16] or "自创",
             "file": str(item.get("file") or f"{mid}.png"),
             "source": str(item.get("source") or "home")[:12],
+            "span": clamp_material_span(item.get("span", 1)),
         }
         if isinstance(item.get("cells"), list) and item["cells"]:
             row["cells"] = [int(v or 0) for v in item["cells"]]
@@ -2125,15 +2346,17 @@ def register_named_material(
     rpg_assets: Path | None = None,
     source: str = "home",
     mat_id: str | None = None,
+    span: int = 1,
     set_active_user: bool = True,
     set_active_gift: bool = False,
 ) -> dict | None:
-    """命名保存像素画：可多张；写入 materials + 索引（含可再编辑的 cells）。"""
+    """命名保存像素画：可多张；写入 materials + 索引（含可再编辑的 cells / 占格 span）。"""
     label = str(name or "").strip()[:16]
     if not label:
         return None
     if not any(int(v or 0) > 0 for v in cells):
         return None
+    span_n = clamp_material_span(span)
     pal_tuple = tuple(palette)
     rgba = gift_pixels_to_rgba(list(cells), pal_tuple, scale=4)
     if rgba is None:
@@ -2149,14 +2372,17 @@ def register_named_material(
         if find_material(items, mid):
             mid = f"{mid}_{len(items)}"
         fname = f"{mid}.png"
-    home_img = rgba.resize((HOME_TILE, HOME_TILE), Image.Resampling.NEAREST)
-    rpg_img = rgba.resize((48, 48), Image.Resampling.NEAREST)
+    home_side = HOME_TILE * span_n
+    rpg_side = 48 * span_n
+    home_img = rgba.resize((home_side, home_side), Image.Resampling.NEAREST)
+    rpg_img = rgba.resize((rpg_side, rpg_side), Image.Resampling.NEAREST)
     home_img.save(materials_dir / fname)
     entry = {
         "id": mid,
         "name": label,
         "file": fname,
         "source": str(source or "home")[:12],
+        "span": span_n,
         "cells": [int(v or 0) for v in cells],
         "palette": [c if c else None for c in pal_tuple],
     }

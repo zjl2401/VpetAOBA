@@ -48,6 +48,7 @@ class PetMenuPanel(
     private var stack = ArrayDeque<List<DesktopMenuCatalog.Item>>()
     private var selectedModuleId: String = "interact"
     private val moduleButtons = LinkedHashMap<String, TextView>()
+    private var currentLevelItems: List<DesktopMenuCatalog.Item> = emptyList()
     private val clickBurst = PixelClickBurst(
         context,
         windowManager = if (asOverlay) windowManager else null,
@@ -75,8 +76,9 @@ class PetMenuPanel(
                 clickBurst.play(v)
                 hide()
             }
-            buildModules()
         }
+        applyMenuFonts()
+        buildModules()
         stack.clear()
         val interact = DesktopMenuCatalog.root.first { it.id == "interact" }
         selectModule(interact)
@@ -152,6 +154,23 @@ class PetMenuPanel(
         stack.clear()
     }
 
+    /** 工具栏抬层：应在桌宠/伴侣之前调用，使宠与伴侣压在菜单之上。 */
+    fun raiseLayer() {
+        val root = binding?.root ?: return
+        if (!isShowing) return
+        try {
+            if (asOverlay) {
+                val wm = windowManager ?: return
+                val lp = layoutParams ?: return
+                wm.removeView(root)
+                wm.addView(root, lp)
+            } else {
+                root.bringToFront()
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     private fun styleClose(tv: TextView) {
         tv.background = MenuDecor.menuItemBg()
         tv.setTextColor(MenuDecor.MENU_FG)
@@ -217,22 +236,44 @@ class PetMenuPanel(
         return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
     }
 
+    /** 设置改字体后：若菜单正开着则重建字号与条目。 */
+    fun refreshFonts() {
+        if (binding == null) return
+        applyMenuFonts()
+        if (!isShowing) return
+        val modId = selectedModuleId
+        val level = currentLevelItems
+        val savedStack = ArrayDeque(stack)
+        buildModules()
+        selectedModuleId = modId
+        refreshModuleStyles()
+        stack = savedStack
+        if (level.isNotEmpty()) showLevel(level)
+    }
+
+    private fun applyMenuFonts() {
+        val b = binding ?: return
+        val sp = AppDataStore.fontMenuSp(context)
+        b.btnMenuClose.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
+    }
+
     private fun buildModules() {
         val row = binding!!.moduleRow
         row.removeAllViews()
         moduleButtons.clear()
         val h = MenuDecor.dp(context, MODULE_H_DP)
         val gap = MenuDecor.dp(context, 2f)
+        val menuSp = AppDataStore.fontMenuSp(context)
         DesktopMenuCatalog.root.forEachIndexed { index, mod ->
             val btn = TextView(context).apply {
                 text = mod.title
                 setTextColor(MenuDecor.MENU_FG)
-                textSize = 12f
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, menuSp)
                 typeface = Typeface.MONOSPACE
                 gravity = Gravity.CENTER
                 includeFontPadding = false
                 setPadding(MenuDecor.dp(context, 2f), 0, MenuDecor.dp(context, 2f), 0)
-                val glyph = MenuDecor.glyphDrawable(context, mod.title, 12f)
+                val glyph = MenuDecor.glyphDrawable(context, mod.title, menuSp)
                 setCompoundDrawables(glyph, null, null, null)
                 compoundDrawablePadding = MenuDecor.dp(context, 3f)
                 background = MenuDecor.moduleBtnBg(false)
@@ -267,6 +308,7 @@ class PetMenuPanel(
     }
 
     private fun showLevel(items: List<DesktopMenuCatalog.Item>) {
+        currentLevelItems = items
         val list = binding!!.subList
         list.removeAllViews()
         if (stack.isNotEmpty()) {
@@ -276,13 +318,15 @@ class PetMenuPanel(
             })
         }
         for (item in items) {
-            val label = when {
+            val base = when {
                 item.children.isNotEmpty() -> item.title
                 item.status == DesktopMenuCatalog.Status.READY -> item.title
                 item.status == DesktopMenuCatalog.Status.STUB -> "${item.title} ·"
                 else -> "${item.title} …"
             }
-            list.addView(makeItemBtn(label) {
+            val checked = item.children.isEmpty() && actions.isChecked(item.id)
+            val label = if (checked) "✓ $base" else "　 $base"
+            list.addView(makeItemBtn(label, checked = checked) {
                 when {
                     item.children.isNotEmpty() -> {
                         stack.addLast(items)
@@ -291,6 +335,7 @@ class PetMenuPanel(
                     else -> {
                         actions.run(item.id)
                         if (item.id == "sys_exit") hide()
+                        else showLevel(currentLevelItems)
                     }
                 }
             })
@@ -324,17 +369,19 @@ class PetMenuPanel(
         }
     }
 
-    private fun makeItemBtn(text: String, onClick: () -> Unit): TextView {
+    private fun makeItemBtn(text: String, checked: Boolean = false, onClick: () -> Unit): TextView {
+        val glyphKey = text.trimStart('✓', '　', ' ')
         val h = MenuDecor.dp(context, ITEM_H_DP)
+        val sp = AppDataStore.fontMenuSp(context)
         return TextView(context).apply {
             this.text = text
-            setTextColor(MenuDecor.MENU_FG)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextColor(if (checked) MenuDecor.THEME_PINK else MenuDecor.MENU_FG)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
             typeface = Typeface.MONOSPACE
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
             includeFontPadding = false
             setPadding(MenuDecor.dp(context, 8f), 0, MenuDecor.dp(context, 8f), 0)
-            val glyph = MenuDecor.glyphDrawable(context, text, 12f)
+            val glyph = MenuDecor.glyphDrawable(context, glyphKey, sp)
             setCompoundDrawables(glyph, null, null, null)
             compoundDrawablePadding = MenuDecor.dp(context, 6f)
             background = MenuDecor.menuItemBg()

@@ -3,33 +3,68 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#FF121820"
-    android:padding="12dp">
+    android:background="#FF0A0E14"
+    android:padding="8dp">
 
     <TextView
         android:id="@+id/rhythmHud"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textColor="#FFFFFFFF"
-        android:textSize="16sp"
-        android:text="音游 · 分数 0"
-        android:layout_marginBottom="8dp" />
+        android:textSize="13sp"
+        android:text="音游"
+        android:layout_marginBottom="6dp" />
 
-    <FrameLayout
-        android:id="@+id/rhythmField"
+    <com.vpet.mobile.RhythmPlayView
+        android:id="@+id/playView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="#FF1A2430" />
+        android:layout_weight="1" />
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:layout_height="140dp"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
 
-        <Button android:id="@+id/btnD" android:layout_width="0dp" android:layout_height="64dp" android:layout_weight="1" android:text="D" />
-        <Button android:id="@+id/btnF" android:layout_width="0dp" android:layout_height="64dp" android:layout_weight="1" android:text="F" />
-        <Button android:id="@+id/btnJ" android:layout_width="0dp" android:layout_height="64dp" android:layout_weight="1" android:text="J" />
-        <Button android:id="@+id/btnK" android:layout_width="0dp" android:layout_height="64dp" android:layout_weight="1" android:text="K" />
+        <Button
+            android:id="@+id/btnD"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="4dp"
+            android:text="D"
+            android:textSize="34sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnF"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="4dp"
+            android:text="F"
+            android:textSize="34sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnJ"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="4dp"
+            android:text="J"
+            android:textSize="34sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnK"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="4dp"
+            android:text="K"
+            android:textSize="34sp"
+            android:textStyle="bold" />
     </LinearLayout>
 </LinearLayout>

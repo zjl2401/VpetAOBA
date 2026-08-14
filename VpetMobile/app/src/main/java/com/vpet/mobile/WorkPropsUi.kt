@@ -2,6 +2,10 @@ package com.vpet.mobile
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -16,6 +20,7 @@ import kotlin.math.hypot
 /**
  * 工作旗/箱/HUD：悬浮窗用 WindowManager；房间模式挂到 [roomHost]。
  * 旗可拖：对照桌面 work_flag_drag。
+ * 堆箱：对照 `_work_stack_offsets` + WORK_STACK_OFFSET，锚点=底边中心（旗脚周围）。
  */
 class WorkPropsUi(
     private val context: Context,
@@ -34,6 +39,8 @@ class WorkPropsUi(
     private var flagDragEnabled = true
     private var lastFlagX = 0
     private var lastFlagY = 0
+    private val boxBmp: Bitmap by lazy { loadPropBitmap(SpriteAssets.BOX, fallbackBox()) }
+    private val flagBmp: Bitmap by lazy { loadPropBitmap(SpriteAssets.FLAG, fallbackFlag()) }
 
     fun showHud(delivered: Int, total: Int, continuous: Boolean, showEndButton: Boolean = continuous) {
         ensureHud()
@@ -67,22 +74,27 @@ class WorkPropsUi(
         lastFlagX = flagX
         lastFlagY = flagY
         place(startBox!!, startX, startY, prop)
-        setVisible(startBox, showDest && startBoxVisible)
+        setVisible(startBox, showStack && startBoxVisible)
         place(flagView!!, flagX, flagY, prop)
         setVisible(flagView, showDest)
 
-        val showN = if (showStack) stack.coerceIn(0, 8) else 0
+        val showN = if (showStack) stack.coerceIn(0, 16) else 0
         while (stackViews.size < showN) {
-            val iv = makePropView()
+            val iv = makePropView(boxBmp)
             stackViews.add(iv)
             attach(iv)
         }
+        val offsets = stackOffsets(showN)
+        val flagFootX = flagX + prop / 2
+        val flagFootY = flagY + prop
+        val step = WorkEngine.WORK_STACK_OFFSET
         for (i in stackViews.indices) {
             val v = stackViews[i]
             if (i < showN) {
-                val ox = flagX - prop - 8
-                val oy = flagY + i * (WorkEngine.WORK_PROP_SIZE * 2 / 3)
-                place(v, ox, oy, prop)
+                val (dx, dy) = offsets[i]
+                val footX = flagFootX + dx * step
+                val footY = flagFootY + dy * step
+                place(v, footX - prop / 2, footY - prop, prop)
                 setVisible(v, true)
             } else {
                 setVisible(v, false)
@@ -115,11 +127,9 @@ class WorkPropsUi(
         b.workEnd.setOnClickListener { onEndClick() }
         hudBinding = b
         if (overlayMode) {
-            hudLp = baseLp().apply {
+            hudLp = baseLp(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 y = 48
-                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
             }
             windowManager?.addView(b.root, hudLp)
         } else {
@@ -136,17 +146,13 @@ class WorkPropsUi(
 
     private fun ensureStartBox() {
         if (startBox != null) return
-        startBox = makePropView().also {
-            it.setImageBitmap(SpriteAssets.load(context, SpriteAssets.BOX, WorkEngine.WORK_PROP_SIZE))
-            attach(it)
-        }
+        startBox = makePropView(boxBmp).also { attach(it) }
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun ensureFlag() {
         if (flagView != null) return
-        flagView = makePropView().also { iv ->
-            iv.setImageBitmap(SpriteAssets.load(context, SpriteAssets.FLAG, WorkEngine.WORK_PROP_SIZE))
+        flagView = makePropView(flagBmp).also { iv ->
             attach(iv)
             var downRawX = 0f
             var downRawY = 0f
@@ -188,22 +194,25 @@ class WorkPropsUi(
         }
     }
 
-    private fun makePropView(): ImageView =
+    private fun makePropView(bmp: Bitmap): ImageView =
         ImageView(context).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
+            scaleType = ImageView.ScaleType.FIT_XY
+            setImageBitmap(bmp)
             visibility = View.GONE
-            setImageBitmap(SpriteAssets.load(context, SpriteAssets.BOX, WorkEngine.WORK_PROP_SIZE))
+            // 避免部分机型把透明叠层合成没了
+            setBackgroundColor(Color.TRANSPARENT)
+            elevation = 24f
         }
 
     private fun attach(v: View) {
+        val prop = WorkEngine.WORK_PROP_SIZE
         if (overlayMode) {
-            // 旗需要可点：不加 NOT_TOUCHABLE
-            windowManager?.addView(v, baseLp())
+            try {
+                windowManager?.addView(v, baseLp(prop, prop))
+            } catch (_: Exception) {
+            }
         } else {
-            roomHost?.addView(
-                v,
-                FrameLayout.LayoutParams(WorkEngine.WORK_PROP_SIZE, WorkEngine.WORK_PROP_SIZE),
-            )
+            roomHost?.addView(v, FrameLayout.LayoutParams(prop, prop))
         }
     }
 
@@ -218,7 +227,7 @@ class WorkPropsUi(
 
     private fun place(v: View, x: Int, y: Int, size: Int) {
         if (overlayMode) {
-            val lp = (v.layoutParams as? WindowManager.LayoutParams) ?: baseLp()
+            val lp = (v.layoutParams as? WindowManager.LayoutParams) ?: baseLp(size, size)
             lp.width = size
             lp.height = size
             lp.x = x
@@ -232,7 +241,6 @@ class WorkPropsUi(
                 } catch (_: Exception) {
                 }
             }
-            v.layoutParams = lp
         } else {
             val lp = (v.layoutParams as? FrameLayout.LayoutParams)
                 ?: FrameLayout.LayoutParams(size, size)
@@ -248,12 +256,13 @@ class WorkPropsUi(
 
     private fun setVisible(v: View?, visible: Boolean) {
         v?.visibility = if (visible) View.VISIBLE else View.GONE
+        if (visible) v?.bringToFront()
     }
 
-    private fun baseLp(): WindowManager.LayoutParams =
+    private fun baseLp(w: Int, h: Int): WindowManager.LayoutParams =
         WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            w,
+            h,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -261,4 +270,64 @@ class WorkPropsUi(
         ).apply {
             gravity = Gravity.TOP or Gravity.START
         }
+
+    private fun loadPropBitmap(assetPath: String, fallback: Bitmap): Bitmap {
+        val bmp = SpriteAssets.load(context, assetPath, WorkEngine.WORK_PROP_SIZE)
+        return bmp ?: fallback
+    }
+
+    private fun fallbackBox(): Bitmap {
+        val s = WorkEngine.WORK_PROP_SIZE
+        val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.color = Color.parseColor("#C4A574")
+        c.drawRoundRect(4f, 10f, s - 4f, s - 4f, 6f, 6f, p)
+        p.color = Color.parseColor("#8B6914")
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 3f
+        c.drawRoundRect(4f, 10f, s - 4f, s - 4f, 6f, 6f, p)
+        p.style = Paint.Style.FILL
+        p.color = Color.parseColor("#FFE08A")
+        c.drawRect(s * 0.2f, s * 0.35f, s * 0.8f, s * 0.45f, p)
+        return bmp
+    }
+
+    private fun fallbackFlag(): Bitmap {
+        val s = WorkEngine.WORK_PROP_SIZE
+        val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.color = Color.parseColor("#666666")
+        c.drawRect(s * 0.18f, 4f, s * 0.28f, s - 4f, p)
+        p.color = Color.parseColor("#FF3355")
+        c.drawRect(s * 0.28f, 6f, s * 0.88f, s * 0.48f, p)
+        return bmp
+    }
+
+    companion object {
+        fun stackOffsets(count: Int): List<Pair<Int, Int>> {
+            if (count <= 0) return emptyList()
+            val positions = mutableListOf<Pair<Int, Int>>()
+            var ring = 1
+            while (positions.size < count) {
+                positions.addAll(stackRingPositions(ring))
+                ring += 1
+                if (ring > 8) break
+            }
+            return positions.take(count)
+        }
+
+        private fun stackRingPositions(ring: Int): List<Pair<Int, Int>> {
+            val positions = mutableListOf<Pair<Int, Int>>()
+            for (dx in -ring..ring) {
+                for (dy in 0..ring) {
+                    if (dx == 0 && dy == 0) continue
+                    if (maxOf(kotlin.math.abs(dx), dy) != ring) continue
+                    positions.add(dx to dy)
+                }
+            }
+            return positions.sortedWith(compareBy({ it.second }, { kotlin.math.abs(it.first) }))
+        }
+    }
 }

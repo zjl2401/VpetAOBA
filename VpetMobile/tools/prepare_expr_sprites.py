@@ -55,7 +55,7 @@ def remove_outer_green(img: Image.Image) -> Image.Image:
     return rgba
 
 
-MAX = 512
+# 只抠图+裁包围盒，不缩放
 for name in files:
     src = src_dir / name
     if not src.exists():
@@ -65,13 +65,6 @@ for name in files:
     bbox = keyed.getbbox()
     if bbox:
         keyed = keyed.crop(bbox)
-    w, h = keyed.size
-    scale = min(MAX / w, MAX / h, 1.0)
-    if scale < 1.0:
-        keyed = keyed.resize(
-            (max(1, int(w * scale)), max(1, int(h * scale))),
-            Image.Resampling.LANCZOS,
-        )
     out_name = name.replace(".jpg", ".png")
     keyed.save(out_dir / out_name, "PNG")
     keyed.save(shared / out_name, "PNG")

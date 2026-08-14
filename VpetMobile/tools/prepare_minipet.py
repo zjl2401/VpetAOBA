@@ -48,7 +48,7 @@ def flood_key(img: Image.Image) -> Image.Image:
     return rgba
 
 
-def export(name: str, max_side=320):
+def export(name: str):
     png = ALLMATE / f"{name}.png"
     jpg = ALLMATE / f"{name}.jpg"
     src = png if png.exists() else (jpg if jpg.exists() else MINIPET / f"{name}.jpg")
@@ -59,10 +59,7 @@ def export(name: str, max_side=320):
     bbox = keyed.getbbox()
     if bbox:
         keyed = keyed.crop(bbox)
-    w, h = keyed.size
-    scale = min(max_side / w, max_side / h, 1.0)
-    if scale < 1:
-        keyed = keyed.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+    # 只抠图+裁边，不缩放
     keyed.save(OUT / f"{name}.png", "PNG")
     print("ok", name, keyed.size, "from", src.name)
 

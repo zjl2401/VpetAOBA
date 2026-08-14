@@ -48,6 +48,43 @@ class MusicPlayer(private val context: Context) {
         }
     }
 
+    fun playAsset(assetPath: String, loop: Boolean = true, onError: (String) -> Unit = {}, onComplete: () -> Unit = {}) {
+        stop()
+        try {
+            val afd = context.assets.openFd(assetPath)
+            val mp = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                )
+                setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                setOnCompletionListener {
+                    playing = false
+                    onComplete()
+                }
+                setOnErrorListener { _, what, extra ->
+                    playing = false
+                    onError("播放失败 ($what/$extra)")
+                    true
+                }
+                prepare()
+                isLooping = loop
+                start()
+            }
+            try {
+                afd.close()
+            } catch (_: Exception) {
+            }
+            player = mp
+            playing = true
+        } catch (e: Exception) {
+            playing = false
+            onError(e.message ?: "无法播放")
+        }
+    }
+
     fun stop() {
         try {
             player?.stop()

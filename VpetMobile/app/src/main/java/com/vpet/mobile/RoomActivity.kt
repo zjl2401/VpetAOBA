@@ -53,6 +53,7 @@ class RoomActivity : AppCompatActivity() {
                 v.translationX = x - baseLeft
                 v.translationY = y - baseTop
             },
+            raisePetOverlay = { binding.petImage.bringToFront() },
         )
         hub.attach()
 
@@ -63,6 +64,9 @@ class RoomActivity : AppCompatActivity() {
             onResize = { },
             onExitOverlay = {
                 Toast.makeText(this, "房间模式无悬浮可退，点返回即可", Toast.LENGTH_SHORT).show()
+            },
+            onFontChanged = {
+                if (::menuPanel.isInitialized) menuPanel.refreshFonts()
             },
         )
         menuPanel = PetMenuPanel(
@@ -84,6 +88,7 @@ class RoomActivity : AppCompatActivity() {
             },
             roomHost = binding.roomRoot,
         )
+        hub.raiseToolbars = { menuPanel.raiseLayer() }
 
         setupPetTouch()
         binding.btnSizeS.setOnClickListener { applySize("小") }
@@ -101,7 +106,7 @@ class RoomActivity : AppCompatActivity() {
 
     private fun applySize(label: String) {
         PetPrefs.setSizeLabel(this, label)
-        animator.applyDisplaySize()
+        hub.applyDisplaySizeToPetAndCompanion()
         refreshSizeHints()
     }
 
@@ -200,11 +205,15 @@ class RoomActivity : AppCompatActivity() {
                             if (part != null) hub.tryInterjection(part)
                             menuPanel.toggle(binding.roomRoot)
                         }
+                        hub.resumeWalkingAfterPause()
                     } else if (!busy && !hub.isQuiet) {
                         hub.playLandSettle { ny ->
                             val baseTop = (binding.roomRoot.height - v.height) / 2f
                             v.translationY = ny - baseTop
+                            hub.resumeWalkingAfterPause()
                         }
+                    } else {
+                        hub.resumeWalkingAfterPause()
                     }
                     true
                 }

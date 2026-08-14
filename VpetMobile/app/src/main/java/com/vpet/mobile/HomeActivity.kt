@@ -89,6 +89,7 @@ class HomeActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityHomeBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        OverlayGate.pause(this)
         voice = VoicePlayer(this)
         WalletStore.ensureFarmItems(this)
         layout = HomeLayoutStore.load(this)
@@ -100,12 +101,6 @@ class HomeActivity : AppCompatActivity() {
             "\n点格子移动 · 门切换 · 室外可开「经营」"
 
         animator = PetAnimator(this, binding.homePet)
-        val homeSize = (PetPrefs.sizePx(this) * 0.7f).toInt().coerceIn(56, 120)
-        binding.homePet.layoutParams = binding.homePet.layoutParams.apply {
-            width = homeSize
-            height = homeSize
-        }
-        animator.applyDisplaySize()
         animator.setMode(PetAnimator.Mode.STAND)
         binding.homeScene.applyLayout(layout)
         binding.homeScene.farmGrid = farmGrid
@@ -151,10 +146,12 @@ class HomeActivity : AppCompatActivity() {
         binding.btnIndoor.setOnClickListener {
             binding.homeScene.setZone(HomeSceneView.Zone.INDOOR)
             setFarmMode(false)
+            if (editMode) buildEditBrushes()
             placePet()
         }
         binding.btnOutdoor.setOnClickListener {
             binding.homeScene.setZone(HomeSceneView.Zone.OUTDOOR)
+            if (editMode) buildEditBrushes()
             placePet()
         }
         binding.btnFarmMode.setOnClickListener {
@@ -174,6 +171,7 @@ class HomeActivity : AppCompatActivity() {
             persistLayout()
             Toast.makeText(this, "家园已保存", Toast.LENGTH_SHORT).show()
         }
+        binding.btnHomeEdit.setOnClickListener { toggleEditMode() }
         binding.btnHomeImport.setOnClickListener {
             importLayout.launch(arrayOf("application/json", "text/*", "*/*"))
         }
@@ -200,8 +198,86 @@ class HomeActivity : AppCompatActivity() {
 
         buildToolButtons()
         buildSeedButtons()
-        binding.homeScene.post { placePet() }
+        binding.homeScene.post {
+            syncHomePetSize()
+            placePet()
+        }
         handler.post(tickFarm)
+    }
+
+    private fun syncHomePetSize() {
+        val tile = binding.homeScene.tilePx().coerceIn(24, 160)
+        animator.applyDisplaySize(tile)
+        placePet()
+    }
+
+    private var editMode = false
+    private var editBrush: String? = "plant"
+
+    private fun toggleEditMode() {
+        editMode = !editMode
+        binding.homeScene.editMode = editMode
+        binding.homeScene.editBrush = editBrush
+        binding.homeEditBar.visibility = if (editMode) View.VISIBLE else View.GONE
+        binding.btnHomeEdit.text = if (editMode) "完成" else "编辑"
+        if (editMode) {
+            setFarmMode(false)
+            buildEditBrushes()
+            Toast.makeText(this, "编辑地图：点格子放置，选「擦除」清空", Toast.LENGTH_SHORT).show()
+        } else {
+            persistLayout()
+            Toast.makeText(this, "已退出编辑并保存", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun buildEditBrushes() {
+        val box = binding.homeEditBrushes
+        box.removeAllViews()
+        val indoor = listOf(
+            null to "擦除",
+            "bed" to "床",
+            "table" to "桌",
+            "chair" to "椅",
+            "sofa" to "沙发",
+            "plant" to "盆栽",
+            "lamp" to "灯",
+            "vase" to "花瓶",
+            "carpet" to "地毯",
+            "window" to "窗",
+            "door" to "门",
+            "shelf" to "架",
+        )
+        val outdoor = listOf(
+            null to "擦除",
+            "grass" to "草",
+            "tree" to "树",
+            "flower" to "花",
+            "fence" to "篱",
+            "bush" to "灌",
+            "water" to "水",
+            "rock" to "石",
+            "path" to "路",
+            "land" to "土",
+            "house" to "屋",
+            "door" to "门",
+        )
+        val brushes = if (binding.homeScene.zone == HomeSceneView.Zone.INDOOR) indoor else outdoor
+        for ((kind, label) in brushes) {
+            box.addView(
+                Button(this).apply {
+                    text = label
+                    textSize = 11f
+                    minimumWidth = 0
+                    minWidth = 0
+                    setPadding(18, 8, 18, 8)
+                    setOnClickListener {
+                        editBrush = kind
+                        binding.homeScene.editBrush = kind
+                        Toast.makeText(this@HomeActivity, "笔刷：$label", Toast.LENGTH_SHORT).show()
+                    }
+                },
+            )
+        }
     }
 
     private fun reloadFarmFromLayout() {
@@ -440,6 +516,7 @@ class HomeActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
         voice?.stop()
         animator.stop()
+        OverlayGate.resume(this)
         super.onDestroy()
     }
 
@@ -454,9 +531,19 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun placePet() {
-        val size = binding.homePet.width.takeIf { it > 0 } ?: 72
+        syncHomePetSizeIfNeeded()
+        val size = binding.homePet.layoutParams?.width?.takeIf { it > 0 }
+            ?: binding.homeScene.tilePx()
         val (x, y) = binding.homeScene.petPixelTopLeft(size)
         binding.homePet.x = x
         binding.homePet.y = y
+    }
+
+    private var lastSyncedTile = -1
+    private fun syncHomePetSizeIfNeeded() {
+        val tile = binding.homeScene.tilePx()
+        if (tile == lastSyncedTile || tile < 12) return
+        lastSyncedTile = tile
+        animator.applyDisplaySize(tile.coerceIn(24, 160))
     }
 }

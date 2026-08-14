@@ -17,7 +17,7 @@ import com.vpet.mobile.databinding.OverlaySpeechBinding
 
 /**
  * 对话/台词气泡。定位对照桌面：桌宠正下方。
- * 系统→对话可用 border5；语音字幕/动作等为扁平框。
+ * 系统→对话可用 border5；语音字幕为粉顶条扁平框；动作等为普通扁平框。
  */
 class SpeechBubbleUi(
     private val context: Context,
@@ -35,6 +35,12 @@ class SpeechBubbleUi(
         const val PET_SPEECH_FOLLOW_MS = 180L
         const val TYPEWRITER_MS = 70L
         const val HI_TYPEWRITER_MS = 130L
+        /** 扁平气泡：最短/最长内容宽（dp） */
+        private const val FLAT_MIN_DP = 56
+        private const val FLAT_MAX_DP = 280
+        private const val SPEECH_FG_VPET = 0xFF88CCFF.toInt()
+        private const val SPEECH_FG_ALLMATE = 0xFF1A4A99.toInt()
+        private const val SPEECH_TEXT_BG = 0xE0141824.toInt()
     }
 
     private var binding: OverlaySpeechBinding? = null
@@ -48,14 +54,23 @@ class SpeechBubbleUi(
     private val typeSound = TypeSoundPlayer(context)
     private var borderPeak: Pair<Int, Int> = 0 to 0
     private var useBorder5 = false
+    private var voiceStyle = false
+    private var voiceFg = SPEECH_FG_VPET
 
     fun show(text: String, autoHideMs: Long = 3200L, border5: Boolean = false) {
         showInternal(text, autoHideMs, typewriterMs = 0L, border5 = border5)
     }
 
-    /** 语音字幕：瞬时全文，无打字音；扁平框。 */
-    fun showVoiceSubtitle(text: String, autoHideMs: Long = 3200L) {
-        showInternal(text, autoHideMs, typewriterMs = 0L, border5 = false)
+    /** 语音字幕：瞬时全文，无打字音；粉顶条标题框。时长建议 = 语音时长 + 1s。 */
+    fun showVoiceSubtitle(text: String, autoHideMs: Long = 3200L, source: String = "vpet") {
+        voiceFg = if (source.equals("allmate", ignoreCase = true)) SPEECH_FG_ALLMATE else SPEECH_FG_VPET
+        showInternal(
+            text.ifBlank { "……" },
+            autoHideMs.coerceAtLeast(800L),
+            typewriterMs = 0L,
+            border5 = false,
+            asVoice = true,
+        )
     }
 
     fun showTypewriter(
@@ -76,12 +91,19 @@ class SpeechBubbleUi(
         showTypewriter(text, autoHideMs, typewriterMs, border5 = true)
     }
 
-    private fun showInternal(text: String, autoHideMs: Long, typewriterMs: Long, border5: Boolean) {
+    private fun showInternal(
+        text: String,
+        autoHideMs: Long,
+        typewriterMs: Long,
+        border5: Boolean,
+        asVoice: Boolean = false,
+    ) {
         ensure()
         cancelType()
         useBorder5 = border5
+        voiceStyle = asVoice && !border5
         if (!border5) borderPeak = 0 to 0
-        binding?.speechText?.textSize = AppDataStore.fontSp(context)
+        AppDataStore.applySp(binding?.speechText, AppDataStore.fontSp(context))
         applyChrome(text.ifBlank { " " })
         binding?.root?.visibility = View.VISIBLE
         placeNow()
@@ -115,7 +137,10 @@ class SpeechBubbleUi(
                 if (!ch.isWhitespace()) typeSound.tick()
                 i++
                 val delay = if (ch == '\n') typewriterMs * 2 else typewriterMs
-                if (i % 4 == 0 || ch == '\n') placeNow()
+                if (i % 4 == 0 || ch == '\n') {
+                    if (!useBorder5) applyFlatChrome(text.take(i + 1).ifBlank { " " })
+                    placeNow()
+                }
                 handler.postDelayed(this, delay)
             }
         }
@@ -126,6 +151,15 @@ class SpeechBubbleUi(
         if (binding?.root?.visibility == View.VISIBLE) placeNow()
     }
 
+    /** 字体档位变更：气泡可见时立即改字号并重排。 */
+    fun refreshFontScale() {
+        val b = binding ?: return
+        if (b.root.visibility != View.VISIBLE) return
+        AppDataStore.applySp(b.speechText, AppDataStore.fontSp(context))
+        applyChrome(b.speechText.text?.toString().orEmpty().ifBlank { " " })
+        placeNow()
+    }
+
     fun hide() {
         cancelType()
         hideJob?.let { handler.removeCallbacks(it) }
@@ -133,7 +167,27 @@ class SpeechBubbleUi(
         stopFollow()
         binding?.root?.visibility = View.GONE
         useBorder5 = false
+        voiceStyle = false
         borderPeak = 0 to 0
+    }
+
+    /** 抬到当前悬浮栈顶（统一图层重排用）。 */
+    fun raiseLayer() {
+        val root = binding?.root ?: return
+        if (overlayMode) {
+            val lp = wmLp ?: return
+            try {
+                windowManager?.removeView(root)
+                windowManager?.addView(root, lp)
+            } catch (_: Exception) {
+            }
+        } else {
+            root.bringToFront()
+        }
+    }
+
+    fun setVisible(visible: Boolean) {
+        if (!visible) hide()
     }
 
     fun destroy() {
@@ -157,10 +211,7 @@ class SpeechBubbleUi(
             TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics,
         )
         if (!useBorder5) {
-            b.speechBorder.visibility = View.GONE
-            b.speechRoot.setPadding(dp(10), dp(10), dp(10), dp(10))
-            b.speechRoot.setBackgroundColor(0xEE1A1A22.toInt())
-            b.speechText.layoutParams = FrameLayout.LayoutParams(dp(240), FrameLayout.LayoutParams.WRAP_CONTENT)
+            applyFlatChrome(fullText)
             return
         }
         var (cw, ch) = SpeechBorder5.measureContent(fullText, textPx)
@@ -176,6 +227,8 @@ class SpeechBubbleUi(
         b.speechRoot.setBackgroundColor(0x00000000)
         b.speechRoot.setPadding(0, 0, 0, 0)
         b.speechBorder.visibility = View.VISIBLE
+        b.speechBorder.scaleType = android.widget.ImageView.ScaleType.FIT_XY
+        b.speechBorder.setBackgroundColor(0x00000000)
         b.speechBorder.setImageDrawable(BitmapDrawable(context.resources, bmp))
         b.speechBorder.layoutParams = FrameLayout.LayoutParams(bmp.width, bmp.height)
         val tp = FrameLayout.LayoutParams(
@@ -187,6 +240,51 @@ class SpeechBubbleUi(
         }
         b.speechText.layoutParams = tp
         b.speechText.setBackgroundColor(0x00000000)
+    }
+
+    /** 扁平气泡：宽度随字数伸缩，长文自动换行。语音框带粉顶条 + 深蓝描边。 */
+    private fun applyFlatChrome(fullText: String) {
+        val b = binding ?: return
+        b.speechBorder.visibility = View.GONE
+        val padH = dp(12)
+        val padV = dp(10)
+        if (voiceStyle) {
+            b.speechRoot.setPadding(padH, padV + dp(3), padH, padV)
+            val body = android.graphics.drawable.GradientDrawable().apply {
+                setColor(SPEECH_TEXT_BG)
+                setStroke(dp(1), MenuDecor.THEME_BLUE_DEEP)
+            }
+            val layers = android.graphics.drawable.LayerDrawable(
+                arrayOf(
+                    android.graphics.drawable.GradientDrawable().apply {
+                        setColor(MenuDecor.THEME_PINK)
+                    },
+                    body,
+                ),
+            )
+            layers.setLayerInset(1, 0, dp(3), 0, 0)
+            b.speechRoot.background = layers
+            b.speechText.setTextColor(voiceFg)
+        } else {
+            b.speechRoot.setPadding(dp(10), dp(8), dp(10), dp(8))
+            b.speechRoot.setBackgroundColor(0xEE1A1A22.toInt())
+            b.speechText.setTextColor(0xFFFFFFFF.toInt())
+        }
+        val minW = dp(if (voiceStyle) 72 else FLAT_MIN_DP)
+        val maxW = minOf(dp(FLAT_MAX_DP), (screenSize().x * 0.72f).toInt().coerceAtLeast(minW))
+        val tv = b.speechText
+        AppDataStore.applySp(tv, AppDataStore.fontSp(context))
+        val paint = tv.paint
+        var natural = 0f
+        for (line in fullText.split('\n')) {
+            natural = maxOf(natural, paint.measureText(line.ifEmpty { " " }))
+        }
+        val contentW = (natural + dp(2)).toInt().coerceIn(minW, maxW)
+        tv.maxWidth = contentW
+        tv.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+        )
     }
 
     private fun dp(v: Int): Int =

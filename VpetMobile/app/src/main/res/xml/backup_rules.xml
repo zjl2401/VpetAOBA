@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 及以下：完整备份关键 SharedPreferences 与保险档 -->
+<full-backup-content>
+    <include domain="sharedpref" path="." />
+    <include domain="file" path="vpet_persist_vault.json" />
+    <include domain="file" path="." />
+</full-backup-content>

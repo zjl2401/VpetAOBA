@@ -114,10 +114,27 @@
             android:paddingTop="4dp">
 
             <Button android:id="@+id/btnHomeSave" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="保存" android:textSize="12sp" android:layout_marginEnd="2dp" />
+            <Button android:id="@+id/btnHomeEdit" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="编辑" android:textSize="12sp" android:layout_marginEnd="2dp" />
             <Button android:id="@+id/btnHomeImport" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="导入" android:textSize="12sp" android:layout_marginEnd="2dp" />
             <Button android:id="@+id/btnHomeExport" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="导出" android:textSize="12sp" android:layout_marginEnd="2dp" />
             <Button android:id="@+id/btnHomeReset" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="重置" android:textSize="12sp" />
         </LinearLayout>
+
+        <HorizontalScrollView
+            android:id="@+id/homeEditBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:scrollbars="none"
+            android:paddingHorizontal="6dp"
+            android:paddingBottom="4dp">
+
+            <LinearLayout
+                android:id="@+id/homeEditBrushes"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
 
         <LinearLayout
             android:layout_width="match_parent"

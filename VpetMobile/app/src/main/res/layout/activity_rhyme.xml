@@ -1,48 +1,232 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="20dp"
-    android:background="@color/bg_dark">
+    android:background="@color/bg_dark"
+    android:fillViewport="true">
 
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="莱姆练习对战"
-        android:textColor="@color/accent_pink"
-        android:textSize="22sp"
-        android:gravity="center"
-        android:layout_marginBottom="12dp" />
+        android:orientation="vertical"
+        android:padding="16dp">
 
-    <TextView
-        android:id="@+id/rhymeLog"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textColor="@color/text_main"
-        android:textSize="15sp"
-        android:gravity="center"
-        android:minLines="4"
-        android:layout_marginBottom="16dp" />
+        <TextView
+            android:id="@+id/rhymeTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="莱姆 · 回合制"
+            android:textColor="@color/accent_pink"
+            android:textSize="20sp"
+            android:layout_marginBottom="8dp" />
 
-    <Button
-        android:id="@+id/btnAttack"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="攻击"
-        android:layout_marginBottom="8dp" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
 
-    <Button
-        android:id="@+id/btnHeal"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="回复"
-        android:layout_marginBottom="8dp" />
+            <ImageView
+                android:id="@+id/rhymePlayerIcon"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:contentDescription="@null"
+                android:scaleType="fitXY" />
 
-    <Button
-        android:id="@+id/btnRhymeExit"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="撤退" />
-</LinearLayout>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="12dp"
+                android:text="VS"
+                android:textColor="#FFCC44"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/rhymeEnemyIcon"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:contentDescription="@null"
+                android:scaleType="fitXY" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:id="@+id/rhymeYouName"
+                android:layout_width="72dp"
+                android:layout_height="wrap_content"
+                android:text="你 耐久"
+                android:textColor="#88CCFF"
+                android:textSize="13sp" />
+
+            <ImageView
+                android:id="@+id/rhymePlayerBar"
+                android:layout_width="0dp"
+                android:layout_height="16dp"
+                android:layout_weight="1"
+                android:contentDescription="@null"
+                android:scaleType="fitXY" />
+
+            <TextView
+                android:id="@+id/rhymePlayerHp"
+                android:layout_width="40dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="100"
+                android:textColor="@color/text_main"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:id="@+id/rhymeFoeName"
+                android:layout_width="72dp"
+                android:layout_height="wrap_content"
+                android:text="对手 耐久"
+                android:textColor="#FF8844"
+                android:textSize="13sp" />
+
+            <ImageView
+                android:id="@+id/rhymeEnemyBar"
+                android:layout_width="0dp"
+                android:layout_height="16dp"
+                android:layout_weight="1"
+                android:contentDescription="@null"
+                android:scaleType="fitXY" />
+
+            <TextView
+                android:id="@+id/rhymeEnemyHp"
+                android:layout_width="40dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="100"
+                android:textColor="@color/text_main"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/rhymePhase"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="第 1 回合 · 选招"
+            android:textColor="#AAAAAA"
+            android:textSize="13sp"
+            android:layout_marginBottom="6dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="你"
+                android:textColor="#88CCFF"
+                android:textSize="12sp" />
+
+            <ImageView
+                android:id="@+id/rhymePlayerDie"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="16dp"
+                android:contentDescription="@null"
+                android:scaleType="fitXY" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="对手"
+                android:textColor="#FF8844"
+                android:textSize="12sp" />
+
+            <ImageView
+                android:id="@+id/rhymeEnemyDie"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="8dp"
+                android:contentDescription="@null"
+                android:scaleType="fitXY" />
+
+            <TextView
+                android:id="@+id/rhymeDiceHint"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="#8899AA"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/rhymeLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minLines="4"
+            android:textColor="#CCCCCC"
+            android:textSize="14sp"
+            android:layout_marginBottom="12dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+
+            <Button
+                android:id="@+id/btnAttack"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="攻击" />
+
+            <Button
+                android:id="@+id/btnDefense"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginHorizontal="4dp"
+                android:text="防御" />
+
+            <Button
+                android:id="@+id/btnSpecial"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="必杀" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnRoll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="掷骰判定"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnRhymeExit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="撤退" />
+    </LinearLayout>
+</ScrollView>

@@ -4,9 +4,16 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.SeekBar
+import android.widget.Switch
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -22,21 +29,18 @@ class SystemHubActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_PAGE = "page"
         const val EXTRA_AUTO_GUIDE = "auto_guide"
-        const val ABOUT_REPO = "https://github.com/zjl2401/VpetAOBA"
-        const val FEEDBACK_ISSUE = "$ABOUT_REPO/issues"
-        const val XHS = "https://www.xiaohongshu.com/user/profile/444225910"
-        const val BILI = "https://space.bilibili.com/696083047"
     }
 
     private lateinit var binding: ActivitySystemBinding
     private var phonographPlayer: VoicePlayer? = null
+    private var phonographMusic: MusicPlayer? = null
 
     private val pickGalleryImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri == null) return@registerForActivityResult
         val e = UserGalleryStore.importUri(this, uri)
         if (e == null) Toast.makeText(this, "导入失败", Toast.LENGTH_SHORT).show()
         else {
-            Toast.makeText(this, "已加入画廊：${e.title}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "已加入画廊：${galleryDisplayTitle(e.title)}", Toast.LENGTH_SHORT).show()
             pageGallery()
         }
     }
@@ -72,10 +76,19 @@ class SystemHubActivity : AppCompatActivity() {
     override fun onDestroy() {
         phonographPlayer?.stop()
         phonographPlayer = null
+        phonographMusic?.stop()
+        phonographMusic = null
         super.onDestroy()
     }
 
     private fun clearButtons() = binding.sysButtons.removeAllViews()
+
+    private fun dp(v: Int): Int =
+        TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            v.toFloat(),
+            resources.displayMetrics,
+        ).toInt()
 
     private fun addBtn(label: String, onClick: () -> Unit) {
         binding.sysButtons.addView(
@@ -84,6 +97,81 @@ class SystemHubActivity : AppCompatActivity() {
                 setOnClickListener { onClick() }
             },
         )
+    }
+
+    /** 设置页开关行。 */
+    private fun addSwitchRow(title: String, checked: Boolean, onChanged: (Boolean) -> Unit) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
+        }
+        val label = TextView(this).apply {
+            text = title
+            setTextColor(getColor(R.color.text_main))
+            AppDataStore.applySp(this, AppDataStore.fontBodySp(this@SystemHubActivity))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val sw = Switch(this).apply {
+            isChecked = checked
+            setOnCheckedChangeListener { _, on -> onChanged(on) }
+        }
+        row.addView(label)
+        row.addView(sw)
+        binding.sysButtons.addView(row)
+    }
+
+    /**
+     * 设置页滑条。
+     * @param applyOnStop 为 true 时仅在松手时回调 [onChange]（拖动中只刷新文案），减轻改大小开销。
+     */
+    private fun addSliderRow(
+        title: String,
+        progress: Int,
+        max: Int,
+        format: (Int) -> String,
+        onChange: (Int) -> Unit,
+        applyOnStop: Boolean = false,
+    ) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val titleTv = TextView(this).apply {
+            text = title
+            setTextColor(getColor(R.color.text_main))
+            AppDataStore.applySp(this, AppDataStore.fontBodySp(this@SystemHubActivity))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val valueTv = TextView(this).apply {
+            text = format(progress.coerceIn(0, max))
+            setTextColor(getColor(R.color.accent_pink))
+            AppDataStore.applySp(this, AppDataStore.fontCaptionSp(this@SystemHubActivity))
+        }
+        head.addView(titleTv)
+        head.addView(valueTv)
+        val seek = SeekBar(this).apply {
+            this.max = max.coerceAtLeast(1)
+            this.progress = progress.coerceIn(0, this.max)
+            setPadding(dp(4), dp(8), dp(4), dp(4))
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, p: Int, fromUser: Boolean) {
+                    valueTv.text = format(p)
+                    if (fromUser && !applyOnStop) onChange(p)
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    if (applyOnStop) onChange(seekBar?.progress ?: return)
+                }
+            })
+        }
+        box.addView(head)
+        box.addView(seek)
+        binding.sysButtons.addView(box)
     }
 
     private fun pageDiary() {
@@ -142,90 +230,123 @@ class SystemHubActivity : AppCompatActivity() {
     private fun pageGallery() {
         binding.sysTitle.text = "画廊"
         AppDataStore.unlock(this, "memory_open")
-        val groups = listOf(
-            "站立" to listOf("stand.png"),
-            "行走" to listOf("walkfront1.png", "walkfront2.png", "walkback1.png", "walkleft1.png"),
-            "表情" to listOf("happy.png", "wink.png", "shy1.png", "like.png", "squat.png"),
-            "互动" to listOf("hi1.png", "eat1.png", "call1.png", "kick.png", "sleep1.png"),
-            "工作" to listOf("workstand.png", "workfront1.png", "box.png", "flag.png"),
-        )
+        val groups = GalleryCatalog.loadGroups(this)
         val user = UserGalleryStore.list(this)
         binding.sysBody.text = buildString {
-            appendLine("内置精灵组 + 用户图库")
+            appendLine("内置画廊 ${groups.size} 组 · 用户图 ${user.size} 张")
+            appendLine("点下方按钮看图（对照桌面 gallery.json）")
             appendLine()
-            for ((name, files) in groups) {
-                val ok = files.count { existsAsset("sprites/$it") }
-                appendLine("· $name  $ok/${files.size} 帧")
+            for (g in groups.take(16)) {
+                appendLine("· ${g.title}  ${g.paths.size} 张${if (g.sticker != null) " ·${g.sticker}" else ""}")
             }
-            appendLine()
-            appendLine("用户图 ${user.size} 张")
-            for (e in user.take(12)) appendLine("· ${e.title}")
-            if (user.size > 12) appendLine("…")
+            if (groups.size > 16) appendLine("…")
+            if (user.isNotEmpty()) {
+                appendLine()
+                appendLine("用户图：")
+                for (e in user.take(8)) appendLine("· ${e.title}")
+            }
         }
         clearButtons()
         addBtn("导入图片") { pickGalleryImage.launch("image/*") }
         for (e in user) {
-            addBtn("看·${e.title.take(10)}") {
+            addBtn("看·${galleryDisplayTitle(e.title).take(10)}") {
                 val bmp = BitmapFactory.decodeFile(UserGalleryStore.fileOf(this, e).absolutePath)
                 if (bmp == null) {
                     Toast.makeText(this, "无法打开", Toast.LENGTH_SHORT).show()
                     return@addBtn
                 }
-                val iv = ImageView(this).apply {
-                    setImageBitmap(bmp)
-                    adjustViewBounds = true
-                    maxHeight = 720
+                // 对照桌面：只显示中文标题/预览，不展示文件名
+                showBitmapDialog(galleryDisplayTitle(e.title), bmp) {
+                    UserGalleryStore.remove(this, e.id)
+                    pageGallery()
                 }
-                AlertDialog.Builder(this)
-                    .setTitle(e.title)
-                    .setView(iv)
-                    .setPositiveButton("好", null)
-                    .setNeutralButton("删除") { _, _ ->
-                        UserGalleryStore.remove(this, e.id)
-                        pageGallery()
-                    }
-                    .show()
             }
         }
-        for ((name, files) in groups) {
-            addBtn("预览·$name") {
-                val path = files.map { "sprites/$it" }.firstOrNull { existsAsset(it) }
-                if (path == null) {
-                    Toast.makeText(this, "无素材", Toast.LENGTH_SHORT).show()
-                } else {
-                    AlertDialog.Builder(this)
-                        .setTitle(name)
-                        .setMessage("资源：$path")
-                        .setPositiveButton("好", null)
-                        .show()
+        for (g in groups) {
+            addBtn("看·${g.title.take(12)}") {
+                val bmp = g.paths.firstNotNullOfOrNull { GalleryCatalog.decode(this, it) }
+                if (bmp == null) {
+                    Toast.makeText(this, "无素材：${g.title}", Toast.LENGTH_SHORT).show()
+                    return@addBtn
                 }
+                showBitmapDialog(g.title, bmp)
             }
         }
         addBtn("返回") { finish() }
+    }
+
+    /** 文件名（含扩展名）不当作展示标题。 */
+    private fun galleryDisplayTitle(raw: String): String {
+        val t = raw.trim()
+        if (t.isBlank()) return "用户图"
+        val low = t.lowercase()
+        if (low.endsWith(".png") || low.endsWith(".jpg") || low.endsWith(".jpeg") ||
+            low.endsWith(".webp") || low.endsWith(".gif")
+        ) {
+            return "用户图"
+        }
+        return t
+    }
+
+    private fun showBitmapDialog(
+        title: String,
+        bmp: android.graphics.Bitmap,
+        message: String? = null,
+        onDelete: (() -> Unit)? = null,
+    ) {
+        val iv = ImageView(this).apply {
+            setImageBitmap(bmp)
+            adjustViewBounds = true
+            maxHeight = (resources.displayMetrics.heightPixels * 0.55f).toInt()
+            setPadding(24, 16, 24, 8)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(iv)
+            if (!message.isNullOrBlank()) {
+                addView(
+                    TextView(this@SystemHubActivity).apply {
+                        text = message
+                        setPadding(24, 0, 24, 16)
+                        textSize = 12f
+                    },
+                )
+            }
+        }
+        val b = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(box)
+            .setPositiveButton("好", null)
+        if (onDelete != null) {
+            b.setNeutralButton("删除") { _, _ -> onDelete() }
+        }
+        b.show()
     }
 
     private fun pagePhonograph() {
         binding.sysTitle.text = "留声"
         AppDataStore.unlock(this, "memory_open")
         phonographPlayer = VoicePlayer(this)
-        val entries = listOf(
-            "问候 hi" to "voice/Vpet/hi",
-            "日常 normal" to "voice/Vpet/normal",
-            "工作 work" to "voice/Vpet/work",
-            "睡眠 sleep" to "voice/Vpet/sleep",
-            "游戏 game" to "voice/Vpet/game",
-            "吃吃 eat" to "voice/Vpet/eat",
-        )
+        phonographMusic?.stop()
+        phonographMusic = MusicPlayer(this)
+        val musicPlayer = phonographMusic!!
+        val voiceDirs = listVoiceDirs()
+        val musicTracks = BundledMusic.tracks(this)
+        val musicFolders = BundledMusic.folders(this)
         val user = UserPhonographStore.list(this)
         binding.sysBody.text = buildString {
-            appendLine("内置语音 + 用户导入（wav/mp3 等）")
-            appendLine("用户条目 ${user.size}")
-            for (e in user.take(10)) appendLine("· ${e.title}")
+            appendLine("语音分类 ${voiceDirs.size} · 内置曲目 ${musicTracks.size} · 用户 ${user.size}")
+            appendLine("点分类播随机一条；音乐可点具体曲目")
+            appendLine()
+            appendLine("语音：${voiceDirs.joinToString(" · ") { it.substringAfterLast('/') }}")
+            appendLine()
+            appendLine("音乐分类：${musicFolders.joinToString(" · ") { it.substringBefore('-') }}")
         }
         clearButtons()
         addBtn("导入音频") { pickPhonographAudio.launch("audio/*") }
         for (e in user) {
             addBtn("播·${e.title.take(12)}") {
+                musicPlayer.stop()
                 val ok = phonographPlayer?.playFile(UserPhonographStore.fileOf(this, e)) == true
                 Toast.makeText(this, if (ok) "播放：${e.title}" else "播放失败", Toast.LENGTH_SHORT).show()
             }
@@ -234,23 +355,65 @@ class SystemHubActivity : AppCompatActivity() {
                 pagePhonograph()
             }
         }
-        for ((label, dir) in entries) {
-            addBtn(label) {
+        for (dir in voiceDirs) {
+            val label = dir.substringAfterLast('/')
+            addBtn("语·$label") {
+                musicPlayer.stop()
                 val path = phonographPlayer?.pickAsset(dir)
                 if (path == null) {
-                    Toast.makeText(this, "无音频：$dir", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "无音频：$label", Toast.LENGTH_SHORT).show()
                 } else {
                     val ok = phonographPlayer?.playAssetPath(path) == true
+                    val title = VoiceTitle.displayTitle(path)
                     Toast.makeText(
                         this,
-                        if (ok) "播放：${path.substringAfterLast('/')}" else "播放失败",
+                        when {
+                            !ok -> "播放失败"
+                            title == "……" -> "已播放"
+                            else -> "播放：$title"
+                        },
                         Toast.LENGTH_SHORT,
                     ).show()
                 }
             }
         }
-        addBtn("停止") { phonographPlayer?.stop() }
-        addBtn("返回") { finish() }
+        for (t in musicTracks) {
+            addBtn("曲·${t.label.take(18)}") {
+                phonographPlayer?.stop()
+                musicPlayer.playAsset(
+                    t.assetPath,
+                    loop = false,
+                    onError = { Toast.makeText(this, it, Toast.LENGTH_SHORT).show() },
+                    onComplete = {},
+                )
+                Toast.makeText(this, "播放：${t.label.take(18)}", Toast.LENGTH_SHORT).show()
+            }
+        }
+        addBtn("停止") {
+            phonographPlayer?.stop()
+            musicPlayer.stop()
+        }
+        addBtn("返回") {
+            phonographPlayer?.stop()
+            musicPlayer.stop()
+            finish()
+        }
+    }
+
+    private fun listVoiceDirs(): List<String> {
+        val preferred = listOf(
+            "hi", "normal", "work", "sleep", "game", "eat", "call", "dizzy", "hurt",
+            "kick", "walk", "yuqi", "hungry", "forget", "error", "email", "ren",
+            "end", "interjection", "jinmu", "你好",
+        )
+        val vpet = assets.list("voice/Vpet")?.toSet().orEmpty()
+        val ordered = preferred.filter { it in vpet }.map { "voice/Vpet/$it" }.toMutableList()
+        for (extra in vpet.sorted()) {
+            if (extra !in preferred && !extra.contains('.')) ordered += "voice/Vpet/$extra"
+        }
+        if (assets.list("voice/Allmate")?.isNotEmpty() == true) ordered += "voice/Allmate"
+        if (assets.list("voice/chain")?.isNotEmpty() == true) ordered += "voice/chain"
+        return ordered
     }
 
     private fun existsAsset(path: String): Boolean = try {
@@ -260,138 +423,235 @@ class SystemHubActivity : AppCompatActivity() {
         false
     }
 
-    private fun pageSettings() {
-        binding.sysTitle.text = "设置"
-        fun refresh() {
-            binding.sysBody.text = buildString {
-                appendLine("桌宠大小：${PetPrefs.sizeLabel(this@SystemHubActivity)}（${PetPrefs.sizePx(this@SystemHubActivity)}px）")
-                appendLine("字体大小：${AppDataStore.fontLabel(this@SystemHubActivity)}")
-                appendLine("音效：${if (AppDataStore.soundOn(this@SystemHubActivity)) "开" else "关"}")
-                appendLine("语音模式：${if (AppDataStore.voiceMode(this@SystemHubActivity)) "开" else "关"}")
-                appendLine("语音音量：${AppDataStore.voiceVolume(this@SystemHubActivity)}")
-                appendLine("游戏难度：${AppDataStore.difficulty(this@SystemHubActivity)}")
-                appendLine("显示层级：手机悬浮窗已置顶，无需调整")
+    private fun applyChromeFonts() {
+        AppDataStore.applySp(binding.sysTitle, AppDataStore.fontTitleSp(this))
+        AppDataStore.applySp(binding.sysBody, AppDataStore.fontBodySp(this))
+        AppDataStore.applySp(binding.sysInput, AppDataStore.fontBodySp(this))
+        fun walk(v: View) {
+            if (v is TextView) {
+                AppDataStore.applySp(v, AppDataStore.fontBodySp(this))
+            }
+            if (v is ViewGroup) {
+                for (i in 0 until v.childCount) walk(v.getChildAt(i))
             }
         }
-        refresh()
+        walk(binding.sysButtons)
+    }
+
+    private fun notifyOverlayFont() {
+        startService(
+            Intent(this, PetOverlayService::class.java).apply {
+                action = PetOverlayService.ACTION_APPLY_FONT
+            },
+        )
+    }
+
+    private fun pageSettings() {
+        binding.sysTitle.text = "设置"
+        binding.sysBody.text = "开关用开关；桌宠与智能伴侣大小一起连续微调；语音/音效音量用滑条。"
         clearButtons()
-        listOf("小", "中", "大").forEach { label ->
-            addBtn("大小·$label") {
-                PetPrefs.setSizeLabel(this, label)
+        applyChromeFonts()
+
+        val fontLabels = AppDataStore.FONT_PRESETS.keys.toList()
+        val diffLabels = AppDataStore.DIFF_PRESETS
+        val sizeSteps = (PetPrefs.SIZE_MAX_PX - PetPrefs.SIZE_MIN_PX) / PetPrefs.SIZE_STEP_PX
+        val curPx = PetPrefs.sizePx(this)
+        val sizeProgress = ((curPx - PetPrefs.SIZE_MIN_PX) / PetPrefs.SIZE_STEP_PX)
+            .coerceIn(0, sizeSteps)
+
+        addSliderRow(
+            title = "桌宠·伴侣大小",
+            progress = sizeProgress,
+            max = sizeSteps,
+            format = { i ->
+                val px = PetPrefs.SIZE_MIN_PX + i * PetPrefs.SIZE_STEP_PX
+                val label = PetPrefs.nearestSizeLabel(px)
+                val pet = PetPrefs.snapSizePx(px)
+                val mate = CompanionFollower.companionSize(pet)
+                "$label · 宠${pet}px / 伴${mate}px"
+            },
+            onChange = { i ->
+                val px = PetPrefs.SIZE_MIN_PX + i * PetPrefs.SIZE_STEP_PX
+                PetPrefs.setSizePx(this, px)
                 startService(
                     Intent(this, PetOverlayService::class.java).apply {
                         action = PetOverlayService.ACTION_RESIZE
                     },
                 )
-                refresh()
-            }
+            },
+            applyOnStop = true,
+        )
+
+        addSliderRow(
+            title = "字体大小",
+            progress = fontLabels.indexOf(AppDataStore.fontLabel(this)).coerceAtLeast(0),
+            max = fontLabels.lastIndex,
+            format = { i ->
+                val label = fontLabels.getOrElse(i) { "中" }
+                "$label（${AppDataStore.FONT_PRESETS[label]?.toInt()}sp）"
+            },
+            onChange = { i ->
+                AppDataStore.setFontLabel(this, fontLabels.getOrElse(i) { "中" })
+                applyChromeFonts()
+                notifyOverlayFont()
+            },
+        )
+
+        addSwitchRow("音效", AppDataStore.soundOn(this)) { on ->
+            AppDataStore.setSoundOn(this, on)
         }
-        AppDataStore.FONT_PRESETS.keys.forEach { label ->
-            addBtn("字体·$label") {
-                AppDataStore.setFontLabel(this, label)
-                refresh()
-            }
+        addSwitchRow("语音模式", AppDataStore.voiceMode(this)) { on ->
+            AppDataStore.setVoiceMode(this, on)
         }
-        addBtn("音效 开/关") {
-            AppDataStore.setSoundOn(this, !AppDataStore.soundOn(this))
-            refresh()
-        }
-        addBtn("语音模式 开/关") {
-            AppDataStore.setVoiceMode(this, !AppDataStore.voiceMode(this))
-            refresh()
-        }
-        addBtn("语音音量 −") {
-            AppDataStore.setVoiceVolume(this, AppDataStore.voiceVolume(this) - 10)
-            refresh()
-        }
-        addBtn("语音音量 +") {
-            AppDataStore.setVoiceVolume(this, AppDataStore.voiceVolume(this) + 10)
-            refresh()
-        }
-        AppDataStore.DIFF_PRESETS.forEach { d ->
-            addBtn("难度·$d") {
-                AppDataStore.setDifficulty(this, d)
-                refresh()
-            }
-        }
-        addBtn("显示层级说明") {
+
+        addSwitchRow(
+            "熄屏显示桌宠",
+            LockScreenPetStore.enabled(this),
+        ) { on ->
+            LockScreenPetStore.setEnabled(this, on)
             Toast.makeText(
                 this,
-                "手机悬浮已在系统叠加层，无需像电脑那样调窗口层级",
+                if (on) "已开启：锁屏/点亮时显示睡觉·视频·游戏·音乐姿势（需桌宠在跑）"
+                else "已关闭熄屏显示",
                 Toast.LENGTH_LONG,
             ).show()
         }
+
+        val usageOn = AppSceneClassifier.hasUsageAccess(this)
+        addBtn(
+            if (usageOn) "使用情况访问 · 已授权（自动音乐/游戏/视频）"
+            else "授权使用情况访问 · 打开 App 自动切模式",
+        ) {
+            AppSceneClassifier.openUsageAccessSettings(this)
+            Toast.makeText(
+                this,
+                if (usageOn) "可在系统设置中关闭授权"
+                else "请找到 VpetMobile 并打开「允许查看使用情况」",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+
+        addSliderRow(
+            title = "语音音量",
+            progress = AppDataStore.voiceVolume(this),
+            max = 100,
+            format = { "$it%" },
+            onChange = { AppDataStore.setVoiceVolume(this, it) },
+        )
+
+        addSliderRow(
+            title = "音效音量",
+            progress = AppDataStore.sfxVolume(this),
+            max = 100,
+            format = { "$it%" },
+            onChange = { AppDataStore.setSfxVolume(this, it) },
+        )
+
+        addSliderRow(
+            title = "游戏难度",
+            progress = diffLabels.indexOf(AppDataStore.difficulty(this)).coerceAtLeast(0),
+            max = diffLabels.lastIndex,
+            format = { diffLabels.getOrElse(it) { "中" } },
+            onChange = { i ->
+                AppDataStore.setDifficulty(this, diffLabels.getOrElse(i) { "中" })
+            },
+        )
+
+        addSliderRow(
+            title = "自由站立闲聊间隔",
+            progress = AppDataStore.freeIdleBanterSec(this),
+            max = AppDataStore.FREE_IDLE_SEC_MAX,
+            format = {
+                val s = it.coerceAtLeast(AppDataStore.FREE_IDLE_SEC_MIN)
+                "$s 秒触发一次"
+            },
+            onChange = { i ->
+                AppDataStore.setFreeIdleBanterSec(
+                    this,
+                    i.coerceAtLeast(AppDataStore.FREE_IDLE_SEC_MIN),
+                )
+            },
+        )
+
+        addBtn("显示层级说明") {
+            Toast.makeText(
+                this,
+                DesktopGuideCopy.DISPLAY_LAYER_HINT + "\n【手机】悬浮在系统叠加层，一般无需再调。",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+        addBtn("返回") { finish() }
     }
 
     private fun pageAbout() {
-        binding.sysTitle.text = "关于 Vpet"
-        binding.sysBody.text = """
-            作者菌：翛然而往
-            手机试做版对照电脑 Vpet 1.0 行为复现。
-            
-            原作世界：《DRAMatical Murder》相关设定问答仅供粉丝向桌宠互动。
-            
-            GitHub：$ABOUT_REPO
-        """.trimIndent()
+        binding.sysTitle.text = "关于"
+        binding.sysBody.text = DesktopGuideCopy.aboutBody()
         clearButtons()
-        addBtn("打开 GitHub") { openUrl(ABOUT_REPO) }
-        addBtn("小红书") { openUrl(XHS) }
-        addBtn("B站") { openUrl(BILI) }
+        addBtn("打开 GitHub") { openUrl(DesktopGuideCopy.ABOUT_REPO_URL) }
+        addBtn("戏剧性谋杀（Steam）") { openUrl(DesktopGuideCopy.ABOUT_STEAM_URL) }
+        addBtn("B站") { openUrl(DesktopGuideCopy.FEEDBACK_BILI_URL) }
         addBtn("返回") { finish() }
     }
 
     private fun pageFeedback() {
         binding.sysTitle.text = "问题反馈"
-        binding.sysBody.text =
-            "Bug 与建议可通过 GitHub Issues / 小红书 / B站 反馈。\n请附：现象、复现步骤、机型系统。"
+        binding.sysBody.text = DesktopGuideCopy.feedbackBody()
         clearButtons()
-        addBtn("GitHub Issues") { openUrl(FEEDBACK_ISSUE) }
-        addBtn("小红书") { openUrl(XHS) }
-        addBtn("B站") { openUrl(BILI) }
+        addBtn("GitHub Issues") { openUrl(DesktopGuideCopy.FEEDBACK_ISSUE_URL) }
+        addBtn("小红书") { openUrl(DesktopGuideCopy.FEEDBACK_XHS_URL) }
+        addBtn("B站") { openUrl(DesktopGuideCopy.FEEDBACK_BILI_URL) }
+        addBtn("返回") { finish() }
     }
 
     private fun pageGuide(auto: Boolean = false) {
-        binding.sysTitle.text = "操作说明"
-        binding.sysBody.text = """
-            【手机版要点】
-            · 点立绘打开四大模块菜单（模式/面板/互动/系统）
-            · 拖动移动；漫步/自由走动；跟随点空白处引路
-            · 工作：运送箱到旗；番茄钟=工作运送↔休息睡眠
-            · 音乐：先在「工具与档案」导入本地歌曲（网易云云端不可直连）
-            · 所属人与电脑 data/pet_profile.json 可互导
-            · 家园 layout 可存读，与电脑 home_layout.json 互导
-            · 系统→我的：日记/成就/画廊/留声；设置：大小字体声音难度
-            · 悬浮需系统「显示在其他应用上层」权限
-        """.trimIndent()
+        showGuideHome()
         if (auto) AppConfigStore.markOperationGuideSeen(this)
+    }
+
+    private fun showGuideHome() {
+        binding.sysTitle.text = "操作说明"
+        binding.sysBody.text = DesktopGuideCopy.guideHomeBody()
         clearButtons()
+        for (topic in DesktopGuideCopy.GUIDE_TOPICS) {
+            addBtn(topic.title) { showGuideTopic(topic) }
+        }
         addBtn("知道了") { finish() }
+    }
+
+    private fun showGuideTopic(topic: DesktopGuideCopy.Topic) {
+        binding.sysTitle.text = topic.title
+        binding.sysBody.text = topic.body
+        clearButtons()
+        for ((label, url) in topic.links) {
+            addBtn(label) { openUrl(url) }
+        }
+        addBtn("返回专题列表") { showGuideHome() }
+        addBtn("关闭") { finish() }
     }
 
     private fun pageSubmit() {
         binding.sysTitle.text = "投稿创意"
-        binding.sysBody.text = """
-            电脑版可打包 DIY 地图/像素画/音频为 zip 投稿。
-            手机版暂不支持本地打包；请用电脑版「社区→投稿创意」，或将素材发至反馈渠道。
-            一经投稿默认同意无偿公开使用。
-        """.trimIndent()
+        binding.sysBody.text = DesktopGuideCopy.submitBody()
         clearButtons()
-        addBtn("去问题反馈渠道") { openUrl(FEEDBACK_ISSUE) }
+        addBtn("去问题反馈") { pageFeedback() }
         addBtn("返回") { finish() }
     }
 
     private fun pageReset() {
         binding.sysTitle.text = "重置"
-        binding.sysBody.text =
-            "将清空日记、日程、成就标记、生日礼物、本地音乐与大小等设置。\n所属人昵称与登记时间会保留（对齐电脑版）。"
+        binding.sysBody.text = DesktopGuideCopy.RESET_CONFIRM
         clearButtons()
         addBtn("确定重置") {
             AlertDialog.Builder(this)
-                .setTitle("确认重置？")
-                .setMessage("所属人保留，其余回到初始。")
-                .setPositiveButton("重置") { _, _ ->
+                .setTitle("重置确认")
+                .setMessage(DesktopGuideCopy.RESET_CONFIRM)
+                .setPositiveButton("确定重置") { _, _ ->
                     AppDataStore.resetKeepOwner(this)
-                    Toast.makeText(this, "已重置（所属人保留）", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this,
+                        "已重置设置；相伴时间、装扮与背包已保留",
+                        Toast.LENGTH_LONG,
+                    ).show()
                     finish()
                 }
                 .setNegativeButton("取消", null)

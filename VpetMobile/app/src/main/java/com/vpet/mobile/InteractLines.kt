@@ -6,6 +6,9 @@ object InteractLines {
     const val CALL_TEXT = "你好，这里是旧货店「平凡」，我是苍叶，谢谢你的来电"
     const val YESNO_ANSWER_TEXT = "你所问问题的答案是"
     const val FOLLOW_DIZZY_TEXT = "我晕了……"
+    /** 对照桌面 ADULT_CONTENT_TEXT（×生活预留）。 */
+    const val ADULT_CONTENT_TEXT =
+        "我只是像素哦，更多精彩内容请在正版游戏《戏剧性谋杀》中解锁"
 
     /** 长拖无 yuqi 资源时的回落台词（对照 DRAG_DIZZY_LINES）。 */
     val DRAG_DIZZY = listOf(
@@ -68,11 +71,17 @@ object InteractLines {
         "yes" to listOf("是！", "嗯嗯！"),
         "no" to listOf("否~", "不要啦…"),
         "yesno" to listOf("命运揭晓…", "答案是…"),
-        "music" to listOf("♪~", "一起听歌吧~"),
-        "expose" to listOf("…", "屏住呼吸…"),
-        "wink" to listOf("Wink~", "看这边~"),
-        "walk" to listOf("走走走~", "去哪儿呢？"),
-        "stand" to listOf("站好啦。", "待命中~"),
+        "music" to listOf("♪ 一起听歌吧~", "这首好听！", "再播一首嘛~", "音乐模式启动！"),
+        "expose" to listOf("屏住呼吸…", "对准了吗？", "别眨眼！", "暴露 QTE——"),
+        "wink" to listOf("Wink~", "看这边~", "悄悄告诉你…"),
+        "walk" to listOf("走走走~", "去哪儿呢？", "散步时间！", "腿脚活动一下~"),
+        "stand" to listOf("站好啦。", "待命中~", "我在这儿哦。"),
+        "hi" to listOf("你好呀！", "又见面啦~", "今天也要加油哦！"),
+        "call" to listOf("喂喂？", "旧货店「平凡」~", "苍叶在听！"),
+        "game" to listOf("来玩一局！", "准备好了吗？", "游戏开始——"),
+        "collect" to listOf("接住！", "别漏了~", "下落物来啦！"),
+        "home" to listOf("欢迎回家！", "家里真舒服~", "要不要种种田？"),
+        "rpg" to listOf("冒险出发！", "小心宝箱陷阱…", "公主在等你吗？"),
     )
 
     fun line(key: String): String =

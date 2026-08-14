@@ -1,0 +1,65 @@
+{
+  "unlocked": {
+    "owner_named": "2026-07-29 21:02",
+    "diary_first": "2026-07-29 21:02"
+  },
+  "stats": {
+    "listen_seconds": 0.0,
+    "used_char_filter": false,
+    "feed_count": 0,
+    "diary_count": 0,
+    "schedule_count": 0,
+    "gather_plays": 0,
+    "gather_best": 0,
+    "typing_plays": 0,
+    "typing_best_grade": "",
+    "vocab_plays": 0,
+    "vocab_best_streak": 0,
+    "rhythm_plays": 0,
+    "rhythm_best_grade": "",
+    "rhyme_wins": 0,
+    "rhyme_jinmu_wins": 0,
+    "expose_clears": 0,
+    "modes_used": [],
+    "mode_seconds": {
+      "free": 34895.399,
+      "follow": 0.0,
+      "stroll": 0.0,
+      "quiet": 0.0,
+      "work": 0.0,
+      "game": 0.0,
+      "music": 0.0
+    },
+    "work_total_seconds": 0.0,
+    "sleep_total_seconds": 0.0,
+    "music_total_seconds": 0.0,
+    "companion_enabled": false,
+    "companion_open_count": 0,
+    "owner_named": true,
+    "gift_ready": false,
+    "pixel_gift": false,
+    "weather_peek": false,
+    "timer_use": false,
+    "memory_open": false,
+    "home_visit": false,
+    "farm_plant": false,
+    "farm_harvest": false,
+    "farm_chop": false,
+    "farm_fish": false,
+    "farm_craft": false,
+    "home_paint": false,
+    "rpg_play": false,
+    "meta_banter": {
+      "last_ms": 1785640788589,
+      "event_last": {
+        "idle_long": 1785640788589
+      },
+      "used": {
+        "idle_long": [
+          "屏幕暗了？还是你去忙了？",
+          "……还在吗？"
+        ]
+      }
+    }
+  }
+}

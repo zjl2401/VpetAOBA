@@ -32,6 +32,8 @@ class PetFxUi(
 ) {
     companion object {
         const val PAD = 28
+        /** 灯泡额外上留白，避免被立绘头顶挡住 */
+        const val BULB_TOP_EXTRA = 48
         const val MUSIC_WAVE_MS = 60L
         const val SLEEP_ZZZ_MS = 700L
         const val RAIN_MS = 80L
@@ -39,16 +41,39 @@ class PetFxUi(
         const val BIXIN_MS = 48L
         const val KICK_MS = 80L
         const val BULB_MS = 160L
-        const val HAPPY_HOLD_MS = 2800L
-        const val LIKE_HOLD_MS = 2200L
-        const val SHY_HOLD_MS = 2200L
-        const val IDEA_HOLD_MS = 2400L
-        const val SAD_HOLD_MS = 2600L
-        const val WINK_HOLD_MS = 3000L
-        const val BIXIN_HOLD_MS = 4000L
-        const val KICK_HOLD_MS = 3000L
+        const val HAPPY_HOLD_MS = 6000L
+        const val LIKE_HOLD_MS = 3800L
+        const val SHY_HOLD_MS = 4500L
+        const val IDEA_HOLD_MS = 5720L
+        const val SAD_HOLD_MS = 6500L
+        const val WINK_HOLD_MS = 3800L
+        const val BIXIN_HOLD_MS = 5200L
+        const val KICK_HOLD_MS = 2200L
         const val DIZZY_HOLD_MS = 3000L
-        val MUSIC_COLORS = intArrayOf(Color.parseColor("#5BA3D9"), Color.parseColor("#D0E8F5"))
+        const val FOOD_HOLD_MS = 2200L
+        val MUSIC_COLORS = intArrayOf(Color.parseColor("#9EC8E8"), Color.parseColor("#D0E8F5"))
+        /** 对照桌面 MUSIC_FOLDER_BASE_COLORS */
+        private val MUSIC_WAVE_PALETTE = intArrayOf(
+            Color.parseColor("#9EC8E8"),
+            Color.parseColor("#8AA4C8"),
+            Color.parseColor("#E8D6A0"),
+            Color.parseColor("#E0A0AC"),
+            Color.parseColor("#D0909C"),
+            Color.parseColor("#E8B8D0"),
+            Color.parseColor("#A8D4B4"),
+            Color.parseColor("#B0BCC4"),
+        )
+
+        fun randomMusicWaveColors(): IntArray {
+            val base = MUSIC_WAVE_PALETTE.random()
+            val light = Color.argb(
+                255,
+                (Color.red(base) + 255) / 2,
+                (Color.green(base) + 255) / 2,
+                (Color.blue(base) + 255) / 2,
+            )
+            return intArrayOf(base, light)
+        }
     }
 
     enum class Burst {
@@ -64,10 +89,15 @@ class PetFxUi(
     private var burst = Burst.NONE
     private var burstUntil = 0L
     private var musicOn = false
+    private var musicWaveColors: IntArray = MUSIC_COLORS.copyOf()
     private var sleepZzzOn = false
     private var wearFlowerOn = false
+    private var outfitDecors: List<OutfitStore.Decor> = emptyList()
     private var phase = 0
     private var tick: Runnable? = null
+
+    private fun hasPersistentFx(): Boolean =
+        musicOn || sleepZzzOn || wearFlowerOn || outfitDecors.isNotEmpty()
 
     // burst layout caches
     private val flowerPts = mutableListOf<Pair<Float, Float>>()
@@ -82,16 +112,36 @@ class PetFxUi(
         detach()
     }
 
+    fun setVisible(visible: Boolean) {
+        layer?.visibility = if (visible) View.VISIBLE else View.GONE
+    }
+
     fun clearBurst() {
         burst = Burst.NONE
         burstUntil = 0L
+        clearBurstParticles()
         invalidate()
+        if (!hasPersistentFx()) {
+            stopTick()
+            detach()
+        }
+    }
+
+    /** 清散点/雨/比心等，避免换特效或结束后残留。 */
+    private fun clearBurstParticles() {
+        flowerPts.clear()
+        flowerCols.clear()
+        starPts.clear()
+        heartPts.clear()
+        rainDrops.clear()
+        bixinParts.clear()
     }
 
     fun clearAll() {
         musicOn = false
         sleepZzzOn = false
         wearFlowerOn = false
+        outfitDecors = emptyList()
         clearBurst()
         stopTick()
         detach()
@@ -111,7 +161,7 @@ class PetFxUi(
         }
     }
 
-    fun showRain() = startBurst(Burst.RAIN, SAD_HOLD_MS) {
+    fun showRain(holdMs: Long = SAD_HOLD_MS) = startBurst(Burst.RAIN, holdMs) {
         rainDrops.clear()
         val size = canvasSize()
         repeat(14) {
@@ -123,7 +173,9 @@ class PetFxUi(
         }
     }
 
-    fun showBulb() = startBurst(Burst.BULB, IDEA_HOLD_MS)
+    fun showBulb(holdMs: Long = IDEA_HOLD_MS) = startBurst(Burst.BULB, holdMs)
+
+    fun showAngry(holdMs: Long = 4600L) = startBurst(Burst.ANGRY, holdMs)
 
     fun showLike() = startBurst(Burst.LIKE, LIKE_HOLD_MS) {
         starPts.clear()
@@ -134,13 +186,13 @@ class PetFxUi(
 
     fun showWink() = startBurst(Burst.WINK, WINK_HOLD_MS)
 
-    fun showShy() = startBurst(Burst.SHY, SHY_HOLD_MS) {
+    fun showShy(holdMs: Long = SHY_HOLD_MS) = startBurst(Burst.SHY, holdMs) {
         heartPts.clear()
         val size = canvasSize()
         repeat(8) { heartPts += scatterOnRing(size) }
     }
 
-    fun showBixin() = startBurst(Burst.BIXIN, BIXIN_HOLD_MS, inFront = true) {
+    fun showBixin(holdMs: Long = BIXIN_HOLD_MS) = startBurst(Burst.BIXIN, holdMs, inFront = true) {
         bixinParts.clear()
         val size = canvasSize()
         val cx = size / 2f
@@ -156,38 +208,89 @@ class PetFxUi(
         }
     }
 
-    fun showKick() = startBurst(Burst.KICK, KICK_HOLD_MS)
-
-    fun showAngry() = startBurst(Burst.ANGRY, 1800L)
+    fun showKick(holdMs: Long = KICK_HOLD_MS) = startBurst(Burst.KICK, holdMs)
 
     fun showDizzy() = startBurst(Burst.DIZZY, DIZZY_HOLD_MS)
 
-    fun showFood() = startBurst(Burst.FOOD, 1800L)
+    private var foodBurstId: String = "apple"
 
-    fun setMusicWave(on: Boolean) {
+    fun showFood(foodId: String = "apple") {
+        foodBurstId = foodId.ifBlank { "apple" }
+        startBurst(Burst.FOOD, FOOD_HOLD_MS)
+    }
+
+    fun setMusicWave(on: Boolean, colors: IntArray? = null) {
         musicOn = on
         if (on) {
+            musicWaveColors = when {
+                colors != null && colors.size >= 2 -> colors.copyOf(2)
+                else -> randomMusicWaveColors()
+            }
             ensureLayer(inFront = false)
             startTick()
             place()
-            raisePet?.invoke()
-        } else if (!sleepZzzOn && !wearFlowerOn && burst == Burst.NONE) {
+            // 刚开启时新建层容易盖住立绘：立刻压后，再延迟一次（避开并发 raise）
+            restackBehindPet()
+            handler.post { restackBehindPet() }
+            handler.postDelayed({ restackBehindPet() }, 80L)
+        } else if (!hasPersistentFx() && burst == Burst.NONE) {
             stopTick(); detach()
         }
         invalidate()
     }
 
+    /** 强制把特效压到立绘下层（同窗 addView(0) / 异窗则先贴特效再抬宠）。 */
+    fun restackBehindPet() {
+        val v = layer ?: return
+        if (overlayMode) {
+            val lp = wmLp ?: return
+            try {
+                windowManager?.removeView(v)
+                windowManager?.addView(v, lp)
+            } catch (_: Exception) {
+            }
+            raisePet?.invoke()
+        } else {
+            val host = roomHost ?: return
+            val lp = roomLp ?: return
+            try {
+                host.removeView(v)
+                host.addView(v, 0, lp)
+            } catch (_: Exception) {
+            }
+            raisePet?.invoke()
+        }
+    }
+
     fun setSleepZzz(on: Boolean) {
+        if (sleepZzzOn == on) {
+            if (on) invalidate()
+            return
+        }
         sleepZzzOn = on
         if (on) {
+            val created = layer == null
             ensureLayer(inFront = false)
             startTick()
             place()
-            raisePet?.invoke()
-        } else if (!musicOn && !wearFlowerOn && burst == Burst.NONE) {
-            stopTick(); detach()
+            // 仅新建特效层时抬宠；偷看结束再 raise 会卸挂悬浮窗导致闪白
+            if (created) raisePet?.invoke()
+        } else if (!hasPersistentFx() && burst == Burst.NONE) {
+            // 偷看只是暂时关 ZZZ：保留层，避免马上 detach 再创建时闪
+            invalidate()
+        } else {
+            invalidate()
         }
+    }
+
+    /** 彻底关掉睡眠 ZZZ 并拆层（退出睡眠模式时用）。 */
+    fun clearSleepZzz() {
+        sleepZzzOn = false
         invalidate()
+        if (!hasPersistentFx() && burst == Burst.NONE) {
+            stopTick()
+            detach()
+        }
     }
 
     /** 头顶戴花（对照 pet.py `_sync_head_flower`）。 */
@@ -198,7 +301,21 @@ class PetFxUi(
             startTick()
             place()
             raisePet?.invoke()
-        } else if (!musicOn && !sleepZzzOn && burst == Burst.NONE) {
+        } else if (!hasPersistentFx() && burst == Burst.NONE) {
+            stopTick(); detach()
+        }
+        invalidate()
+    }
+
+    /** 装扮叠层：任意动作/模式都画在宠上。 */
+    fun syncOutfit(list: List<OutfitStore.Decor>) {
+        outfitDecors = list
+        if (list.isNotEmpty()) {
+            ensureLayer(inFront = true)
+            startTick()
+            place()
+            raisePet?.invoke()
+        } else if (!hasPersistentFx() && burst == Burst.NONE) {
             stopTick(); detach()
         }
         invalidate()
@@ -208,7 +325,24 @@ class PetFxUi(
         if (layer != null) place()
     }
 
+    /** 把特效层抬到当前悬浮栈顶（用于统一重排图层）。 */
+    fun raiseLayer() {
+        val v = layer ?: return
+        if (overlayMode) {
+            val lp = wmLp ?: return
+            try {
+                windowManager?.removeView(v)
+                windowManager?.addView(v, lp)
+            } catch (_: Exception) {
+            }
+        } else {
+            v.bringToFront()
+        }
+    }
+
     private fun startBurst(kind: Burst, holdMs: Long, inFront: Boolean = false, setup: (() -> Unit)? = null) {
+        // 先清旧 burst，避免雨/花/星叠在下一特效上
+        clearBurstParticles()
         burst = kind
         burstUntil = SystemClock.elapsedRealtime() + holdMs
         phase = 0
@@ -220,7 +354,14 @@ class PetFxUi(
         invalidate()
     }
 
-    private fun canvasSize(): Int = petSize() + PAD * 2
+    private fun topPad(): Int = if (burst == Burst.BULB) PAD + BULB_TOP_EXTRA else PAD
+
+    private fun layerW(): Int = petSize() + PAD * 2
+
+    private fun layerH(): Int = petSize() + topPad() + PAD
+
+    /** 散射/雨点等仍按宽度取参考尺寸 */
+    private fun canvasSize(): Int = layerW()
 
     private fun scatterOnRing(size: Int): Pair<Float, Float> {
         val ang = Random.nextFloat() * (Math.PI * 2).toFloat()
@@ -244,10 +385,11 @@ class PetFxUi(
         }
         val v = FxCanvas(context)
         layer = v
-        val size = canvasSize()
+        val w = layerW()
+        val h = layerH()
         if (overlayMode) {
             wmLp = WindowManager.LayoutParams(
-                size, size,
+                w, h,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
@@ -256,7 +398,7 @@ class PetFxUi(
             ).apply { gravity = Gravity.TOP or Gravity.START }
             windowManager?.addView(v, wmLp)
         } else {
-            roomLp = FrameLayout.LayoutParams(size, size)
+            roomLp = FrameLayout.LayoutParams(w, h)
             val host = roomHost ?: return
             if (inFront) host.addView(v, roomLp)
             else host.addView(v, 0, roomLp)
@@ -277,14 +419,15 @@ class PetFxUi(
 
     private fun place() {
         val v = layer ?: return
-        val size = canvasSize()
+        val w = layerW()
+        val h = layerH()
         val pet = petTopLeft()
         val x = pet.x - PAD
-        val y = pet.y - PAD
+        val y = pet.y - topPad()
         if (overlayMode) {
             val lp = wmLp ?: return
-            lp.width = size
-            lp.height = size
+            lp.width = w
+            lp.height = h
             lp.x = x
             lp.y = y
             try {
@@ -293,8 +436,8 @@ class PetFxUi(
             }
         } else {
             val lp = (v.layoutParams as? FrameLayout.LayoutParams) ?: return
-            lp.width = size
-            lp.height = size
+            lp.width = w
+            lp.height = h
             lp.leftMargin = x
             lp.topMargin = y
             lp.gravity = Gravity.TOP or Gravity.START
@@ -309,6 +452,7 @@ class PetFxUi(
                 val now = SystemClock.elapsedRealtime()
                 if (burst != Burst.NONE && now >= burstUntil) {
                     burst = Burst.NONE
+                    clearBurstParticles()
                 }
                 phase++
                 // animate rain / bixin
@@ -348,7 +492,7 @@ class PetFxUi(
                 }
                 place()
                 invalidate()
-                val alive = musicOn || sleepZzzOn || wearFlowerOn || burst != Burst.NONE
+                val alive = hasPersistentFx() || burst != Burst.NONE
                 if (!alive) {
                     stopTick()
                     detach()
@@ -386,6 +530,10 @@ class PetFxUi(
             if (musicOn) drawMusicWave(canvas, size)
             if (sleepZzzOn) drawSleepZzz(canvas, size)
             if (wearFlowerOn) drawHeadFlower(canvas, size)
+            if (outfitDecors.isNotEmpty()) {
+                val pet = petSize().toFloat()
+                OutfitStore.drawOnPet(canvas, context, PAD.toFloat(), PAD.toFloat(), pet, outfitDecors)
+            }
             when (burst) {
                 Burst.HAPPY -> drawHappy(canvas)
                 Burst.RAIN -> drawRain(canvas)
@@ -478,9 +626,12 @@ class PetFxUi(
 
         private fun drawBulb(c: Canvas, size: Int) {
             val glow = 0.7f + 0.3f * (0.5f + 0.5f * sin(phase * 0.25f)).toFloat()
-            val p = px(size, 22)
+            val p = max(3, petSize() / 28)
             val x = size / 2f - p * 2
-            val y = PAD * 0.2f
+            // 立绘顶在 canvas 的 topPad；灯泡整颗放在头顶上方空隙里
+            val petTop = topPad().toFloat()
+            val bulbH = p * 5f
+            val y = (petTop - 12f - bulbH).coerceAtLeast(2f)
             val bulb = Color.argb((255 * glow).toInt().coerceIn(120, 255), 255, 238, 136)
             rect(c, x + p, y, p * 2f, p.toFloat(), bulb)
             rect(c, x, y + p, p * 4f, p * 2f, bulb)
@@ -580,12 +731,11 @@ class PetFxUi(
         }
 
         private fun drawFood(c: Canvas, size: Int) {
-            val p = px(size, 20)
-            val x = size * 0.72f
-            val y = size * 0.45f
-            // simple apple
-            rect(c, x, y, p * 3f, p * 3f, Color.parseColor("#FF4455"))
-            rect(c, x + p, y - p, p.toFloat(), p.toFloat(), Color.parseColor("#44AA55"))
+            val side = max(28, size / 3)
+            val bmp = FoodPixelArt.bitmapFor(foodBurstId, side)
+            val x = size * 0.62f
+            val y = size * 0.38f
+            c.drawBitmap(bmp, x, y, null)
         }
 
         private fun drawMusicWave(c: Canvas, size: Int) {
@@ -594,8 +744,8 @@ class PetFxUi(
             val half = size / 2
             val p = max(4, size / 18)
             val maxR = max(8, half - p - 1)
-            val base = MUSIC_COLORS[0]
-            val light = MUSIC_COLORS[1]
+            val base = musicWaveColors.getOrElse(0) { MUSIC_COLORS[0] }
+            val light = musicWaveColors.getOrElse(1) { MUSIC_COLORS[1] }
             for (ring in 0 until 4) {
                 val wave = 0.5f + 0.5f * sin(phase * 0.22f + ring * 0.85f).toFloat()
                 val frac = 0.48f + ring * 0.16f

@@ -67,8 +67,25 @@ Vpet/
 
 ## 本地存档（同一个人）
 
-- 桌宠数据：`%LOCALAPPDATA%\Vpet\userdata\`
-- RPG 存档与历史最高关卡：`%LOCALAPPDATA%\Vpet\rpg\`
+个人进度**不在**程序 zip 里，而在本机：
+
+| 路径 | 内容 |
+|------|------|
+| `%LOCALAPPDATA%\Vpet\userdata\` | 所属人、日记、家园、成就、金币、设置等 |
+| `%LOCALAPPDATA%\Vpet\rpg\` | RPG 存档与历史最高关卡 |
+| `%LOCALAPPDATA%\Vpet\pet.log` | 运行日志 |
+
+资源管理器地址栏或 Win+R 输入：`%LOCALAPPDATA%\Vpet`
+
+### 恢复「第一次打开」效果
+
+1. 托盘右键「退出启动器」（或 `Ctrl+Shift+Q`）  
+2. 打开 `%LOCALAPPDATA%\Vpet`  
+3. **推荐**：把整个 `Vpet` 文件夹改名为 `Vpet_backup_日期`（可恢复）  
+   或直接删除该文件夹（不可恢复）  
+4. 再启动程序 → 会新建空存档，等同首次打开  
+
+详细步骤见包内 `安装说明.txt` 第四、五节。
 
 面板「好感」显示历史最高 Lv；RPG 标题页与 HUD 显示历史最高关卡。
 

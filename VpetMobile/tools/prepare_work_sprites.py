@@ -1,26 +1,48 @@
-"""导出工作相关精灵：work* 绿幕外圈；box/flag 品红色键外圈。"""
-from pathlib import Path
+#!/usr/bin/env python3
+"""从桌面 assets 导出工作模式素材到 VpetMobile（透明 PNG）。
+
+对齐 pet.py：
+- work* / ncwork*：外圈连通绿幕 → 透明
+- box.jpg / flag.jpg：仅抠外圈青草绿幕（_remove_outer_lime_green），保留主体
+"""
+from __future__ import annotations
+
+import sys
 from collections import deque
+from pathlib import Path
+
 from PIL import Image
 
-root = Path(r"C:\Users\36255\Desktop\VpetAOBA\VpetPNG\1.0")
-out = Path(r"C:\Users\36255\Desktop\VpetAOBA\VpetMobile\app\src\main\assets\sprites")
-shared = Path(r"C:\Users\36255\Desktop\VpetAOBA\VpetMobile\assets_shared\sprites")
-out.mkdir(parents=True, exist_ok=True)
-shared.mkdir(parents=True, exist_ok=True)
+ROOT = Path(__file__).resolve().parents[2]
+DESK = ROOT / "VpetPNG" / "1.0" / "assets"
+SPRITES = DESK / "sprites"
+PROPS = DESK / "props"
+OUT = ROOT / "VpetMobile" / "app" / "src" / "main" / "assets" / "sprites"
+SHARED = ROOT / "VpetMobile" / "assets_shared" / "sprites"
+PROP_SIZE = 96  # 箱/旗仍进固定画布（道具 UI）；立绘不缩放
 
-GREEN = [
+WORK_GREEN = [
     "workstand.jpg",
     "workfront1.jpg",
     "workfront2.jpg",
+    "workback1.jpg",
+    "workback2.jpg",
+    "workleft1.jpg",
+    "workleft2.jpg",
 ]
-MAGENTA = [
-    (root / "assets" / "props" / "box.jpg", "box.png"),
-    (root / "assets" / "props" / "flag.jpg", "flag.png"),
+NC_WORK = [
+    "ncworkstand.png",
+    "ncworkfront1.png",
+    "ncworkfront2.png",
+    "ncworkback1.png",
+    "ncworkback2.png",
+    "ncworkleft1.png",
+    "ncworkleft2.png",
 ]
+LIME_PROPS = ["box.jpg", "flag.jpg"]
 
 
-def is_chroma_green(r, g, b, a=255):
+def is_chroma_green(r: int, g: int, b: int, a: int = 255) -> bool:
     if a < 8:
         return False
     if g > 200 and r < 90 and b < 90:
@@ -28,19 +50,25 @@ def is_chroma_green(r, g, b, a=255):
     return g > 100 and g >= r + 15 and g >= b + 25
 
 
-def is_chroma_magenta(r, g, b, a=255):
-    # WORK_CHROMA_RGB = (255, 0, 255) 宽松匹配
+def is_outer_lime(r: int, g: int, b: int, a: int = 255) -> bool:
+    """对齐 pet._is_outer_lime_screen。"""
     if a < 8:
         return False
-    return r > 200 and b > 200 and g < 80
+    return (
+        g > 170
+        and b < 45
+        and 90 < r < 210
+        and (g - r) > 20
+        and (g - b) > 120
+    )
 
 
-def flood_key(img: Image.Image, is_key) -> Image.Image:
+def flood_key(img: Image.Image, pred) -> Image.Image:
     rgba = img.convert("RGBA")
     w, h = rgba.size
     px = rgba.load()
     vis = [[False] * w for _ in range(h)]
-    q = deque()
+    q: deque[tuple[int, int]] = deque()
     for x in range(w):
         q.append((x, 0))
         q.append((x, h - 1))
@@ -52,7 +80,7 @@ def flood_key(img: Image.Image, is_key) -> Image.Image:
         if x < 0 or y < 0 or x >= w or y >= h or vis[y][x]:
             continue
         r, g, b, a = px[x, y]
-        if not is_key(r, g, b, a):
+        if not pred(r, g, b, a):
             continue
         vis[y][x] = True
         px[x, y] = (r, g, b, 0)
@@ -60,22 +88,78 @@ def flood_key(img: Image.Image, is_key) -> Image.Image:
     return rgba
 
 
-def export(src: Path, out_name: str, is_key, max_side=256):
-    keyed = flood_key(Image.open(src), is_key)
-    bbox = keyed.getbbox()
+def crop_alpha(img: Image.Image) -> Image.Image:
+    """只裁透明包围盒，不缩放。"""
+    bbox = img.getbbox()
     if bbox:
-        keyed = keyed.crop(bbox)
-    w, h = keyed.size
-    scale = min(max_side / w, max_side / h, 1.0)
-    if scale < 1:
-        keyed = keyed.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
-    keyed.save(out / out_name, "PNG")
-    keyed.save(shared / out_name, "PNG")
-    print(out_name, keyed.size)
+        return img.crop(bbox)
+    return img
 
 
-for name in GREEN:
-    export(root / "assets" / "sprites" / name, name.replace(".jpg", ".png"), is_chroma_green, 512)
-for src, name in MAGENTA:
-    export(src, name, is_chroma_magenta, 128)
-print("done")
+def to_fixed_canvas(img: Image.Image, size: int) -> Image.Image:
+    """对照 _to_fixed_canvas：等比缩进固定方画布，透明底。"""
+    img = img.convert("RGBA")
+    bbox = img.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+    w, h = img.size
+    scale = min(size / w, size / h)
+    nw, nh = max(1, int(w * scale)), max(1, int(h * scale))
+    img = img.resize((nw, nh), Image.Resampling.NEAREST)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(img, ((size - nw) // 2, (size - nh) // 2), img)
+    return canvas
+
+
+def save_both(img: Image.Image, name: str) -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+    SHARED.mkdir(parents=True, exist_ok=True)
+    img.save(OUT / name, "PNG")
+    img.save(SHARED / name, "PNG")
+    print("ok", name, img.size)
+
+
+def export_green(name: str) -> None:
+    src = SPRITES / name
+    if not src.exists():
+        print("MISSING", src, file=sys.stderr)
+        return
+    keyed = crop_alpha(flood_key(Image.open(src), is_chroma_green))
+    save_both(keyed, name.replace(".jpg", ".png"))
+
+
+def export_nc(name: str) -> None:
+    src = SPRITES / name
+    if not src.exists():
+        print("MISSING", src, file=sys.stderr)
+        return
+    keyed = crop_alpha(flood_key(Image.open(src), is_chroma_green))
+    save_both(keyed, name)
+
+
+def export_prop(name: str) -> None:
+    src = PROPS / name
+    if not src.exists():
+        print("MISSING", src, file=sys.stderr)
+        return
+    keyed = flood_key(Image.open(src), is_outer_lime)
+    canvas = to_fixed_canvas(keyed, PROP_SIZE)
+    save_both(canvas, name.replace(".jpg", ".png"))
+
+
+def main() -> int:
+    if not SPRITES.is_dir() or not PROPS.is_dir():
+        print(f"missing assets under {DESK}", file=sys.stderr)
+        return 1
+    for n in WORK_GREEN:
+        export_green(n)
+    for n in NC_WORK:
+        export_nc(n)
+    for n in LIME_PROPS:
+        export_prop(n)
+    print("done")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

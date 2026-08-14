@@ -2,7 +2,6 @@ package com.vpet.mobile
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -25,7 +24,8 @@ class HomeSceneView @JvmOverloads constructor(
         val FLOOR_A = Color.parseColor("#6A7080")
         val FLOOR_B = Color.parseColor("#5A6070")
         val FURN = Color.parseColor("#6AA8D8")
-        val OUTDOOR_BASE = Color.parseColor("#1A3020")
+        /** 对照桌面 OUTDOOR_BASE_COLOR */
+        val OUTDOOR_BASE = Color.parseColor("#000000")
     }
 
     enum class Zone { INDOOR, OUTDOOR }
@@ -42,6 +42,9 @@ class HomeSceneView @JvmOverloads constructor(
 
     var listener: Listener? = null
     var farmMode = false
+    /** 地图编辑：点格子放置 [editBrush]（null=擦除）。 */
+    var editMode = false
+    var editBrush: String? = null
     var farmGrid: Array<Array<org.json.JSONObject?>>? = null
     var zone = Zone.INDOOR
         private set
@@ -63,24 +66,20 @@ class HomeSceneView @JvmOverloads constructor(
 
     private val floorPaint = Paint()
     private val furnPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = FURN }
+    private val tilePaint = Paint().apply {
+        isFilterBitmap = false
+        isAntiAlias = false
+    }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#E8F0FF")
         textAlign = Paint.Align.CENTER
         textSize = 11f
     }
 
-    private var bmpGrass: Bitmap? = null
-    private var bmpLand: Bitmap? = null
-    private var bmpWater: Bitmap? = null
-    private var bmpTree: Bitmap? = null
-    private var bmpRock: Bitmap? = null
-    private var bmpBrick: Bitmap? = null
-
     private lateinit var indoor: Array<Array<String?>>
     private lateinit var outdoor: Array<Array<String?>>
 
     init {
-        loadTiles()
         applyLayout(HomeLayoutStore.defaultLayout())
     }
 
@@ -224,25 +223,12 @@ class HomeSceneView @JvmOverloads constructor(
         fallback
     }
 
-    private fun loadTiles() {
-        fun load(name: String): Bitmap? = try {
-            context.assets.open("home/$name").use { BitmapFactory.decodeStream(it) }
-        } catch (_: Exception) {
-            null
-        }
-        bmpGrass = load("grass.png")
-        bmpLand = load("land.png")
-        bmpWater = load("water.png")
-        bmpTree = load("tree.png")
-        bmpRock = load("rock.png")
-        bmpBrick = load("brick.png")
-    }
-
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         tile = min(width / cols.toFloat(), height / rows.toFloat())
         ox = (width - tile * cols) / 2f
         oy = (height - tile * rows) / 2f
+        val tilePx = tile.toInt().coerceAtLeast(12)
         val map = if (zone == Zone.INDOOR) indoor else outdoor
         for (y in 0 until rows) {
             for (x in 0 until cols) {
@@ -259,8 +245,7 @@ class HomeSceneView @JvmOverloads constructor(
                 }
                 val cell = map[y][x] ?: continue
                 if (cell == "@" || cell.startsWith("@")) continue
-                drawCell(canvas, cell, l, t, r, b)
-                // 经营作物叠层（仅室外）
+                drawCell(canvas, cell, l, t, r, b, tilePx)
                 if (zone == Zone.OUTDOOR) {
                     val plot = farmGrid?.getOrNull(y)?.getOrNull(x)
                     if (plot != null) drawCrop(canvas, plot, l, t, r, b)
@@ -298,86 +283,25 @@ class HomeSceneView @JvmOverloads constructor(
         }
     }
 
-    private fun drawCell(c: Canvas, kind: String, l: Float, t: Float, r: Float, b: Float) {
-        val bmp = when (kind) {
-            "grass" -> bmpGrass
-            "land" -> bmpLand
-            "water" -> bmpWater
-            "tree" -> bmpTree
-            "rock" -> bmpRock
-            "brick", "path" -> bmpBrick
-            else -> null
+    private fun drawCell(c: Canvas, kind: String, l: Float, t: Float, r: Float, b: Float, tilePx: Int) {
+        // 室外叠放地物：先铺草地（对照桌面 g+k）
+        val propKinds = setOf(
+            "tree", "flower", "fence", "bush", "plant",
+            "gift", "gift_art", "house", "home", "cabin", "door",
+            "user_paint", "paint", "art",
+        )
+        if (zone == Zone.OUTDOOR && kind in propKinds) {
+            HomeTileAssets.bitmap(context, "grass", tilePx)?.let {
+                c.drawBitmap(it, null, RectF(l, t, r, b), tilePaint)
+            }
         }
+        val bmp = HomeTileAssets.bitmap(context, kind, tilePx)
         if (bmp != null) {
-            c.drawBitmap(bmp, null, RectF(l, t, r, b), null)
-            if (kind in setOf("grass", "land", "water", "brick", "path", "rock")) return
+            c.drawBitmap(bmp, null, RectF(l, t, r, b), tilePaint)
+            return
         }
-        when (kind) {
-            "door" -> {
-                furnPaint.color = Color.parseColor("#8B5A2B")
-                c.drawRect(l + 6, t + 2, r - 6, b - 2, furnPaint)
-                labelPaint.textSize = tile * 0.28f
-                c.drawText("门", (l + r) / 2, (t + b) / 2 + 4, labelPaint)
-            }
-            "bed" -> {
-                furnPaint.color = FURN
-                c.drawRoundRect(RectF(l + 2, t + 4, r - 2, b - 4), 4f, 4f, furnPaint)
-                c.drawText("床", (l + r) / 2, (t + b) / 2 + 4, labelPaint)
-            }
-            "table" -> {
-                furnPaint.color = FURN
-                c.drawRect(l + 4, t + 4, r - 4, b - 4, furnPaint)
-            }
-            "chair" -> {
-                furnPaint.color = Color.parseColor("#88B8E8")
-                c.drawRect(l + 8, t + 8, r - 8, b - 8, furnPaint)
-            }
-            "carpet" -> {
-                furnPaint.color = Color.parseColor("#AA6688")
-                c.drawRect(l, t, r, b, furnPaint)
-            }
-            "plant", "flower", "bush" -> {
-                furnPaint.color = Color.parseColor("#44AA66")
-                c.drawCircle((l + r) / 2, (t + b) / 2, tile * 0.28f, furnPaint)
-                if (kind == "flower") {
-                    furnPaint.color = Color.parseColor("#FF7799")
-                    c.drawCircle((l + r) / 2, (t + b) / 2 - tile * 0.08f, tile * 0.12f, furnPaint)
-                }
-            }
-            "vase", "vase_filled" -> {
-                furnPaint.color = Color.parseColor("#88AACC")
-                c.drawRoundRect(RectF(l + 10, t + tile * 0.35f, r - 10, b - 4), 4f, 4f, furnPaint)
-                if (kind == "vase_filled") {
-                    furnPaint.color = Color.parseColor("#FF88AA")
-                    c.drawCircle((l + r) / 2, t + tile * 0.28f, tile * 0.16f, furnPaint)
-                    furnPaint.color = Color.parseColor("#FFEE88")
-                    c.drawCircle((l + r) / 2, t + tile * 0.28f, tile * 0.06f, furnPaint)
-                } else {
-                    labelPaint.textSize = tile * 0.22f
-                    c.drawText("瓶", (l + r) / 2, (t + b) / 2 + 6, labelPaint)
-                }
-            }
-            "lamp" -> {
-                furnPaint.color = Color.parseColor("#FFEE88")
-                c.drawCircle((l + r) / 2, t + tile * 0.35f, tile * 0.18f, furnPaint)
-            }
-            "window" -> {
-                furnPaint.color = Color.parseColor("#88CCFF")
-                c.drawRect(l + 2, t + 6, r - 2, b - 6, furnPaint)
-            }
-            "fence" -> {
-                furnPaint.color = Color.parseColor("#8B6A3A")
-                c.drawRect(l + 2, t + 4, r - 2, b - 4, furnPaint)
-            }
-            "tree" -> {
-                if (bmpTree != null) c.drawBitmap(bmpTree!!, null, RectF(l, t, r, b), null)
-                else {
-                    furnPaint.color = Color.parseColor("#2A6A38")
-                    c.drawCircle((l + r) / 2, (t + b) / 2, tile * 0.35f, furnPaint)
-                }
-            }
-            else -> Unit
-        }
+        furnPaint.color = FURN
+        c.drawRect(l + 4, t + 4, r - 4, b - 4, furnPaint)
     }
 
     fun petPixelCenter(): Pair<Float, Float> {
@@ -389,6 +313,15 @@ class HomeSceneView @JvmOverloads constructor(
     fun petPixelTopLeft(petSizePx: Int): Pair<Float, Float> {
         val (cx, cy) = petPixelCenter()
         return cx - petSizePx / 2f to cy - petSizePx / 2f
+    }
+
+    fun tilePx(): Int = tile.toInt().coerceAtLeast(12)
+
+    fun setCellKind(x: Int, y: Int, kind: String?) {
+        if (y !in 0 until rows || x !in 0 until cols) return
+        val map = if (zone == Zone.INDOOR) indoor else outdoor
+        map[y][x] = kind
+        invalidate()
     }
 
     fun tryMove(dx: Int, dy: Int): Boolean {
@@ -418,6 +351,10 @@ class HomeSceneView @JvmOverloads constructor(
         val tx = ((event.x - ox) / tile).toInt()
         val ty = ((event.y - oy) / tile).toInt()
         if (tx !in 0 until cols || ty !in 0 until rows) return true
+        if (editMode) {
+            setCellKind(tx, ty, editBrush)
+            return true
+        }
         if (tx == petX && ty == petY) {
             listener?.onTapPet()
             return true

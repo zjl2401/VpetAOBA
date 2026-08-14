@@ -8,6 +8,7 @@
 /captures/
 /.android-sdk/
 /dist/
+/_heavy_assets/
 .DS_Store
 *.apk
 *.ap_

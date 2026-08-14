@@ -90,10 +90,20 @@ object GameClearUi {
             ),
         )
         dialog.setContentView(root)
-        dialog.window?.setLayout(
-            (320 * context.resources.displayMetrics.density).toInt(),
-            (280 * context.resources.displayMetrics.density).toInt(),
-        )
+        dialog.window?.let { w ->
+            if (context !is android.app.Activity) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    w.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                } else {
+                    @Suppress("DEPRECATION")
+                    w.setType(android.view.WindowManager.LayoutParams.TYPE_PHONE)
+                }
+            }
+            w.setLayout(
+                (320 * context.resources.displayMetrics.density).toInt(),
+                (280 * context.resources.displayMetrics.density).toInt(),
+            )
+        }
         dialog.show()
         particleView.start()
         Handler(Looper.getMainLooper()).postDelayed({

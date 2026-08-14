@@ -57,8 +57,8 @@ class MainActivity : AppCompatActivity() {
         refreshStatus()
         refreshSizeHints()
         maybePromptOwner()
-        PetProfileStore.checkBirthdayToasts(this).forEach {
-            Toast.makeText(this, it, Toast.LENGTH_LONG).show()
+        PetProfileStore.checkBirthdayToasts(this).let { msgs ->
+            if (msgs.isNotEmpty()) BirthdayGiftUi.showMessages(this, msgs)
         }
         FoodInventoryStore.ensureSeeded(this)
         if (WalletStore.tryDailyLoginCoin(this)) {
@@ -135,7 +135,7 @@ class MainActivity : AppCompatActivity() {
         startService(intent)
         Toast.makeText(
             this,
-            "大小：$label（${PetPrefs.sizePx(this)}px，对齐电脑 SIZE_PRESETS）",
+            "大小：$label（${PetPrefs.sizePx(this)}px）",
             Toast.LENGTH_SHORT,
         ).show()
     }

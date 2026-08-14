@@ -16,6 +16,15 @@ $DistDir = Join-Path $Root "dist\Vpet"
 $DesktopLnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Vpet.lnk"
 $Stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 
+Write-Host "== app icons from stand ==" -ForegroundColor Cyan
+python (Join-Path $Root "make_app_icons.py")
+if ($LASTEXITCODE -ne 0) {
+    if (-not (Test-Path (Join-Path $Root "app_icon.ico"))) {
+        throw "make_app_icons failed and no existing app_icon.ico"
+    }
+    Write-Host "warn: make_app_icons failed; using existing app_icon.ico" -ForegroundColor Yellow
+}
+
 Write-Host "== clean old release backups ==" -ForegroundColor Cyan
 Get-ChildItem $ReleaseRoot -Directory -ErrorAction SilentlyContinue |
     Where-Object {
@@ -95,6 +104,13 @@ foreach ($doc in $docNames) {
 # 兜底：按通配拷贝中文安装/启动说明（避免脚本编码导致文件名对不上）
 Get-ChildItem -LiteralPath $Root -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -like "*说明*.txt" -or $_.Name -eq "INSTALL.txt" } |
+    ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $OutDir $_.Name) -Force
+    }
+
+# 本地存档辅助 bat（打开/清空）
+Get-ChildItem -LiteralPath $Root -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "*本地存档*.bat" } |
     ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $OutDir $_.Name) -Force
     }

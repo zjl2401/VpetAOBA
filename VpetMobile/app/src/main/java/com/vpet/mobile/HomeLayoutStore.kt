@@ -134,8 +134,33 @@ object HomeLayoutStore {
         if (raw.has("rooms")) out.put("rooms", raw.opt("rooms"))
         out.put("active_room", raw.optInt("active_room", 0))
         ensureIndoorVase(indoor, cols, rows)
+        ensureOutdoorDecor(outdoor, cols, rows)
         out.put("indoor_tiles", indoor)
+        out.put("outdoor_tiles", outdoor)
         return out
+    }
+
+    /** 旧存档补小屋/礼物像素格（不覆盖已有）。 */
+    private fun ensureOutdoorDecor(outdoor: JSONArray, cols: Int, rows: Int) {
+        fun hasKind(kind: String): Boolean {
+            for (y in 0 until outdoor.length()) {
+                val row = outdoor.optJSONArray(y) ?: continue
+                for (x in 0 until row.length()) {
+                    if (cellKind(row.opt(x)) == kind) return true
+                }
+            }
+            return false
+        }
+        fun putStack(kind: String, x: Int, y: Int) {
+            if (y !in 0 until outdoor.length()) return
+            val row = outdoor.getJSONArray(y)
+            if (x !in 0 until row.length()) return
+            val cur = row.opt(x)
+            if (cur != null && cur != JSONObject.NULL && cellKind(cur) !in setOf("grass", "land", "path")) return
+            row.put(x, JSONObject().put("g", "grass").put("k", kind))
+        }
+        if (!hasKind("house")) putStack("house", (cols / 2 + 1).coerceAtMost(cols - 1), 3.coerceAtMost(rows - 1))
+        if (!hasKind("gift") && !hasKind("gift_art")) putStack("gift", (cols - 4).coerceAtLeast(0), 5.coerceAtMost(rows - 1))
     }
 
     /** 旧存档无花瓶时补一个空瓶（不覆盖已有）。 */
@@ -308,6 +333,8 @@ object HomeLayoutStore {
         tiles.getJSONArray(2).put(5, "path")
         tiles.getJSONArray(3).put(5, "path")
         stack("door", 5, 4)
+        stack("house", 6, 3)
+        stack("gift", 8, 5)
         tiles.getJSONArray(8).put(8, "water")
         tiles.getJSONArray(8).put(3, "land")
         return tiles
