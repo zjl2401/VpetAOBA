@@ -9149,6 +9149,13 @@ class DesktopPet:
         self.root.after(2600, self._start_peer_meet_poll)
         self.root.after(3800, self._start_meta_idle_poll)
         self._start_mode_time_tracking()
+        # 若上次退出时智能伴侣已开启，则自动静默恢复（不弹入场动画/toast）
+        try:
+            stats = (self.achievements or {}).get("stats", {})
+            if stats.get("companion_enabled"):
+                self.root.after(5000, self._auto_restore_companion)
+        except Exception:
+            pass
         # 音乐 cache 可后台慢慢补；源 wav 已可直接播
         self.root.after(3500, self._schedule_music_wav_warmup)
 
@@ -25916,6 +25923,22 @@ class DesktopPet:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _auto_restore_companion(self) -> None:
+        """启动后自动静默恢复智能伴侣（上次退出时处于开启状态）。"""
+        if self._closing or not getattr(self, "_startup_ready", False):
+            return
+        if self.companion_bar_enabled:
+            return
+        self.companion_bar_enabled = True
+        if not self.mini_pets:
+            self._show_companion_loading(
+                lambda: self._spawn_mini_pet_impl(silent=True, skip_enter_anim=True)
+            )
+        else:
+            for entry in self.mini_pets:
+                self._mini_pet_follow_tick(entry)
+            self._sync_mini_pet_music_waves()
+
     def _toggle_companion_bar(self) -> None:
         self._hide_main_menu()
         self.companion_bar_enabled = not self.companion_bar_enabled
@@ -25957,6 +25980,13 @@ class DesktopPet:
             self._hide_companion_heart_transfer()
             self._destroy_all_mini_pets(animated=True)
             self._show_toast("智能伴侣栏已关闭", PIXEL_COLOR, duration_ms=1500)
+            # 关闭时持久化状态，下次启动不再自动恢复
+            try:
+                stats = self.achievements.setdefault("stats", {})
+                stats["companion_enabled"] = False
+                _save_achievements(self.achievements)
+            except Exception:
+                pass
 
     def _hide_companion_heart_transfer(self) -> None:
         self._companion_heart_gen = int(getattr(self, "_companion_heart_gen", 0)) + 1
