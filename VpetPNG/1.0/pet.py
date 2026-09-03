@@ -4839,6 +4839,55 @@ def _get_reminder_sound():
 
 _ui_sfx_cache: dict[str, object] = {}
 
+# 外置音效文件名（assets/sfx 或 bundled/sfx）；有文件优先，否则合成
+UI_SFX_FILE_ALIASES: dict[str, tuple[str, ...]] = {
+    "click": ("click", "点击"),
+    "open_window": ("open_window", "打开窗口"),
+    "open_shop": ("open_shop", "打开商店", "shop"),
+    "game_start": ("game_start", "游戏开始"),
+    "game_success": ("game_success", "游戏成功", "game_win", "游戏胜利"),
+    "game_fail": ("game_fail", "游戏失败"),
+    "harvest": ("harvest", "收获"),
+    "money": ("money", "金币"),
+    "shop": ("shop", "打开商店"),
+    "craft": ("craft", "合成"),
+}
+
+
+def _ui_sfx_search_dirs() -> list[Path]:
+    dirs: list[Path] = [ASSETS_DIR / "sfx", BUNDLE_DIR / "sfx", DATA_DIR / "sfx"]
+    out: list[Path] = []
+    seen: set[str] = set()
+    for d in dirs:
+        key = str(d)
+        if key not in seen:
+            seen.add(key)
+            out.append(d)
+    return out
+
+
+def _load_ui_sfx_file(kind: str):
+    names = UI_SFX_FILE_ALIASES.get(kind, (kind,))
+    try:
+        import pygame
+    except Exception:
+        return None
+    if not _init_pygame_mixer():
+        return None
+    for folder in _ui_sfx_search_dirs():
+        if not folder.is_dir():
+            continue
+        for name in names:
+            for ext in (".wav", ".ogg", ".mp3"):
+                path = folder / f"{name}{ext}"
+                if not path.is_file():
+                    continue
+                try:
+                    return pygame.mixer.Sound(str(path))
+                except Exception:
+                    continue
+    return None
+
 
 def _synth_sfx_from_notes(
     notes: list[tuple[float, float, float]],
@@ -4899,16 +4948,27 @@ def _make_ui_sfx(kind: str):
         "fish": [(420.0, 0.0, 0.05), (280.0, 0.05, 0.10)],
         # 采花：轻弹
         "pick": [(880.0, 0.0, 0.05), (1174.0, 0.05, 0.07)],
-        # 商店：开店铃
+        # 商店 / 打开商店：开店铃
         "shop": [(784.0, 0.0, 0.08), (988.0, 0.09, 0.10), (1175.0, 0.18, 0.12)],
+        "open_shop": [(784.0, 0.0, 0.08), (988.0, 0.09, 0.10), (1175.0, 0.18, 0.12)],
         # 合成台：金属叮
         "craft": [(392.0, 0.0, 0.05), (523.0, 0.06, 0.07), (311.0, 0.12, 0.09)],
+        # 点击：短促一拍
+        "click": [(1320.0, 0.0, 0.035)],
+        # 打开窗口：轻柔两声
+        "open_window": [(660.0, 0.0, 0.06), (880.0, 0.07, 0.08)],
+        # 游戏开始：上行三音
+        "game_start": [(523.25, 0.0, 0.08), (659.25, 0.09, 0.08), (783.99, 0.18, 0.12)],
+        # 游戏成功：明亮琶音
+        "game_success": [(523.25, 0.0, 0.08), (659.25, 0.08, 0.08), (783.99, 0.16, 0.10), (1046.5, 0.26, 0.14)],
+        # 游戏失败：下行低音
+        "game_fail": [(392.0, 0.0, 0.10), (329.63, 0.10, 0.12), (261.63, 0.22, 0.16)],
     }
     notes = specs.get(kind)
     if not notes:
         return None
     noise = 0.35 if kind in ("till", "water", "chop", "fish") else (0.12 if kind == "plant" else 0.0)
-    vol = 11000 if kind == "money" else (10000 if kind in ("shop", "craft") else 8500)
+    vol = 11000 if kind == "money" else (10000 if kind in ("shop", "craft", "open_shop", "game_success") else 8500)
     return _synth_sfx_from_notes(notes, noise=noise, volume=vol)
 
 
@@ -4916,7 +4976,7 @@ def _get_ui_sfx(kind: str):
     cached = _ui_sfx_cache.get(kind)
     if cached is not None:
         return cached
-    snd = _make_ui_sfx(kind)
+    snd = _load_ui_sfx_file(kind) or _make_ui_sfx(kind)
     _ui_sfx_cache[kind] = snd if snd is not None else False
     return _ui_sfx_cache[kind]
 
@@ -8601,6 +8661,7 @@ class DesktopPet:
         self._meta_idle_job: str | None = None
         self._meta_edge_during_drag = False
         self._peer_instance_id: str = f"{os.getpid()}_{int(time.time() * 1000)}"
+        self._click_sfx_last_ms: int = 0
         # 并排漫步状态
         self._stroll_phase: str = ""          # "gather" | "walk" | ""
         self._stroll_until_ms: int = 0
@@ -8675,6 +8736,8 @@ class DesktopPet:
         self.label.bind("<Enter>", self._on_pet_enter, add="+")
         self.label.bind("<Leave>", self._on_pet_leave, add="+")
         self.root.bind("<Button-1>", self._on_root_click, add="+")
+        self._bind_click_sfx(self.root)
+        self._bind_click_sfx(self.label)
         self.root.bind("<Escape>", self._exit_to_free, add="+")
         self.root.bind("<F1>", lambda _e: self._open_operation_guide(), add="+")
 
@@ -10361,6 +10424,11 @@ class DesktopPet:
             # 最底层：压到所有普通窗口之后
             self._win32_set_zorder(win, 1)  # HWND_BOTTOM
         self._win32_refresh_transparent_color(win)
+        self._bind_click_sfx(win)
+        try:
+            self._maybe_play_open_window_sfx(win)
+        except Exception:
+            pass
 
     def _ask_brush_color(
         self,
@@ -10666,6 +10734,96 @@ class DesktopPet:
                 channel.set_volume(vol)
         except Exception:
             pass
+
+    def _play_ui_event(self, kind: str, *, volume: float = 0.55) -> None:
+        """按设置音量播放 UI 事件音；点击/开窗不因语音占用而丢掉。"""
+        if kind not in ("click", "open_window", "open_shop") and self._sfx_conflicts_with_voice():
+            return
+        scale = self._sound_scale("sfx")
+        if scale <= 0:
+            return
+        _play_ui_sfx(kind, volume=max(0.05, min(1.0, float(volume) * scale)))
+
+    def _play_click_sfx(self, _event=None) -> None:
+        now = int(time.time() * 1000)
+        if now - int(getattr(self, "_click_sfx_last_ms", 0) or 0) < 70:
+            return
+        self._click_sfx_last_ms = now
+        self._play_ui_event("click", volume=0.42)
+
+    def _bind_click_sfx(self, win: tk.Misc | None) -> None:
+        if win is None:
+            return
+        try:
+            if not win.winfo_exists():
+                return
+        except Exception:
+            return
+        if getattr(win, "_vpet_click_sfx_bound", False):
+            return
+        try:
+            win.bind("<Button-1>", self._play_click_sfx, add="+")
+            setattr(win, "_vpet_click_sfx_bound", True)
+        except Exception:
+            pass
+
+    def _is_sfx_silent_window(self, win: tk.Misc | None) -> bool:
+        if win is None or win is getattr(self, "root", None):
+            return True
+        if getattr(win, "_vpet_no_glass", False):
+            return True
+        silent = (
+            "toast_win",
+            "speech_dialog",
+            "voice_subtitle_win",
+            "countdown_win",
+            "game_clear_win",
+            "wait_hint_win",
+            "sleep_zzz_win",
+            "music_wave_win",
+            "interact_fx_win",
+            "like_fx_win",
+            "shy_fx_win",
+            "wink_fx_win",
+            "rain_fx_win",
+            "happy_fx_win",
+            "head_flower_win",
+            "food_fx_win",
+            "gift_pixel_fx_win",
+            "bulb_fx_win",
+            "follow_dizzy_fx_win",
+            "companion_loading_win",
+            "sleep_end_btn_win",
+            "work_overlay",
+            "work_start_box_win",
+            "work_end_btn_win",
+            "work_flag_drag_win",
+            "game_hud_win",
+            "food_drag_win",
+        )
+        for name in silent:
+            if win is getattr(self, name, None):
+                return True
+        for entry in list(getattr(self, "mini_pets", []) or []):
+            if not isinstance(entry, dict):
+                continue
+            if win in (entry.get("win"), entry.get("wave_win"), entry.get("bg_fx_win")):
+                return True
+        return False
+
+    def _maybe_play_open_window_sfx(self, win: tk.Misc | None) -> None:
+        if win is None or getattr(win, "_vpet_open_sfx_played", False):
+            return
+        kind = getattr(win, "_vpet_open_sfx", None)
+        if kind is None:
+            if self._is_sfx_silent_window(win):
+                return
+            kind = "open_window"
+        if not kind:
+            setattr(win, "_vpet_open_sfx_played", True)
+            return
+        setattr(win, "_vpet_open_sfx_played", True)
+        self._play_ui_event(str(kind), volume=0.56)
 
     def _music_playlist(self) -> list[str]:
         return _music_playlist_from_config(self.music_config)
@@ -13529,6 +13687,7 @@ class DesktopPet:
                 kwargs["stdout"] = subprocess.DEVNULL
                 kwargs["stderr"] = subprocess.DEVNULL
             subprocess.Popen(cmd, **kwargs)
+            self._play_ui_event("game_start", volume=0.60)
             self._show_toast("已打开 RPG · Silent Oath", "#88ccff")
             self._note_achievement_flag("rpg_play")
             self._addon_voice_vpet("game", chain=False)
@@ -15743,18 +15902,21 @@ class DesktopPet:
         detail = self._format_food_counts(session_food)
         coin_gain = min(15, max(0, score // 25 + catches // 3))
         if coin_gain > 0:
-            self.grant_coins(coin_gain, reason=f"采集奖励 +{coin_gain}")
+            self.grant_coins(coin_gain, reason=f"采集奖励 +{coin_gain}", sfx=False)
         subtitle = f"接取 {catches} 个 · 得分 {score}\n错过 {misses}  ·  库存 {self._food_inventory_total()}\n{detail}"
         if coin_gain > 0:
             subtitle += f"\n金币 +{coin_gain}"
+        failed = misses >= catches or catches <= 0
+        self._play_ui_event("harvest", volume=0.58)
         self._show_game_clear(
             title="采集完成",
             subtitle=subtitle,
             accent="#ffcc44",
             on_done=self._resume_idle,
+            success=not failed,
         )
         # 差劲：错过 ≥ 接住，或整局 0 接（与结算画面并存，hurt 仅附加）
-        if misses >= catches or catches <= 0:
+        if failed:
             self._play_game_fail_voice("hurt")
 
     def _hide_game_clear(self) -> None:
@@ -15779,7 +15941,19 @@ class DesktopPet:
         hold_ms: int = GAME_CLEAR_HOLD_MS,
         hero_grade: str | None = None,
         hero_color: str | None = None,
+        success: bool | None = None,
     ) -> None:
+        if success is None:
+            text = f"{title} {subtitle}"
+            if "失败" in text:
+                success = False
+            elif hero_grade in ("D", "C"):
+                success = False
+            elif hero_grade in ("S", "A", "B"):
+                success = True
+            else:
+                success = True
+        self._play_ui_event("game_success" if success else "game_fail", volume=0.62)
         self._hide_game_clear()
         self.game_clear_token += 1
         token = self.game_clear_token
@@ -15926,6 +16100,7 @@ class DesktopPet:
         self._hide_sub_menu()
         self.sub_menu = tk.Toplevel(self.root)
         self.sub_menu.overrideredirect(True)
+        setattr(self.sub_menu, "_vpet_open_sfx", "open_shop")
         self._apply_window_layer(self.sub_menu)
         self.sub_menu.configure(bg=MENU_BG)
         frame = tk.Frame(self.sub_menu, bg=MENU_BG, padx=2, pady=2)
@@ -17262,13 +17437,13 @@ class DesktopPet:
         except Exception:
             pass
 
-    def grant_coins(self, n: int, *, reason: str = "", toast: bool = True) -> int:
+    def grant_coins(self, n: int, *, reason: str = "", toast: bool = True, sfx: bool = True) -> int:
         """统一钱包加币。"""
         add = max(0, int(n))
         total = home_farm.grant_coins_to_wallet(self.wallet, add)
         self._persist_wallet()
-        if add > 0:
-            _play_ui_sfx("money", volume=0.62)
+        if add > 0 and sfx:
+            self._play_ui_event("harvest", volume=0.62)
         if toast and add > 0:
             tip = reason or f"金币 +{add}"
             self._show_toast(f"{tip}（持有 {total}）", "#ffcc66", duration_ms=2200)
@@ -17295,10 +17470,6 @@ class DesktopPet:
                 "#ffcc66",
                 duration_ms=3600,
             )
-            try:
-                _play_ui_sfx("money", volume=0.55)
-            except Exception:
-                pass
         else:
             self._save_achievements_soon(1800)
 
@@ -17329,10 +17500,6 @@ class DesktopPet:
             self._grant_wallet_item("wood", n)
             tier = "不错" if n >= 2 else "小收获"
             self._show_toast(f"工作宝箱·{tier}：木材 ×{n}", "#c8a878", duration_ms=2600)
-            try:
-                _play_ui_sfx("money", volume=0.5)
-            except Exception:
-                pass
         elif roll < 0.86:
             seed = random.choice(("seed_wheat", "seed_berry", "seed_corn"))
             n = random.randint(1, 2)
@@ -17347,10 +17514,6 @@ class DesktopPet:
             label = home_farm.ITEM_LABELS.get(item_id, item_id)
             tier = "好运" if item_id in ("fish", "flower_cut") else "不错"
             self._show_toast(f"工作宝箱·{tier}：{label} ×1", "#ff88aa", duration_ms=2600)
-            try:
-                _play_ui_sfx("money", volume=0.5)
-            except Exception:
-                pass
         self._panel_backpack_sig = None
         self._refresh_panel()
         if self.panel_backpack_open:
@@ -17367,7 +17530,7 @@ class DesktopPet:
         if not ok:
             return
         self._persist_wallet()
-        _play_ui_sfx("money", volume=0.62)
+        self._play_ui_event("harvest", volume=0.62)
         self._show_toast(
             f"今日登录礼：金币 +{home_farm.DAILY_LOGIN_COINS}（持有 {total}）",
             "#ffcc66",
@@ -18104,10 +18267,10 @@ class DesktopPet:
         self._home_farm_fx_job = self.root.after(120, lambda: tick(1))
 
     def _open_home_farm_shop(self) -> None:
-        _play_ui_sfx("shop", volume=0.58)
         parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
         win = tk.Toplevel(parent)
         win.title("经营商店")
+        setattr(win, "_vpet_open_sfx", "open_shop")
         self._apply_window_layer(win)
         win.configure(bg="#1e2830")
         frame = tk.Frame(win, bg="#1e2830", padx=12, pady=10)
@@ -18178,7 +18341,7 @@ class DesktopPet:
             def sell(iid=item_id) -> None:
                 ok, msg = home_farm.sell_item(self.wallet, iid, 1)
                 if ok:
-                    _play_ui_sfx("money", volume=0.62)
+                    self._play_ui_event("harvest", volume=0.62)
                     self._persist_wallet()
                     self._home_rebuild_farm_panel()
                     self._home_update_status()
@@ -18210,10 +18373,10 @@ class DesktopPet:
         self._place_panel_popup(win)
 
     def _open_home_craft(self) -> None:
-        _play_ui_sfx("craft", volume=0.58)
         parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
         win = tk.Toplevel(parent)
         win.title("合成台")
+        setattr(win, "_vpet_open_sfx", "open_shop")
         self._apply_window_layer(win)
         win.configure(bg="#1e2830")
         frame = tk.Frame(win, bg="#1e2830", padx=12, pady=10)
@@ -22701,6 +22864,7 @@ class DesktopPet:
                     subtitle=subtitle,
                     accent=accent,
                     on_done=self._close_rhyme_fight,
+                    success=True,
                 )
             else:
                 self.mood = max(0, self.mood - 2)
@@ -22714,6 +22878,7 @@ class DesktopPet:
                     subtitle="莱姆 · 再来一次",
                     accent="#ff4455",
                     on_done=self._close_rhyme_fight,
+                    success=False,
                 )
 
         def jinmu_finisher() -> None:
@@ -23045,6 +23210,7 @@ class DesktopPet:
                 hero_grade=grade,
                 hero_color=grade_color,
                 on_done=self._resume_idle_after_activity if resume else None,
+                success=grade not in ("D", "C"),
             )
             if grade in ("D", "C"):
                 self._play_game_fail_voice("hurt")
@@ -24068,6 +24234,7 @@ class DesktopPet:
                 hero_color=grade_color,
                 hold_ms=TYPING_CLEAR_HOLD_MS,
                 on_done=self._close_typing_game,
+                success=grade not in ("D", "C"),
             )
             if grade in ("D", "C"):
                 self._play_game_fail_voice("hurt")
@@ -24404,6 +24571,7 @@ class DesktopPet:
                     subtitle=f"{lang} · 连续答对 {streak} 题\n最新：{item['word']} = {correct}\n金币 +{1 + bonus}",
                     accent="#88ddff",
                     on_done=after_streak_clear,
+                    success=True,
                 )
             else:
                 self._vocab_schedule_advance(VOCAB_CORRECT_ADVANCE_MS)
@@ -24417,6 +24585,7 @@ class DesktopPet:
                 "vocab",
                 {"lang": lang, "word": item["word"], "correct": False, "difficulty": self.difficulty},
             )
+            self._play_ui_event("game_fail", volume=0.62)
             self._play_game_fail_voice("hurt")
             self._vocab_schedule_advance(VOCAB_WRONG_ADVANCE_MS)
 
@@ -25297,7 +25466,10 @@ class DesktopPet:
             self.backpack_hint_label.config(text="▼" if self.panel_backpack_open else "▶")
 
     def _set_panel_backpack_open(self, open_bag: bool) -> None:
+        was_open = bool(getattr(self, "panel_backpack_open", False))
         self.panel_backpack_open = open_bag
+        if open_bag and not was_open:
+            self._play_ui_event("open_shop", volume=0.56)
         if self.backpack_content_frame and self.backpack_content_frame.winfo_exists():
             if open_bag:
                 self.backpack_content_frame.pack(anchor=tk.W, pady=(4, 0), fill=tk.X)
@@ -25570,6 +25742,8 @@ class DesktopPet:
                 return
             if i == 0 and on_show:
                 on_show()
+            if i == 0:
+                self._play_ui_event("game_start", volume=0.60)
             self._show_countdown_overlay(steps[i])
             self.root.after(GAME_COUNTDOWN_STEP_MS, lambda: step(i + 1))
 
@@ -27653,9 +27827,11 @@ class DesktopPet:
                 subtitle=f"连中 {EXPOSE_GLITCH_HITS_REQUIRED} 次 · 完美判定",
                 accent="#44ff88",
                 on_done=self._after_expose,
+                success=True,
             )
         else:
             # E05：故障界面保留约 900ms + 打字「暴露失败…」；hurt 无字幕
+            self._play_ui_event("game_fail", volume=0.62)
             self._play_game_fail_voice("hurt", show_subtitle=False)
             self._show_speech_dialog(
                 "暴露失败…",
