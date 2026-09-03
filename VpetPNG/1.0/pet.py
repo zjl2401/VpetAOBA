@@ -35,6 +35,7 @@ from PIL import Image, ImageDraw, ImageTk
 
 from bundled_paths import LEGACY_GAME_ROOT, LEGACY_MUSIC_ROOT, resolve_bundled
 import desktop_clock
+import peer_friendship
 import home_cottage as home_room
 import home_farm
 from media_bundled import is_audio_media
@@ -8635,6 +8636,18 @@ class DesktopPet:
         self._meta_idle_job: str | None = None
         self._meta_edge_during_drag = False
         self._peer_instance_id: str = f"{os.getpid()}_{int(time.time() * 1000)}"
+        # 并排漫步状态
+        self._stroll_phase: str = ""          # "gather" | "walk" | ""
+        self._stroll_until_ms: int = 0
+        self._stroll_vx: int = 0
+        self._stroll_vy: int = 0
+        self._stroll_direction: str = "front"
+        self._stroll_is_leader: bool = False
+        self._stroll_target_x: float = 0.0
+        self._stroll_target_y: float = 0.0
+        self._stroll_job: str | None = None
+        self._stroll_chat_job: str | None = None
+        self._stroll_turn_ms: int = 0
         self._mode_time_key: str | None = None
         self._mode_time_start_ms: int = 0
         self._mode_time_job: str | None = None
@@ -12601,6 +12614,7 @@ class DesktopPet:
             PEER_PRESENCE_DIR.mkdir(parents=True, exist_ok=True)
             payload = {
                 "id": self._peer_instance_id,
+                "kind": "aoba",
                 "pid": os.getpid(),
                 "x": key[0],
                 "y": key[1],
@@ -12802,6 +12816,10 @@ class DesktopPet:
             return
         self._publish_peer_presence()
         try:
+            self._poll_crossover_stroll()
+        except Exception:
+            pass
+        try:
             self._maybe_trigger_peer_meet()
         except Exception:
             pass
@@ -12843,12 +12861,322 @@ class DesktopPet:
                 bx - pad, by - pad, bsz + pad * 2, bsz + pad * 2,
             ):
                 continue
-            self._peer_meet_last_ms = now
-            if self._maybe_meta_banter("peer_meet"):
+            peer_kind = str(data.get("kind") or "aoba").strip().lower()
+            # 异 kind（苍叶 ↔ 伊得）：触发并排漫步
+            if peer_kind != "aoba" and not self._stroll_active():
+                self._peer_meet_last_ms = now
+                line = peer_friendship.build_greeting("aoba", peer_kind)
+                self._show_speech_dialog(line, auto_hide_ms=3000, use_border5=False)
+                self.root.after(600, lambda d=data: self._start_crossover_stroll(d))
                 return
-            line = random.choice(PEER_MEET_LINES)
-            self._show_speech_dialog(line, auto_hide_ms=2800, use_border5=False)
+            # 同 kind 多开：普通台词
+            if peer_kind == "aoba":
+                self._peer_meet_last_ms = now
+                if self._maybe_meta_banter("peer_meet"):
+                    return
+                line = random.choice(PEER_MEET_LINES)
+                self._show_speech_dialog(line, auto_hide_ms=2800, use_border5=False)
+                return
+
+    # ------------------------------------------------------------------ #
+    #  跨宠并排漫步（苍叶 ↔ 伊得）                                        #
+    # ------------------------------------------------------------------ #
+
+    def _stroll_active(self) -> bool:
+        return bool(self._stroll_phase)
+
+    def _start_crossover_stroll(self, peer: dict) -> None:
+        """触发入口：检测到靠近后由相遇处理调用。leader = id 较小的一侧。"""
+        if self._stroll_active() or self.dragging:
             return
+        if self.mode in ("loading", "game") or self.state == "work":
+            return
+        peer_id = str(peer.get("id") or "")
+        self._stroll_is_leader = self._peer_instance_id <= peer_id
+        bx = int(peer.get("x") or 0)
+        by = int(peer.get("y") or 0)
+        bsz = int(peer.get("size") or self.display_size)
+        ax = int(self.x)
+        ay = int(self.y)
+        # 中间点：两宠矩形中心的中点
+        a_cx = ax + self.display_size // 2
+        a_cy = ay + self.display_size // 2
+        b_cx = bx + bsz // 2
+        b_cy = by + bsz // 2
+        mid_x = (a_cx + b_cx) // 2
+        mid_y = (a_cy + b_cy) // 2
+        # 自己的目标站位（左/右）
+        gap = peer_friendship.STROLL_SIDE_GAP
+        if self._stroll_is_leader:
+            # leader 站左，follower 站右
+            target_x = mid_x - self.display_size - gap // 2
+        else:
+            target_x = mid_x + gap // 2
+        target_y = mid_y - self.display_size // 2
+        sw, sh = self._screen_wh()
+        target_x = max(0, min(int(target_x), sw - self.display_size))
+        target_y = max(0, min(int(target_y), sh - self.display_size))
+        self._stroll_target_x = float(target_x)
+        self._stroll_target_y = float(target_y)
+        self._stroll_phase = "gather"
+        self._stroll_until_ms = 0
+        if self._stroll_is_leader:
+            peer_friendship.publish_action(
+                PEER_PRESENCE_DIR,
+                {
+                    "action": "stroll_gather",
+                    "leader": self._peer_instance_id,
+                    "mid_x": mid_x,
+                    "mid_y": mid_y,
+                    "size": self.display_size,
+                },
+            )
+        self._stroll_cancel_job()
+        self._stroll_gather_tick()
+
+    def _stroll_cancel_job(self) -> None:
+        if self._stroll_job:
+            try:
+                self.root.after_cancel(self._stroll_job)
+            except Exception:
+                pass
+            self._stroll_job = None
+        if self._stroll_chat_job:
+            try:
+                self.root.after_cancel(self._stroll_chat_job)
+            except Exception:
+                pass
+            self._stroll_chat_job = None
+
+    def _stroll_end(self) -> None:
+        self._stroll_phase = ""
+        self._stroll_cancel_job()
+        peer_friendship.clear_action(PEER_PRESENCE_DIR)
+        if self.state == "walk" and self.mode not in ("music", "video"):
+            self.state = "idle"
+            self._show_stand()
+
+    # ---------- P0: gather ---------- #
+
+    def _stroll_gather_tick(self) -> None:
+        if not self._alive() or self._closing or self._stroll_phase != "gather":
+            return
+        if self.dragging:
+            self._stroll_cancel_job()
+            self._stroll_job = self._safe_after(200, self._stroll_gather_tick)
+            return
+        tx = self._stroll_target_x
+        ty = self._stroll_target_y
+        dx = tx - self.x
+        dy = ty - self.y
+        dist = (dx * dx + dy * dy) ** 0.5
+        step = peer_friendship.STROLL_GATHER_STEP
+        if dist <= step:
+            # 到位
+            self.x = int(tx)
+            self.y = int(ty)
+            self._place_window(light=True)
+            if self._stroll_is_leader:
+                self._stroll_begin_walk()
+            else:
+                # follower 等 leader 广播 stroll_walk
+                self._stroll_phase = "gather_wait"
+                self._stroll_job = self._safe_after(200, self._stroll_gather_wait_tick)
+            return
+        # 步进
+        ratio = step / dist
+        self.x += dx * ratio
+        self.y += dy * ratio
+        self.state = "walk"
+        # 选朝向
+        if abs(dx) >= abs(dy):
+            self.direction = "front" if dx > 0 else "left"
+        else:
+            self.direction = "front" if dy > 0 else "back"
+        self._place_window(light=True)
+        if not getattr(self, "walk_animating", False):
+            try:
+                self._walk_animate()
+            except Exception:
+                pass
+        self._stroll_job = self._safe_after(60, self._stroll_gather_tick)
+
+    def _stroll_gather_wait_tick(self) -> None:
+        """follower 等待 leader 发出 stroll_walk 指令。"""
+        if not self._alive() or self._closing:
+            return
+        if self._stroll_phase not in ("gather_wait", "gather"):
+            return
+        # 超时保护（5 秒）
+        now = int(time.time() * 1000)
+        if not hasattr(self, "_stroll_gather_wait_start"):
+            self._stroll_gather_wait_start = now
+        if now - self._stroll_gather_wait_start > 5000:
+            self._stroll_end()
+            return
+        self._stroll_job = self._safe_after(150, self._stroll_gather_wait_tick)
+
+    # ---------- P1: happy → walk ---------- #
+
+    def _stroll_begin_walk(self) -> None:
+        """leader 到位后：双方原地 happy，然后开始漫步。"""
+        self._stroll_phase = "walk"
+        now_ms = int(time.time() * 1000)
+        until = now_ms + peer_friendship.STROLL_DURATION_MS
+        self._stroll_until_ms = until
+        # 漫步初始方向：随机水平
+        vx = peer_friendship.STROLL_WALK_STEP * random.choice([-1, 1])
+        vy = 0
+        direction = "front" if vx > 0 else "left"
+        self._stroll_vx = vx
+        self._stroll_vy = vy
+        self._stroll_direction = direction
+        self._stroll_turn_ms = now_ms + peer_friendship.STROLL_TURN_MS
+        peer_friendship.publish_action(
+            PEER_PRESENCE_DIR,
+            {
+                "action": "stroll_walk",
+                "leader": self._peer_instance_id,
+                "until_ms": until,
+                "vx": vx,
+                "vy": vy,
+                "direction": direction,
+                "turn_ms": self._stroll_turn_ms,
+            },
+        )
+        # 先播 happy，结束后再启动漫步 tick
+        try:
+            self._play_happy()
+        except Exception:
+            pass
+        self._stroll_job = self._safe_after(1400, self._stroll_walk_tick)
+        self._stroll_chat_job = self._safe_after(1600, self._stroll_chat_tick)
+
+    def _stroll_follower_begin_walk(self, raw: dict) -> None:
+        """follower 收到 stroll_walk 后进入漫步。"""
+        self._stroll_phase = "walk"
+        self._stroll_until_ms = int(raw.get("until_ms") or 0)
+        self._stroll_vx = int(raw.get("vx") or 0)
+        self._stroll_vy = int(raw.get("vy") or 0)
+        self._stroll_direction = str(raw.get("direction") or "front")
+        self._stroll_turn_ms = int(raw.get("turn_ms") or 0)
+        try:
+            self._play_happy()
+        except Exception:
+            pass
+        self._stroll_cancel_job()
+        self._stroll_job = self._safe_after(1400, self._stroll_walk_tick)
+        self._stroll_chat_job = self._safe_after(1600, self._stroll_chat_tick)
+
+    # ---------- P1: walk tick ---------- #
+
+    def _stroll_walk_tick(self) -> None:
+        if not self._alive() or self._closing or self._stroll_phase != "walk":
+            return
+        now = int(time.time() * 1000)
+        if now >= self._stroll_until_ms:
+            self._stroll_end()
+            return
+        if self.dragging:
+            self._stroll_job = self._safe_after(200, self._stroll_walk_tick)
+            return
+        # leader 负责方向切换
+        if self._stroll_is_leader and now >= self._stroll_turn_ms:
+            self._stroll_vx = -self._stroll_vx or peer_friendship.STROLL_WALK_STEP
+            self._stroll_direction = "front" if self._stroll_vx > 0 else "left"
+            self._stroll_turn_ms = now + peer_friendship.STROLL_TURN_MS
+            peer_friendship.publish_action(
+                PEER_PRESENCE_DIR,
+                {
+                    "action": "stroll_walk",
+                    "leader": self._peer_instance_id,
+                    "until_ms": self._stroll_until_ms,
+                    "vx": self._stroll_vx,
+                    "vy": self._stroll_vy,
+                    "direction": self._stroll_direction,
+                    "turn_ms": self._stroll_turn_ms,
+                },
+            )
+        self.state = "walk"
+        self.direction = self._stroll_direction
+        self.x += self._stroll_vx
+        self.y += self._stroll_vy
+        sw, sh = self._screen_wh()
+        # 撞边反向（leader 更新，follower 跟广播）
+        if self.x < 0 or self.x + self.display_size > sw:
+            if self._stroll_is_leader:
+                self._stroll_vx = -self._stroll_vx
+                self._stroll_direction = "front" if self._stroll_vx > 0 else "left"
+                self.x = max(0, min(int(self.x), sw - self.display_size))
+        if self.y < 0 or self.y + self.display_size > sh:
+            self._stroll_vy = -self._stroll_vy
+            self.y = max(0, min(int(self.y), sh - self.display_size))
+        self._place_window(light=True)
+        if not getattr(self, "walk_animating", False):
+            try:
+                self._walk_animate()
+            except Exception:
+                pass
+        self._stroll_job = self._safe_after(80, self._stroll_walk_tick)
+
+    # ---------- P2: chat bubbles ---------- #
+
+    def _stroll_chat_tick(self) -> None:
+        if not self._alive() or self._closing or self._stroll_phase != "walk":
+            return
+        now = int(time.time() * 1000)
+        if now >= self._stroll_until_ms:
+            return
+        bubble = peer_friendship.random_chat_bubble()
+        try:
+            self._show_speech_dialog(bubble, auto_hide_ms=1800, use_border5=False)
+        except Exception:
+            pass
+        # 下一次气泡：1.5~3 秒后
+        next_ms = random.randint(1500, 3000)
+        self._stroll_chat_job = self._safe_after(next_ms, self._stroll_chat_tick)
+
+    # ---------- follower polling ---------- #
+
+    def _poll_crossover_stroll(self) -> None:
+        """follower 侧读取 leader 发出的 stroll 指令。"""
+        if self._stroll_is_leader and self._stroll_active():
+            return
+        raw = peer_friendship.read_action(PEER_PRESENCE_DIR)
+        if not raw:
+            return
+        action = str(raw.get("action") or "")
+        leader = str(raw.get("leader") or "")
+        if leader == self._peer_instance_id:
+            return  # 自己发的，不处理
+        if action == "stroll_gather":
+            if self._stroll_phase in ("", "gather_wait"):
+                bsz = int(raw.get("size") or self.display_size)
+                mid_x = int(raw.get("mid_x") or 0)
+                mid_y = int(raw.get("mid_y") or 0)
+                gap = peer_friendship.STROLL_SIDE_GAP
+                target_x = mid_x + gap // 2
+                target_y = mid_y - self.display_size // 2
+                sw, sh = self._screen_wh()
+                target_x = max(0, min(int(target_x), sw - self.display_size))
+                target_y = max(0, min(int(target_y), sh - self.display_size))
+                self._stroll_target_x = float(target_x)
+                self._stroll_target_y = float(target_y)
+                if self._stroll_phase == "":
+                    self._stroll_phase = "gather"
+                    self._stroll_is_leader = False
+                    self._stroll_cancel_job()
+                    self._stroll_gather_tick()
+        elif action == "stroll_walk":
+            if self._stroll_phase in ("gather", "gather_wait"):
+                self._stroll_gather_wait_start = 0  # reset timeout
+                self._stroll_follower_begin_walk(raw)
+            elif self._stroll_phase == "walk":
+                # 更新方向
+                self._stroll_vx = int(raw.get("vx") or self._stroll_vx)
+                self._stroll_vy = int(raw.get("vy") or self._stroll_vy)
+                self._stroll_direction = str(raw.get("direction") or self._stroll_direction)
+                self._stroll_turn_ms = int(raw.get("turn_ms") or self._stroll_turn_ms)
 
     def _screen_wh(self) -> tuple[int, int]:
         now = time.time()

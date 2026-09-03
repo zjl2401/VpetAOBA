@@ -210,6 +210,32 @@ def build_exchange(self_kind: str, other_kind: str) -> str:
 
 ACTION_FILE = "crossover_action.json"
 
+# 并排漫步总时长（毫秒）
+STROLL_DURATION_MS = 15_000
+# 靠拢阶段最大步长（px/tick）
+STROLL_GATHER_STEP = 6
+# 漫步速度（px/tick）
+STROLL_WALK_STEP = 2
+# 并排间距（px，两宠边缘之间）
+STROLL_SIDE_GAP = 4
+# 漫步方向切换间隔（ms）
+STROLL_TURN_MS = 4000
+# 气泡聊天字符池
+_CHAT_CHARS = "♪♫✦★◆●▲■◇△□○◉◎⟡⟢⟣⬡⬢※⁂∴∵…—~！？"
+
+def random_chat_bubble() -> str:
+    """生成一串看起来像乱码交流的字符。"""
+    n = random.randint(4, 9)
+    chars = random.choices(_CHAT_CHARS, k=n)
+    # 每隔 2-3 个插个空格，像词组
+    out: list[str] = []
+    i = 0
+    while i < len(chars):
+        chunk = random.randint(2, 3)
+        out.append("".join(chars[i:i + chunk]))
+        i += chunk
+    return " ".join(out)
+
 def publish_action(presence_dir: Path, payload: dict) -> None:
     try:
         presence_dir.mkdir(parents=True, exist_ok=True)
