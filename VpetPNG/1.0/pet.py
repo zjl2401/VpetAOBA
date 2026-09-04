@@ -3988,51 +3988,59 @@ def _is_outer_lime_screen(r: int, g: int, b: int) -> bool:
     return g > 170 and b < 45 and 90 < r < 210 and (g - r) > 20 and (g - b) > 120
 
 
-def _flood_outer_key_mask(key) -> object:
-    """从四边泛洪，返回与边缘连通的键色布尔掩码。"""
+def _flood_outer_key_mask(key, *, walkable=None) -> object:
+    """从四边泛洪，返回与边缘连通的键色布尔掩码。
+
+    walkable 为 True 的像素可穿越（例如透明外圈），但最终只标记 key 区域，
+    这样去绿幕后内缩的黑框仍能被清掉。
+    """
     import numpy as np
     from collections import deque
 
     h, w = key.shape
-    vis = np.zeros((h, w), dtype=bool)
+    if walkable is None:
+        walkable = key
+    else:
+        walkable = np.asarray(walkable, dtype=bool) | np.asarray(key, dtype=bool)
+    reached = np.zeros((h, w), dtype=bool)
     q: deque[tuple[int, int]] = deque()
-    xs = np.where(key[0])[0]
+    xs = np.where(walkable[0])[0]
     for x in xs.tolist():
-        vis[0, x] = True
+        reached[0, x] = True
         q.append((0, x))
-    xs = np.where(key[h - 1])[0]
+    xs = np.where(walkable[h - 1])[0]
     for x in xs.tolist():
-        vis[h - 1, x] = True
+        reached[h - 1, x] = True
         q.append((h - 1, x))
-    ys = np.where(key[:, 0])[0]
+    ys = np.where(walkable[:, 0])[0]
     for y in ys.tolist():
-        vis[y, 0] = True
+        reached[y, 0] = True
         q.append((y, 0))
-    ys = np.where(key[:, w - 1])[0]
+    ys = np.where(walkable[:, w - 1])[0]
     for y in ys.tolist():
-        vis[y, w - 1] = True
+        reached[y, w - 1] = True
         q.append((y, w - 1))
     while q:
         y, x = q.popleft()
         for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             ny, nx = y + dy, x + dx
-            if 0 <= ny < h and 0 <= nx < w and key[ny, nx] and not vis[ny, nx]:
-                vis[ny, nx] = True
+            if 0 <= ny < h and 0 <= nx < w and walkable[ny, nx] and not reached[ny, nx]:
+                reached[ny, nx] = True
                 q.append((ny, nx))
-    return vis
+    return reached & np.asarray(key, dtype=bool)
 
 
-def _remove_outer_key_rgba(img: Image.Image, key_mask) -> Image.Image:
+def _remove_outer_key_rgba(img: Image.Image, key_mask, *, walkable=None) -> Image.Image:
     """按键色掩码只清除与边缘连通区域。"""
     import numpy as np
 
     arr = np.asarray(img.convert("RGBA"), dtype=np.uint8).copy()
-    vis = _flood_outer_key_mask(key_mask)
+    vis = _flood_outer_key_mask(key_mask, walkable=walkable)
     arr[..., 3] = np.where(vis, 0, arr[..., 3])
     return Image.fromarray(arr, "RGBA")
 
 
-def _remove_outer_key_pil(img: Image.Image, is_key) -> Image.Image:
+def _remove_outer_key_pil(img: Image.Image, is_key, *, pass_transparent: bool = False) -> Image.Image:
     """无 numpy 时的边缘泛洪回退。"""
     from collections import deque
 
@@ -4052,10 +4060,13 @@ def _remove_outer_key_pil(img: Image.Image, is_key) -> Image.Image:
         if x < 0 or y < 0 or x >= w or y >= h or visited[y][x]:
             continue
         r, g, b, a = px[x, y]
-        if a < 8 or not is_key(r, g, b):
+        transparent = a < 8
+        keyed = (not transparent) and is_key(r, g, b)
+        if not keyed and not (pass_transparent and transparent):
             continue
         visited[y][x] = True
-        px[x, y] = (r, g, b, 0)
+        if keyed:
+            px[x, y] = (r, g, b, 0)
         q.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
     return rgba
 
@@ -4084,8 +4095,12 @@ def _remove_outer_lime_green(img: Image.Image) -> Image.Image:
         return _remove_outer_key_pil(img, _is_outer_lime_screen)
 
 
-def _remove_outer_black_frame(img: Image.Image, *, thresh: int = 52) -> Image.Image:
-    """只去掉与画面边缘连通的近黑外框，保留角色内部黑发/描边。"""
+def _remove_outer_black_frame(img: Image.Image, *, thresh: int = 78) -> Image.Image:
+    """只去掉与画面外圈连通的近黑外框，保留角色内部黑发/描边。
+
+    去绿幕后外圈常已是透明，黑框会内缩；泛洪需穿过透明像素才能碰到黑框。
+    阈值略放宽以覆盖 JPEG 近黑压边。
+    """
     try:
         import numpy as np
 
@@ -4095,14 +4110,16 @@ def _remove_outer_black_frame(img: Image.Image, *, thresh: int = 52) -> Image.Im
         b = arr[..., 2].astype(np.int16)
         a = arr[..., 3]
         mx = np.maximum(np.maximum(r, g), b)
-        key = (a > 8) & (mx <= thresh) & (np.abs(r - g) < 20) & (np.abs(g - b) < 20)
-        return _remove_outer_key_rgba(img, key)
+        # 近黑且通道接近（含轻微 JPEG 色偏）
+        key = (a > 8) & (mx <= thresh) & (np.abs(r - g) < 28) & (np.abs(g - b) < 28) & (np.abs(r - b) < 28)
+        transparent = a <= 8
+        return _remove_outer_key_rgba(img, key, walkable=transparent)
     except Exception:
 
         def is_black(r: int, g: int, b: int) -> bool:
-            return max(r, g, b) <= thresh and abs(r - g) < 20 and abs(g - b) < 20
+            return max(r, g, b) <= thresh and abs(r - g) < 28 and abs(g - b) < 28 and abs(r - b) < 28
 
-        return _remove_outer_key_pil(img, is_black)
+        return _remove_outer_key_pil(img, is_black, pass_transparent=True)
 
 
 def _remove_green(img: Image.Image) -> Image.Image:
@@ -4142,10 +4159,16 @@ def _to_fixed_canvas(
 ) -> Image.Image:
     if max(img.size) > max(display_size * 5, 512):
         img = _cap_source_image(img, display_size)
-    rgba = img.convert("RGBA") if skip_green_removal else _remove_green(img)
     if strip_outer_black is None:
         strip_outer_black = strip_outer_black_enabled()
+    rgba = img.convert("RGBA")
     if strip_outer_black:
+        # 先去掉贴边黑框，避免挡住后续绿幕泛洪
+        rgba = _remove_outer_black_frame(rgba)
+    if not skip_green_removal:
+        rgba = _remove_green(rgba)
+    if strip_outer_black:
+        # 去绿幕后黑框常内缩，再清一次（可穿过透明外圈）
         rgba = _remove_outer_black_frame(rgba)
 
     bbox = rgba.getbbox()
@@ -8412,7 +8435,8 @@ class DesktopPet:
         self.root.wm_attributes("-transparentcolor", "magenta")
 
         self._sprite_cache: dict[int, SpriteSet] = {}
-        self._persona_sprite_cache: dict[tuple[int, str], SpriteSet] = {}
+        # (display_size, persona, strip_outer_black) — 去黑框开关必须进 key，否则切换人格会复用未去框立绘
+        self._persona_sprite_cache: dict[tuple[int, str, bool], SpriteSet] = {}
         self._sprite_building: set[int] = set()
         self._panel_backpack_sig: tuple | None = None
         self.panel_backpack_open = False
@@ -9598,7 +9622,9 @@ class DesktopPet:
         def finish(ss: SpriteSet) -> None:
             self._sprite_cache[size] = ss
             try:
-                self._persona_sprite_cache[(size, get_active_persona())] = ss
+                self._persona_sprite_cache[
+                    (size, get_active_persona(), bool(strip_outer_black_enabled()))
+                ] = ss
             except Exception:
                 pass
             self._sprite_building.discard(size)
@@ -16922,10 +16948,17 @@ class DesktopPet:
             speech = "嗯，变回原来的我了。"
         self._show_speech_dialog(speech, auto_hide_ms=2600)
 
+    def _persona_cache_key(self, size: int | None = None, persona: str | None = None) -> tuple[int, str, bool]:
+        return (
+            int(size if size is not None else self.display_size),
+            str(persona if persona is not None else get_active_persona()),
+            bool(strip_outer_black_enabled()),
+        )
+
     def _reload_persona_sprites(self) -> None:
         """切换人格后重建立绘缓存并刷新当前画面。"""
         persona = get_active_persona()
-        cache_key = (self.display_size, persona)
+        cache_key = self._persona_cache_key(self.display_size, persona)
         cached = self._persona_sprite_cache.get(cache_key)
         if cached is not None:
             self.sprites = cached
@@ -16984,7 +17017,7 @@ class DesktopPet:
                 return
             self.sprites = ss
             self._sprite_cache[size] = ss
-            self._persona_sprite_cache[(size, persona)] = ss
+            self._persona_sprite_cache[self._persona_cache_key(size, persona)] = ss
             self._sprite_building.discard(size)
             self._hide_wait_hint()
             try:
