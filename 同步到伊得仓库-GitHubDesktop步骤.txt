@@ -1,0 +1,52 @@
+伊得独立仓库同步步骤（GitHub Desktop）
+========================================
+
+现状：
+- 苍叶源码仓库：https://github.com/zjl2401/VpetAOBA
+- 伊得目标仓库：https://github.com/zjl2401/VpetEidenPet
+  （若打不开 / 404，说明仓库还不存在或未公开，请先按「一」创建）
+
+一、创建伊得仓库（只需一次）
+------------------------
+1. 浏览器打开：https://github.com/new
+2. Repository name 填：VpetEidenPet
+3. 选 Public（或 Private 但需让 Cursor 云端能访问）
+4. 不要勾选 Add README / .gitignore（保持空仓库）
+5. 点 Create repository
+
+二、用 GitHub Desktop 关联桌面伊得目录
+------------------------------------
+1. 打开 GitHub Desktop
+2. File → Add Local Repository…
+3. 选：C:\Users\36255\Desktop\VpetEidenPet
+   - 若提示不是 git 仓库：选 Create a repository，名称 VpetEidenPet，路径指向该桌面目录
+4. 点 Publish repository
+   - Name：VpetEidenPet
+   - Owner：zjl2401
+   - 取消 Keep this code private（若希望云端帮忙推）→ Publish
+
+三、把苍叶仓库的最新双宠代码拷进伊得目录
+----------------------------------------
+1. GitHub Desktop 切换到仓库 VpetAOBA
+2. Current branch 选：cursor/auto-restore-companion-c4c2
+3. Fetch origin → 若有 Pull origin 再点 Pull
+4. 点 Show in Explorer
+5. 双击运行：实现双宠更新.bat
+   （会把 pet.py 等同步到 桌面\VpetAOBA 和 桌面\VpetEidenPet）
+
+四、把伊得目录的更新推到 VpetEidenPet 仓库
+------------------------------------------
+1. GitHub Desktop 切换到仓库 VpetEidenPet
+2. 左侧 Changes 应出现 pet.py 等改动
+3. Summary 填例如：sync: 双宠更新（强退/装扮/友情）
+4. Commit to main（或你的工作分支）
+5. Push origin
+
+五、启动伊得验证
+----------------
+1. 关掉正在运行的伊得
+2. 双击 桌面\VpetEidenPet\start_eiden.bat（或「启动本宠.bat」）
+3. 不要用旧的 release\Vpet\Vpet.exe
+
+创建好空仓库后，也可以再在 Cursor 对话里回复「伊得仓库已建好」，
+云端即可尝试直接帮你往 https://github.com/zjl2401/VpetEidenPet 推送。
