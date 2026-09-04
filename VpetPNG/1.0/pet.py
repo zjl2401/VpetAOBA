@@ -2110,6 +2110,16 @@ SLEEP_RECOVER_MS = 3000
 SLEEP_TRANSITION_MS = 600
 SLEEP_DEEP_HOLD_MS = 30000
 SLEEP_ZZZ_MS = 700
+# 装扮叠层动画（无语/尴尬汗滴、睡觉Z 等）
+COSMETIC_FX_MS = 140
+COSMETIC_IDS: tuple[str, ...] = ("wuyu", "ganga", "yihuo", "angry", "zzz")
+COSMETIC_LABELS: dict[str, str] = {
+    "wuyu": "无语",
+    "ganga": "尴尬",
+    "yihuo": "疑惑",
+    "angry": "生气",
+    "zzz": "睡觉Z",
+}
 
 REST_BOBBLE_PX = 3
 REST_BOBBLE_MS = 160
@@ -6369,6 +6379,44 @@ def _normalize_profile_pet_id(data: dict) -> dict:
     return data
 
 
+def _normalize_cosmetics(raw) -> list[str]:
+    """装扮勾选列表：无语/尴尬/疑惑/生气/睡觉Z。"""
+    out: list[str] = []
+    seen: set[str] = set()
+    items: list = []
+    if isinstance(raw, dict):
+        items = [k for k, v in raw.items() if v]
+    elif isinstance(raw, (list, tuple, set)):
+        items = list(raw)
+    elif isinstance(raw, str) and raw.strip():
+        items = [p.strip() for p in raw.replace("，", ",").split(",") if p.strip()]
+    alias = {
+        "无语": "wuyu",
+        "speechless": "wuyu",
+        "尴尬": "ganga",
+        "awkward": "ganga",
+        "sweat": "ganga",
+        "疑惑": "yihuo",
+        "疑问": "yihuo",
+        "question": "yihuo",
+        "生气": "angry",
+        "anger": "angry",
+        "睡觉z": "zzz",
+        "睡觉Z": "zzz",
+        "sleep": "zzz",
+        "sleep_z": "zzz",
+    }
+    for item in items:
+        key = str(item or "").strip()
+        if not key:
+            continue
+        key = alias.get(key, alias.get(key.lower(), key.lower()))
+        if key in COSMETIC_IDS and key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out
+
+
 def _normalize_gift_pixels(raw) -> list[int]:
     """礼物像素画：一维色板下标，长度 GIFT_PIXEL_SIZE²。"""
     n = GIFT_PIXEL_SIZE * GIFT_PIXEL_SIZE
@@ -6452,6 +6500,7 @@ def _load_pet_profile() -> dict:
     profile.setdefault("last_pet_bday_nudge_ymd", "")
     profile.setdefault("wear_flower", False)
     profile["wear_flower"] = bool(profile.get("wear_flower"))
+    profile["cosmetics"] = _normalize_cosmetics(profile.get("cosmetics"))
 
     if PET_ID_FEATURE:
         profile = _normalize_profile_pet_id(profile)
@@ -8680,6 +8729,11 @@ class DesktopPet:
         self.head_flower_win: tk.Toplevel | None = None
         self.head_flower_canvas: tk.Canvas | None = None
         self._head_flower_place_sig: tuple[int, int] | None = None
+        self.cosmetic_fx_win: tk.Toplevel | None = None
+        self.cosmetic_fx_canvas: tk.Canvas | None = None
+        self._cosmetic_fx_place_sig: tuple[int, int] | None = None
+        self._cosmetic_fx_phase = 0
+        self._cosmetic_fx_job: str | None = None
         self.food_fx_win: tk.Toplevel | None = None
         self.food_fx_canvas: tk.Canvas | None = None
         self.food_fx_id: str | None = None
@@ -9443,6 +9497,7 @@ class DesktopPet:
         self.root.after(1400, self._maybe_daily_login_coin)
         self.root.after(1600, self._maybe_restore_home_desktop)
         self.root.after(1700, self._sync_head_flower)
+        self.root.after(1750, self._sync_cosmetics)
         if PET_ID_FEATURE:
             self.root.after(1800, lambda: self._schedule_cloud_pet_id_sync(force=False, toast=False))
         # 拖柄/点击分区放到后台算，避免刚进自由就卡主线程
@@ -11083,6 +11138,7 @@ class DesktopPet:
             "rain_fx_win",
             "happy_fx_win",
             "head_flower_win",
+            "cosmetic_fx_win",
             "food_fx_win",
             "gift_pixel_fx_win",
             "bulb_fx_win",
@@ -13143,6 +13199,7 @@ class DesktopPet:
         # 拖动/走动：只做轻量位置更新，避免每帧重排一层特效导致卡顿
         self._reposition_pet_attached_popups(force=False)
         self._place_head_flower()
+        self._place_cosmetic_fx()
         if light:
             return
         self._place_ai_chat()
@@ -13976,6 +14033,7 @@ class DesktopPet:
             "rain_fx_win",
             "happy_fx_win",
             "head_flower_win",
+            "cosmetic_fx_win",
             "food_fx_win",
             "gift_pixel_fx_win",
             "music_wave_win",
@@ -14932,6 +14990,7 @@ class DesktopPet:
         self._hide_food_fx()
         self._hide_happy_fx()
         self._hide_head_flower()
+        self._hide_cosmetic_fx()
         self._hide_rain_fx()
         self._hide_bulb_fx()
         self._hide_game_clear()
@@ -15174,6 +15233,7 @@ class DesktopPet:
             self._hide_food_fx()
             self._hide_happy_fx()
             self._hide_head_flower()
+            self._hide_cosmetic_fx()
             self._hide_companion_heart_transfer()
             self._hide_rain_fx()
             self._hide_bulb_fx()
@@ -25580,6 +25640,7 @@ class DesktopPet:
             "last_pet_bday_ymd": "",
             "last_pet_bday_nudge_ymd": "",
             "wear_flower": False,
+            "cosmetics": [],
         }
         if PET_ID_FEATURE:
             self.pet_profile["pet_id"] = saved_id
@@ -25641,6 +25702,7 @@ class DesktopPet:
             [
                 ("动作 ▶", self._open_action_menu),
                 ("表情 ▶", self._open_expression_menu),
+                ("装扮 ▶", self._open_cosmetic_menu),
                 ("对话 ▶", self._open_dialog_menu),
                 ("工具 ▶", self._open_tools_menu),
             ],
@@ -29979,6 +30041,8 @@ class DesktopPet:
         if self._wearing_flower():
             self._hide_head_flower()
             self._show_head_flower()
+        self._hide_cosmetic_fx()
+        self._sync_cosmetics()
         # Allmate 与主宠同帧一起缩放（加载期已并行预热）
         self._resync_mini_pets_size()
         if self.mode == "quiet" and self.state == "rest":
@@ -30596,6 +30660,7 @@ class DesktopPet:
         self._hide_companion_loading()
         self._hide_happy_fx()
         self._hide_head_flower()
+        self._hide_cosmetic_fx()
         self._hide_food_fx()
         self._hide_rain_fx()
         self._hide_bulb_fx()
@@ -31181,6 +31246,302 @@ class DesktopPet:
             self.head_flower_win.geometry(f"+{ox}+{oy}")
         except Exception:
             pass
+
+    # --- 装扮：无语 / 尴尬 / 疑惑 / 生气 / 睡觉Z（持久叠层，双宠共用） ---
+
+    def _active_cosmetics(self) -> list[str]:
+        return _normalize_cosmetics((self.pet_profile or {}).get("cosmetics"))
+
+    def _cosmetic_enabled(self, key: str) -> bool:
+        return str(key) in set(self._active_cosmetics())
+
+    def _persist_cosmetics(self, items: list[str]) -> None:
+        self.pet_profile["cosmetics"] = _normalize_cosmetics(items)
+        try:
+            _save_pet_profile(self.pet_profile)
+        except Exception:
+            pass
+
+    def _set_cosmetic(self, key: str, on: bool, *, toast: bool = True) -> None:
+        cid = str(key or "").strip().lower()
+        if cid not in COSMETIC_IDS:
+            return
+        cur = self._active_cosmetics()
+        has = cid in cur
+        if on and not has:
+            cur.append(cid)
+        elif (not on) and has:
+            cur = [x for x in cur if x != cid]
+        else:
+            if toast:
+                label = COSMETIC_LABELS.get(cid, cid)
+                self._show_toast(f"已是「{label}」装扮" if on else f"未佩戴「{label}」", "#88ccff", duration_ms=1400)
+            return
+        self._persist_cosmetics(cur)
+        self._sync_cosmetics()
+        if toast:
+            label = COSMETIC_LABELS.get(cid, cid)
+            self._show_toast(f"装扮：{label} ✓" if on else f"已取消：{label}", "#ffcc88", duration_ms=1500)
+
+    def _toggle_cosmetic(self, key: str) -> None:
+        self._hide_main_menu()
+        self._set_cosmetic(key, not self._cosmetic_enabled(key))
+
+    def _open_cosmetic_menu(self) -> None:
+        """互动 → 装扮：表情旁效果可常驻佩戴。"""
+        items: list[tuple[str, object]] = []
+        flower_on = self._wearing_flower()
+        items.append((f"小花{' ✓' if flower_on else ''}", self._toggle_wear_flower_from_cosmetic))
+        for cid in COSMETIC_IDS:
+            label = COSMETIC_LABELS.get(cid, cid)
+            on = self._cosmetic_enabled(cid)
+            items.append((f"{label}{' ✓' if on else ''}", lambda k=cid: self._toggle_cosmetic(k)))
+        items.append(("全部摘下", self._clear_all_cosmetics))
+        self._show_sub_menu(items, offset_x=200)
+
+    def _toggle_wear_flower_from_cosmetic(self) -> None:
+        self._hide_main_menu()
+        self._toggle_wear_flower()
+
+    def _clear_all_cosmetics(self) -> None:
+        self._hide_main_menu()
+        changed = False
+        if self._active_cosmetics():
+            self._persist_cosmetics([])
+            changed = True
+        if self._wearing_flower():
+            self._set_wear_flower(False, toast=False)
+            changed = True
+        self._sync_cosmetics()
+        if changed:
+            self._show_toast("已摘下全部装扮", "#88ccff", duration_ms=1500)
+        else:
+            self._show_toast("当前没有装扮", "#88ccff", duration_ms=1200)
+
+    def _sync_cosmetics(self) -> None:
+        if self._closing:
+            self._hide_cosmetic_fx()
+            return
+        if self._active_cosmetics():
+            self._show_cosmetic_fx()
+        else:
+            self._hide_cosmetic_fx()
+
+    def _hide_cosmetic_fx(self) -> None:
+        job = getattr(self, "_cosmetic_fx_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+        self._cosmetic_fx_job = None
+        if self.cosmetic_fx_win and self.cosmetic_fx_win.winfo_exists():
+            try:
+                self.cosmetic_fx_win.destroy()
+            except Exception:
+                pass
+        self.cosmetic_fx_win = None
+        self.cosmetic_fx_canvas = None
+        self._cosmetic_fx_place_sig = None
+
+    def _show_cosmetic_fx(self) -> None:
+        if not self._active_cosmetics():
+            self._hide_cosmetic_fx()
+            return
+        if self.cosmetic_fx_win and self.cosmetic_fx_win.winfo_exists():
+            self._place_cosmetic_fx(force=True)
+            self._animate_cosmetic_fx()
+            return
+        pad = 22
+        size = self.display_size + pad * 2
+        win = tk.Toplevel(self.root)
+        self.cosmetic_fx_win = win
+        win.overrideredirect(True)
+        self._apply_window_layer(win)
+        win.configure(bg="magenta")
+        try:
+            win.wm_attributes("-transparentcolor", "magenta")
+        except Exception:
+            pass
+        canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
+        canvas.pack()
+        self.cosmetic_fx_canvas = canvas
+        self._cosmetic_fx_phase = 0
+        self._cosmetic_fx_place_sig = None
+        self._place_cosmetic_fx(force=True)
+        self._animate_cosmetic_fx()
+        try:
+            win.lift()
+        except Exception:
+            pass
+        self._notify_bg_fx_change()
+
+    def _place_cosmetic_fx(self, *, force: bool = False) -> None:
+        if not self._active_cosmetics():
+            self._hide_cosmetic_fx()
+            return
+        if not self.cosmetic_fx_win or not self.cosmetic_fx_win.winfo_exists():
+            if self._active_cosmetics():
+                self._show_cosmetic_fx()
+            return
+        pad = 22
+        display_y = self.y + self.click_bounce_offset
+        ox = self.x - pad
+        oy = display_y - pad
+        sig = (ox, oy)
+        if not force and sig == getattr(self, "_cosmetic_fx_place_sig", None):
+            return
+        self._cosmetic_fx_place_sig = sig
+        try:
+            self.cosmetic_fx_win.geometry(f"+{ox}+{oy}")
+        except Exception:
+            pass
+
+    def _draw_pixel_waterdrop(
+        self,
+        canvas: tk.Canvas,
+        x: int,
+        y: int,
+        px: int,
+        *,
+        color: str = "#5dade2",
+        highlight: str = "#d6eaf8",
+    ) -> None:
+        """无语：左上角水滴。"""
+        p = max(2, int(px))
+        # 尖顶 + 圆底
+        canvas.create_polygon(
+            x + p,
+            y,
+            x,
+            y + p * 2,
+            x + p * 2,
+            y + p * 2,
+            fill=color,
+            outline="",
+        )
+        canvas.create_oval(x, y + p, x + p * 2, y + p * 3, fill=color, outline="")
+        canvas.create_rectangle(x + p // 2, y + p + p // 2, x + p, y + p * 2, fill=highlight, outline="")
+
+    def _draw_pixel_sweat_spray(
+        self,
+        canvas: tk.Canvas,
+        origin_x: int,
+        origin_y: int,
+        px: int,
+        phase: int,
+    ) -> None:
+        """尴尬：右上角冒汗/喷出水滴。"""
+        p = max(2, int(px))
+        # 三滴沿右上→外下飞溅
+        specs = (
+            (0.0, -1.2, 0.9, "#7ec8e8"),
+            (1.1, -0.4, 0.75, "#5dade2"),
+            (1.8, 0.6, 0.6, "#85c1e9"),
+        )
+        t = (phase % 6) / 6.0
+        for i, (dx, dy, scale, color) in enumerate(specs):
+            drift = ((phase + i * 2) % 6) * max(1, p // 2)
+            sx = int(origin_x + dx * p * 3 + drift * 0.35)
+            sy = int(origin_y + dy * p * 2 + drift * 0.55 + t * p)
+            sp = max(2, int(p * scale))
+            self._draw_pixel_waterdrop(canvas, sx, sy, sp, color=color, highlight="#eaf6fb")
+
+    def _draw_pixel_question_mark(self, canvas: tk.Canvas, x: int, y: int, px: int) -> None:
+        """疑惑：右上角问号。"""
+        p = max(2, int(px))
+        color = "#ffcc33"
+        canvas.create_rectangle(x + p, y, x + p * 3, y + p, fill=color, outline="")
+        canvas.create_rectangle(x + p * 2, y + p, x + p * 3, y + p * 2, fill=color, outline="")
+        canvas.create_rectangle(x + p, y + p * 2, x + p * 2, y + p * 3, fill=color, outline="")
+        canvas.create_rectangle(x + p, y + p * 4, x + p * 2, y + p * 5, fill=color, outline="")
+
+    def _draw_pixel_angry_mark(self, canvas: tk.Canvas, x: int, y: int, px: int) -> None:
+        """生气：右上角怒气符号。"""
+        p = max(2, int(px))
+        color = "#ff3333"
+        cx, cy = x + p * 2, y + p * 2
+        canvas.create_rectangle(cx - p * 2, cy - p // 2, cx + p * 2, cy + p // 2, fill=color, outline="")
+        canvas.create_rectangle(cx - p // 2, cy - p * 2, cx + p // 2, cy + p * 2, fill=color, outline="")
+        for ox, oy in ((-p * 2, -p * 2), (p * 2, -p * 2), (-p * 2, p * 2), (p * 2, p * 2)):
+            canvas.create_rectangle(cx + ox, cy + oy, cx + ox + p, cy + oy + p, fill=color, outline="")
+
+    def _animate_cosmetic_fx(self) -> None:
+        job = getattr(self, "_cosmetic_fx_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+            self._cosmetic_fx_job = None
+        if self._closing or not self._active_cosmetics():
+            self._hide_cosmetic_fx()
+            return
+        canvas = self.cosmetic_fx_canvas
+        if not canvas or not self.cosmetic_fx_win or not self.cosmetic_fx_win.winfo_exists():
+            self._show_cosmetic_fx()
+            return
+        try:
+            canvas.delete("all")
+        except Exception:
+            self._hide_cosmetic_fx()
+            return
+        pad = 22
+        size = self.display_size + pad * 2
+        px = max(3, self.display_size // 28)
+        phase = int(getattr(self, "_cosmetic_fx_phase", 0) or 0)
+        active = set(self._active_cosmetics())
+
+        # 无语：左上角水滴（轻上下浮动）
+        if "wuyu" in active:
+            bob = (phase % 4) * max(1, px // 3)
+            self._draw_pixel_waterdrop(canvas, pad + px, pad + px - bob // 2, px + 1)
+
+        # 尴尬：右上角喷汗（与疑惑/生气/Z 错开）
+        if "ganga" in active:
+            sweat_x = size - pad - px * 6
+            sweat_y = pad + px
+            if "yihuo" in active or "angry" in active:
+                sweat_x = size - pad - px * 2
+                sweat_y = pad + max(2, px // 2)
+            if "zzz" in active:
+                sweat_y = pad + max(2, px // 2)
+            self._draw_pixel_sweat_spray(canvas, sweat_x, sweat_y, px, phase)
+
+        # 疑惑 / 生气：右上，略错开避免重叠
+        if "yihuo" in active and "angry" in active:
+            self._draw_pixel_question_mark(canvas, size - pad - px * 12, pad + px, px)
+            self._draw_pixel_angry_mark(canvas, size - pad - px * 6, pad + px * 5, px)
+        elif "yihuo" in active:
+            self._draw_pixel_question_mark(canvas, size - pad - px * 7, pad + px, px)
+        elif "angry" in active:
+            self._draw_pixel_angry_mark(canvas, size - pad - px * 7, pad + px, px)
+
+        # 睡觉Z：右上飘起（与睡眠 zzz 风格一致；装扮常驻）
+        if "zzz" in active:
+            # 若正式睡眠 zzz 已在播，装扮 Z 略偏左，避免完全重叠
+            sleep_on = bool(
+                self.sleep_zzz_win and self.sleep_zzz_win.winfo_exists() and self._should_show_zzz()
+            )
+            offset = (phase % 3) * max(3, px // 2)
+            shift = px * 6 if sleep_on else 0
+            colors = ("#aabbff", "#8899ee", "#6677dd")
+            self._draw_pixel_z(canvas, size - px * 9 - shift, px * 2 + offset, px, colors[0])
+            self._draw_pixel_z(
+                canvas, size - px * 13 - shift, px * 5 + offset, max(2, px - 1), colors[1]
+            )
+            self._draw_pixel_z(
+                canvas, size - px * 17 - shift, px * 8 + offset, max(2, px - 1), colors[2]
+            )
+
+        self._cosmetic_fx_phase = phase + 1
+        self._place_cosmetic_fx()
+        need_anim = bool(active & {"ganga", "zzz", "wuyu"})
+        delay = COSMETIC_FX_MS if need_anim else COSMETIC_FX_MS * 4
+        try:
+            self._cosmetic_fx_job = self.root.after(delay, self._animate_cosmetic_fx)
+        except Exception:
+            self._cosmetic_fx_job = None
 
     def _show_happy_fx(self) -> None:
         self._hide_happy_fx()
