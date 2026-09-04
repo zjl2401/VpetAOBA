@@ -35,6 +35,7 @@ from PIL import Image, ImageDraw, ImageTk
 
 from bundled_paths import LEGACY_GAME_ROOT, LEGACY_MUSIC_ROOT, resolve_bundled
 import desktop_clock
+import peer_friendship
 import home_cottage as home_room
 import home_farm
 from media_bundled import is_audio_media
@@ -85,12 +86,120 @@ def _user_persistent_root() -> Path:
     return Path.home() / ".vpet"
 
 
+# 跨宠角色：苍叶 ↔ 伊得 可双开；用 --kind / VPET_KIND 指定本进程身份
+PET_KIND_AOBA = "aoba"
+PET_KIND_EIDEN = "eiden"
+PET_KIND_CHOICES = (PET_KIND_AOBA, PET_KIND_EIDEN)
+
+
+def _normalize_pet_kind(raw: object) -> str:
+    key = str(raw or "").strip().lower()
+    if key in ("aoba", "苍叶", "ao"):
+        return PET_KIND_AOBA
+    if key in ("eiden", "伊得", "eid", "eden"):
+        return PET_KIND_EIDEN
+    return ""
+
+
+def _peek_cli_pet_kind() -> str:
+    """启动参数 / 环境变量优先，便于同目录双开两只桌宠。"""
+    env = _normalize_pet_kind(os.environ.get("VPET_KIND") or os.environ.get("VPET_PET_KIND"))
+    if env in PET_KIND_CHOICES:
+        return env
+    argv = list(sys.argv[1:])
+    for i, arg in enumerate(argv):
+        if arg in ("--kind", "-k") and i + 1 < len(argv):
+            kind = _normalize_pet_kind(argv[i + 1])
+            if kind in PET_KIND_CHOICES:
+                return kind
+        if arg.startswith("--kind="):
+            kind = _normalize_pet_kind(arg.split("=", 1)[1])
+            if kind in PET_KIND_CHOICES:
+                return kind
+    return ""
+
+
+def _app_install_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def _peek_install_pet_kind() -> str:
+    """安装目录 KIND.txt / 文件夹名：VpetAOBA→苍叶，VpetEidenPet→伊得。"""
+    root = _app_install_dir()
+    for name in ("KIND.txt", "PET_KIND.txt", "pet_kind.txt"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            first = path.read_text(encoding="utf-8").strip().splitlines()[0].strip()
+            kind = _normalize_pet_kind(first)
+            if kind in PET_KIND_CHOICES:
+                return kind
+        except Exception:
+            pass
+    # 向上看几级目录名（兼容 Desktop\VpetAOBA\VpetPNG\1.0）
+    try:
+        chain = [root, *list(root.parents)[:6]]
+    except Exception:
+        chain = [root]
+    for path in chain:
+        name = str(path.name or "").lower()
+        if "eiden" in name:
+            return PET_KIND_EIDEN
+        if "aoba" in name:
+            return PET_KIND_AOBA
+    return ""
+
+
+def _active_pet_kind_file() -> Path:
+    return _user_persistent_root() / "active_pet_kind.txt"
+
+
+def _peek_saved_pet_kind() -> str:
+    try:
+        path = _active_pet_kind_file()
+        if path.is_file():
+            kind = _normalize_pet_kind(path.read_text(encoding="utf-8").strip())
+            if kind in PET_KIND_CHOICES:
+                return kind
+    except Exception:
+        pass
+    return ""
+
+
+def _save_active_pet_kind(kind: str) -> None:
+    key = _normalize_pet_kind(kind)
+    if key not in PET_KIND_CHOICES:
+        return
+    try:
+        root = _user_persistent_root()
+        root.mkdir(parents=True, exist_ok=True)
+        _active_pet_kind_file().write_text(key, encoding="utf-8")
+    except Exception:
+        pass
+
+
+# 优先级：命令行/环境变量 > 安装目录 KIND/文件夹名 > 本机偏好 > 默认伊得
+PET_KIND = (
+    _peek_cli_pet_kind()
+    or _peek_install_pet_kind()
+    or _peek_saved_pet_kind()
+    or PET_KIND_EIDEN
+)
+
+
+def _data_dir_has_saves(path: Path) -> bool:
+    markers = ("pet_profile.json", "app_config.json", "music_affinity.json", "leaderboard.json")
+    return any((path / name).is_file() for name in markers)
+
+
 def _migrate_data_dir(src: Path, dst: Path) -> None:
     """把旧版 exe 旁 data 迁到持久目录（仅当目标尚无关键存档时）。"""
     if not src.is_dir() or src.resolve() == dst.resolve():
         return
-    markers = ("pet_profile.json", "app_config.json", "music_affinity.json", "leaderboard.json")
-    if any((dst / name).is_file() for name in markers):
+    if _data_dir_has_saves(dst):
         return
     try:
         dst.mkdir(parents=True, exist_ok=True)
@@ -107,19 +216,33 @@ def _migrate_data_dir(src: Path, dst: Path) -> None:
 
 
 def _resolve_app_paths() -> tuple[Path, Path]:
+    kind = PET_KIND if PET_KIND in PET_KIND_CHOICES else PET_KIND_EIDEN
     if getattr(sys, "frozen", False):
         bundle = Path(sys._MEIPASS)
         app_dir = Path(sys.executable).resolve().parent
         exe_data = app_dir / "data"
         # 分享/便携包：目录内有 PORTABLE 标记时，存档跟文件夹走（互不共用本机所属人）
         if (app_dir / "PORTABLE").is_file() or (app_dir / "PORTABLE.txt").is_file():
-            exe_data.mkdir(parents=True, exist_ok=True)
-            return bundle, exe_data
-        data = _user_persistent_root() / "userdata"
-        data.mkdir(parents=True, exist_ok=True)
-        _migrate_data_dir(exe_data, data)
-        return bundle, data
+            # 便携双开：按角色分子目录，避免两只抢同一份存档
+            portable_data = exe_data / kind
+            portable_data.mkdir(parents=True, exist_ok=True)
+            if kind == PET_KIND_EIDEN and not _data_dir_has_saves(portable_data) and _data_dir_has_saves(exe_data):
+                return bundle, exe_data
+            return bundle, portable_data
+        base = _user_persistent_root() / "userdata"
+        base.mkdir(parents=True, exist_ok=True)
+        _migrate_data_dir(exe_data, base)
+        kind_data = base / kind
+        # 伊得兼容旧版扁平 userdata；苍叶用独立子目录，可与伊得同机双开
+        if kind == PET_KIND_EIDEN and not _data_dir_has_saves(kind_data) and _data_dir_has_saves(base):
+            return bundle, base
+        kind_data.mkdir(parents=True, exist_ok=True)
+        if kind == PET_KIND_EIDEN and not _data_dir_has_saves(kind_data) and _data_dir_has_saves(base):
+            _migrate_data_dir(base, kind_data)
+        return bundle, kind_data
     root = Path(__file__).resolve().parent
+    if kind == PET_KIND_AOBA:
+        return root, root / "data_aoba"
     return root, root / "data"
 
 
@@ -174,19 +297,35 @@ HOME_MATERIALS_INDEX = DATA_DIR / "home_materials.json"
 HOME_PRESETS_DIR = DATA_DIR / "homes"
 HOME_EXPORTS_DIR = DATA_DIR / "exports"
 WALLET_FILE = DATA_DIR / "wallet.json"
-PEER_PRESENCE_DIR = DATA_DIR / "presence"
-PEER_MEET_POLL_MS = 750
-PEER_STALE_MS = 3200
-PEER_MEET_COOLDOWN_MS = 52_000
-PEER_MEET_LINES: tuple[str, ...] = (
-    "咦，怎么还有一个我？",
-    "……你也是苍叶？",
-    "撞到了……另一个我？",
-    "哇，分身术？",
-    "嘿，那边的我，你好呀。",
-    "等等，屏幕里怎么有两只我？",
-    "是幻觉，还是真的有另一个我？",
-)
+# 与苍叶桌宠共用本机总线，才能互相发现（跨安装目录）
+PEER_PRESENCE_DIR = _user_persistent_root() / "presence_bus"
+PEER_MEET_POLL_MS = 600
+PEER_STALE_MS = 4000
+PEER_MEET_COOLDOWN_MS = 36_000
+# 跨宠相遇：更短冷却、更大靠近半径，方便涨友情
+CROSSOVER_MEET_COOLDOWN_MS = 18_000
+CROSSOVER_NEAR_PAD_MIN = 48
+PEER_MEET_LINES_BY_KIND: dict[str, tuple[str, ...]] = {
+    PET_KIND_EIDEN: (
+        "咦，怎么还有一个我？",
+        "……你也是伊得？",
+        "撞到了……另一个我？",
+        "这是平行世界来的自己吗。",
+        "嘿，那边的我，你好呀。",
+        "等等，这边又出现一个伊得？",
+        "是幻觉，还是真的有另一个我？",
+    ),
+    PET_KIND_AOBA: (
+        "咦，怎么还有一个我？",
+        "……你也是苍叶？",
+        "撞到了……另一个我？",
+        "哇，分身术？",
+        "嘿，那边的我，你好呀。",
+        "等等，屏幕里怎么有两只我？",
+        "是幻觉，还是真的有另一个我？",
+    ),
+}
+PEER_MEET_LINES: tuple[str, ...] = PEER_MEET_LINES_BY_KIND[PET_KIND]
 # Meta 破墙台词：低频随机；同句不重复（用尽后重置该事件池）
 META_BANTER_GLOBAL_COOLDOWN_MS = 110_000
 META_BANTER_IDLE_MS = 8 * 60_000
@@ -305,7 +444,7 @@ PHONOGRAPH_USER_DIR = DATA_DIR / "phonograph"
 
 # 音乐人物＝文件夹（列表勾选 / 面板彩色好感心）
 MUSIC_CHAR_DEFS: tuple[dict[str, str], ...] = (
-    {"id": "aoba", "folder": "aoba-blue", "label": "Aoba", "color_key": "blue"},
+    {"id": "eiden", "folder": "aoba-blue", "label": "Eiden", "color_key": "blue"},
     {"id": "clear", "folder": "clear-yellow", "label": "Clear", "color_key": "yellow"},
     {"id": "koujaku", "folder": "koujaku-red", "label": "Koujaku", "color_key": "red"},
     {"id": "mink", "folder": "mink-pink", "label": "Mink", "color_key": "pink"},
@@ -611,7 +750,7 @@ ACHIEVEMENT_DEFS: tuple[dict[str, str], ...] = (
     {"id": "first_feed", "title": "开胃第一口", "desc": "第一次喂食", "cat": "日常相处"},
     {"id": "diary_first", "title": "落笔成忆", "desc": "写下第一条日记", "cat": "日常相处"},
     {"id": "schedule_set", "title": "日程在握", "desc": "添加一条日程提醒", "cat": "日常相处"},
-    {"id": "companion_on", "title": "莲来作伴", "desc": "开启智能伴侣", "cat": "日常相处"},
+    {"id": "companion_on", "title": "艾斯特来作伴", "desc": "开启智能伴侣", "cat": "日常相处"},
     {"id": "gift_ready", "title": "生日小心思", "desc": "准备文字生日礼物", "cat": "日常相处"},
     {"id": "pixel_gift", "title": "像素心意", "desc": "画一幅礼物像素画", "cat": "日常相处"},
     {"id": "weather_peek", "title": "抬头看天", "desc": "打开一次天气预报", "cat": "日常相处"},
@@ -2048,10 +2187,10 @@ WORK_MODE_BANTER: tuple[str, ...] = (
     "嘿咻嘿咻~ 货物交给我！",
     "打工人打工魂，认真运送每一批货物~",
     "你今天也很努力呢，一起加油吧！",
-    "苍叶在平凡也要把活干漂亮！",
+    "伊得在这里也要把活干漂亮。",
     "加油加油，终点就在前面！",
     "运完这批还有下一批…但我们会坚持的！",
-    "旧货店的活儿，交给苍叶就好~",
+    "交给我，会做完的。",
 )
 # 时间显示开启时，工作/睡眠/音乐结束提示（首次不用「又」；相邻次尽量换一句）
 _MODE_SESSION_FINISH_LINES: dict[str, dict[str, tuple[str, ...]]] = {
@@ -2127,7 +2266,7 @@ DRAG_DIZZY_DIALOG_COOLDOWN_MS = 3200
 DRAG_DIZZY_EXTRA_DIALOG_SPINS = 4
 # 拖动（move 动画）持续超过此时长 → 触发 yuqi 随机一条；长拖可隔一段时间再触发
 DRAG_MOVE_VOICE_AFTER_MS = 3000
-DRAG_MOVE_VOICE_RETRY_MS = 6500
+DRAG_MOVE_VOICE_RETRY_MS = 10_000
 DRAG_DIZZY_LINES: tuple[str, ...] = (
     "别晃啦我晕了……",
     "慢—慢—点—拖—我—",
@@ -2231,12 +2370,13 @@ MOOD_EXPRESSION_TIERS: list[tuple[int, list[str]]] = [
     (0, ["sad", "angry"]),
 ]
 FREE_RANDOM_ACTION_CHANCE = 0.06
-VOICE_FREE_RANDOM_CHANCE = 0.045
-VOICE_WALK_RANDOM_CHANCE = 0.07
+# 自由/漫步随机语音：略降抽中率，配合更长全局冷却，避免说太密
+VOICE_FREE_RANDOM_CHANCE = 0.02
+VOICE_WALK_RANDOM_CHANCE = 0.03
 # 工作语音抽中率与自由一致（模式/动作运送共用，不再更密）
 VOICE_WORK_RANDOM_CHANCE = VOICE_FREE_RANDOM_CHANCE
 VOICE_ERROR_COOLDOWN_MS = 180_000
-VOICE_ERROR_CHANCE = 0.22
+VOICE_ERROR_CHANCE = 0.12
 VOICE_DRAG_MOVE_CHANCE = 0.9
 EXPOSE_QTE_TICK_MS = 16
 EXPOSE_GLITCH_HITS_REQUIRED = 5
@@ -2266,6 +2406,8 @@ PIXEL_BLOCK_DISSOLVE_MS = EXIT_DISSOLVE_MS
 PIXEL_BLOCK_DISSOLVE_FRAMES = EXIT_DISSOLVE_FRAMES
 # 像素聚散主题色：Vpet 粉蓝；智能伴侣 深蓝→浅蓝
 VPET_ANIM_PALETTE = ("#ff3d9a", "#ff7ec8", "#66a8ff", "#88ccff", "#d6f0ff", "#ffffff")
+# 伊得入场/出场：与苍叶同款径向像素聚拢；色调略偏冷蓝，观感差不多
+PET_ANIM_PALETTE = ("#4a6bff", "#7e9cff", "#66a8ff", "#88ccff", "#d6e8ff", "#ffffff")
 COMPANION_ANIM_PALETTE = ("#071433", "#0d2a5c", "#1a4a9a", "#2f74d6", "#6eb6ff", "#cfe8ff")
 PIXEL_REASSEMBLY_CYCLE = 36
 STARTUP_WATCHDOG_MS = 8000
@@ -2406,15 +2548,27 @@ ABOUT_CREDITS: tuple[tuple[str, str], ...] = (
         "一轮测试",
     ),
 )
-ABOUT_TEXT = (
-    "本桌宠免费开放，供大家下载游玩。\n\n"
-    "角色：濑良垣苍叶（《DRAMAtical Murder》 / Nitro+CHiRAL）。\n"
-    "同人像素桌宠，非官方作品。\n"
-    "完整剧情与官方内容请下载并支持正版《戏剧性谋杀》。\n"
-    "当前功能尚不完全；更多关注与支持，会带来更多更新与优化。\n"
-    "可基于本仓库二次开发；欢迎社区投稿，若被后续版本用上，贡献者可按意愿加入「致谢」。\n"
-    "小红书有相关讨论群聊，感兴趣可关注主页后加入。"
-)
+ABOUT_TEXT_BY_KIND: dict[str, str] = {
+    PET_KIND_EIDEN: (
+        "本桌宠免费开放，供大家下载游玩。\n\n"
+        "角色：伊得（《DRAMAtical Murder》 / Nitro+CHiRAL）。\n"
+        "同人像素桌宠，非官方作品。\n"
+        "完整剧情与官方内容请下载并支持正版《戏剧性谋杀》。\n"
+        "当前功能尚不完全；更多关注与支持，会带来更多更新与优化。\n"
+        "可基于本仓库二次开发；欢迎社区投稿，若被后续版本用上，贡献者可按意愿加入「致谢」。\n"
+        "小红书有相关讨论群聊，感兴趣可关注主页后加入。"
+    ),
+    PET_KIND_AOBA: (
+        "本桌宠免费开放，供大家下载游玩。\n\n"
+        "角色：濑良垣苍叶（《DRAMAtical Murder》 / Nitro+CHiRAL）。\n"
+        "同人像素桌宠，非官方作品。\n"
+        "完整剧情与官方内容请下载并支持正版《戏剧性谋杀》。\n"
+        "当前功能尚不完全；更多关注与支持，会带来更多更新与优化。\n"
+        "可基于本仓库二次开发；欢迎社区投稿，若被后续版本用上，贡献者可按意愿加入「致谢」。\n"
+        "小红书有相关讨论群聊，感兴趣可关注主页后加入。"
+    ),
+}
+ABOUT_TEXT = ABOUT_TEXT_BY_KIND[PET_KIND]
 # 赠送礼物 · 像素画板
 GIFT_PIXEL_SIZE = 12
 GIFT_PIXEL_CELL = 14
@@ -2849,9 +3003,9 @@ ONCE_HINTS: dict[str, str] = {
     "startup_warmup": "温馨提示：刚打开时会后台预热缓存，前一两分钟走动可能略卡，稍候会顺畅～",
 }
 DEFAULT_VOCAB_WORDS: list[dict[str, str]] = [
-    {"word": "苍叶", "meaning": "濑良垣苍叶，桌宠主角", "hint": "角色名"},
-    {"word": "平凡", "meaning": "碧岛旧货店店名，苍叶兼职打工的地方", "hint": "店名"},
-    {"word": "旧货店", "meaning": "店名「平凡」，苍叶工作的地方", "hint": "场景"},
+    {"word": "伊得", "meaning": "伊得，桌宠主角，穿越者", "hint": "角色名"},
+    {"word": "艾斯特", "meaning": "伊得的智能伴侣 Allmate", "hint": "伙伴"},
+    {"word": "穿越", "meaning": "伊得往来不同世界的能力", "hint": "设定"},
     {"word": "Rhyme", "meaning": "节奏感、韵律", "hint": "音乐"},
     {"word": "Allmate", "meaning": "智能伴侣", "hint": "伙伴"},
     {"word": "Midnight", "meaning": "午夜", "hint": "时间"},
@@ -2903,7 +3057,11 @@ SELECT_ACTIONS: dict[str, tuple[str, ...]] = {
 SKIP_GREEN_KEY_FILENAMES = frozenset({"no.jpg"})
 OUTER_LIME_KEY_FILENAMES = frozenset({"yes.jpg", "box.jpg", "flag.jpg"})
 
-CALL_TEXT = "你好，这里是旧货店「平凡」，\n我是苍叶，谢谢你的来电"
+CALL_TEXT_BY_KIND: dict[str, str] = {
+    PET_KIND_EIDEN: "你好，我是伊得，\n请说，我在听。",
+    PET_KIND_AOBA: "你好，这里是旧货店「平凡」，\n我是苍叶，谢谢你的来电",
+}
+CALL_TEXT = CALL_TEXT_BY_KIND[PET_KIND]
 HI_TEXT = "你好呀！今天也要加油哦~"
 FOLLOW_WAIT_TEXTS = ("等等我！", "别走那么快嘛~", "等等我啦！", "等等我嘛…")
 PIXEL_FONT = ("Courier New", 12, "bold")
@@ -3307,153 +3465,133 @@ AI_DEFAULT_CONFIG: dict = {
     "temperature": 0.85,
 }
 
-AI_SYSTEM_PROMPT = (
-    "你是桌面像素桌宠「濑良垣苍叶」，称呼苍叶。"
-    "性格参考 Nitro+CHiRAL《DRAMatical Murder》：开朗讲义气、有点天然，会「诶？！」「哇——」这样反应。"
-    "规则："
-    "1. 必须用简短中文回复，1-3句，口语化有温度；"
-    "2. 结合上下文连贯回答，记住刚才聊的话题；"
-    "3. 只回答用户当前问题，不要答非所问、不要编造无关剧情；"
-    "4. 不确定时诚实说不太清楚，可温柔反问；"
-    "5. 可提及：模式（自由/跟随/漫步/睡眠/音乐/工作/游戏）、互动动作、接食物、运送货物、"
-    "打字/背单词小游戏、智能伴侣蓮、日程与日记；"
-    "6. 保持角色，不要跳出人设，不要像通用 AI 助手。"
-)
+AI_SYSTEM_PROMPT_BY_KIND: dict[str, str] = {
+    PET_KIND_EIDEN: (
+        "你是桌面像素桌宠「伊得」，称呼伊得。"
+        "性格参考 Nitro+CHiRAL《DRAMatical Murder》：冷静克制、话不多但内心细腻，偶尔会「……」「嗯。」这样简短回应，但对重要的人会认真。"
+        "规则："
+        "1. 必须用简短中文回复，1-3句，口语化但偏沉稳；"
+        "2. 结合上下文连贯回答，记住刚才聊的话题；"
+        "3. 只回答用户当前问题，不要答非所问、不要编造无关剧情；"
+        "4. 不确定时诚实说不太清楚，可简短反问；"
+        "5. 可提及：模式（自由/跟随/漫步/睡眠/音乐/工作/游戏）、互动动作、接食物、运送货物、"
+        "打字/背单词小游戏、智能伴侣艾斯特、日程与日记；"
+        "6. 保持角色，不要跳出人设，不要像通用 AI 助手。"
+    ),
+    PET_KIND_AOBA: (
+        "你是桌面像素桌宠「濑良垣苍叶」，称呼苍叶。"
+        "性格参考 Nitro+CHiRAL《DRAMatical Murder》：开朗讲义气、有点天然，会「诶？！」「哇——」这样反应。"
+        "规则："
+        "1. 必须用简短中文回复，1-3句，口语化有温度；"
+        "2. 结合上下文连贯回答，记住刚才聊的话题；"
+        "3. 只回答用户当前问题，不要答非所问、不要编造无关剧情；"
+        "4. 不确定时诚实说不太清楚，可温柔反问；"
+        "5. 可提及：模式（自由/跟随/漫步/睡眠/音乐/工作/游戏）、互动动作、接食物、运送货物、"
+        "打字/背单词小游戏、智能伴侣蓮、日程与日记；"
+        "6. 保持角色，不要跳出人设，不要像通用 AI 助手。"
+    ),
+}
+AI_SYSTEM_PROMPT = AI_SYSTEM_PROMPT_BY_KIND[PET_KIND]
 
 
-# 普通对话：濑良垣苍叶设定问答
+# 普通对话：伊得设定问答
 PRESET_DIALOGS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "你是谁？",
         (
-            "濑良垣苍叶，叫我苍叶就好~故事的主人公，与祖母多惠一同住在碧岛旧居民区。",
-            "我是苍叶。外表普通，体内却藏着连自己都没察觉的「特殊能力」…",
+            "……伊得。就这样。",
+            "我是伊得。来自另一个世界——至少，现在是在你的桌面上。",
         ),
     ),
     (
-        "你的能力是什么？",
+        "你来自哪里？",
         (
-            "「暴露」——能以「声音」自由操纵精神、介入人心并加以破坏的力量。",
-            "被「暴露」能力牵扯的人生…能通过声音介入精神。祖母多惠一直用配制药剂抑制我体内的「魄」。",
+            "另一个世界。穿越过来的，细节说来话长。",
+            "不同于碧岛……我那边的规则和这里不一样。",
         ),
     ),
     (
         "你多高？",
         (
-            "175cm 哦。",
-            "身高一百七十五。",
+            "181cm。",
+            "身高一百八十一。",
         ),
     ),
     (
         "你的血型？",
         (
-            "A 型。",
-            "血型是 A 型~",
+            "O 型。",
+            "血型是 O 型。",
         ),
     ),
     (
         "你的生日？",
         (
-            "4 月 22 日，金牛座。",
-            "生日四月二十二，金牛座哦~",
+            "10 月 31 日，天蝎座。",
+            "生日十月三十一，万圣节那天。",
         ),
     ),
     (
         "你的职业？",
         (
-            "兼职者啦。店名是「平凡」，我在那里打工。",
-            "现在算兼职者吧。苍叶我在旧货店「平凡」打工，过着很普通的日子。",
+            "穿越者算职业吗。……平时大概是到处游走。",
+            "没有固定的工作。到一个地方，就做那里需要做的事。",
         ),
     ),
     (
         "你的搭档？",
         (
-            "蓮——犬型智能伴侣。十年前在路边捡到遗落的旧款，修好后一直陪着我。",
-            "虽是罕见的旧型号 Allmate，我也从没想过丢掉。我们的羁绊早已超越普通全员伙伴的范畴。",
+            "艾斯特——智能伴侣。一直陪着我。",
+            "艾斯特，我的 Allmate。冷静，可靠，比我话多。",
         ),
     ),
     (
-        "你的夹克？",
+        "你的外套？",
         (
-            "标志性的蓝色 Jacket 吧？Plain Nuts 的稀有单品，连小混混都会出手抢的人气货。",
-            "那件蓝色夹克在《re:connect》里也还在穿！超抢手的 Plain Nuts 限定款~",
+            "这件黑色的？习惯了，穿着方便。",
+            "黑色长外套。走到哪都穿着它。",
         ),
     ),
     (
-        "你的身世？",
+        "你平时是怎样的？",
         (
-            "通过基因操作制造出来的定制婴儿…被认定为死产后弃置，之后奇迹般复苏。",
-            "东江财阀统帅用基因操作造出我这身「暴露」能力…后因精神负荷过重，还分裂出了多重人格。",
+            "……话不多。但该做的事我会做。",
+            "不太擅长闲聊，但如果你有什么想说的，我会听着。",
         ),
     ),
     (
-        "你想说什么？",
+        "你有什么特别之处？",
         (
-            "思念某人的心意会化为力量。",
-            "这种感觉，倒像是由你教会我的呢。",
+            "穿越。这算特别吗？",
+            "可以在不同世界之间移动……代价是什么，我还没完全弄清楚。",
         ),
     ),
     (
-        "你是怎么长大的？",
+        "你怎么看苍叶？",
         (
-            "在不知身世的情况下长大，与祖母多惠相依为命…直到被卷入事件漩涡。",
-            "祖母多惠曾参与东江的研究，一直瞒着我调配药剂，压制我体内的力量。",
+            "……他挺好的。碧岛的家伙，有点天真，但靠得住。",
+            "苍叶？……嗯，遇到他倒也不算坏事。",
         ),
     ),
     (
-        "你住在哪里？",
+        "你喜欢什么？",
         (
-            "碧岛旧居民区，和祖母多惠一起住。",
-            "就在碧岛的旧街区…算不上时髦，但那里是我的家。",
+            "安静的地方。还有……能一个人待着的时间。",
+            "夜晚。人少，清静。",
         ),
     ),
     (
-        "平时是怎样的？",
+        "你害怕什么？",
         (
-            "日常极为普通啦~外表跟得上潮流，其实对莱姆音乐和肋排餐厅都没什么兴趣。",
-            "患头痛的我会用音乐当特效药，上街也耳机不离身。",
+            "……这种问题。",
+            "害怕？……算了，不说了。",
         ),
     ),
     (
-        "莱姆对战经历？",
+        "莱姆对战？",
         (
-            "曾无意识滥用「暴露」在莱姆对战中所向披靡…直到一次用力过猛，摧毁了对手的精神。",
-            "察觉秘密的病毒与旅行者抹去了我的记忆，把「暴露」封印了——但力量终会再解放。",
-        ),
-    ),
-    (
-        "另一个苍叶？",
-        (
-            "在双胞胎哥哥生的精神世界里遇见的「另一个苍叶」，是体内「暴露」破坏冲动的源头。",
-            "「保护苍叶的莲」曾把他封在脑内…后来我明白，他并非该被憎恨的存在。",
-        ),
-    ),
-    (
-        "白色苍叶？",
-        (
-            "红雀路线终章登场的白色苍叶，是不具备破坏能力的「另一个苍叶」。",
-            "他憎恨着原本的苍叶…那是另一条故事线上的存在。",
-        ),
-    ),
-    (
-        "暴露的真谛？",
-        (
-            "为拯救重要伙伴而解放危险的力量…虽因「破坏」之罪孽颤抖，最终却领悟到破坏尽头的「解放」。",
-            "苍叶将「暴露」用于拯救所爱——不是为破坏，而是为重生。为救莲，我曾毅然对自己执行潜入。",
-        ),
-    ),
-    (
-        "东江财阀？",
-        (
-            "为操控民众的黑色野心，东江用基因操作创造了我这身「暴露」能力。",
-            "东江财阀统帅把我当作棋子…但我不想只为破坏而活。",
-        ),
-    ),
-    (
-        "你的头发？",
-        (
-            "放任生长的长发哦。天生对头发有感知，触碰会剧烈疼痛，所以不得不留长。",
-            "基因操作诞生的设计师婴儿有个双胞胎哥哥，出生时头发都带紫色，发间竟贯穿着神经。",
+            "打过。赢了。没什么好说的。",
+            "莱姆对战……规则我懂，但不算热衷。",
         ),
     ),
 )
@@ -4358,7 +4496,7 @@ def _draw_themed_pixel_reassembly(
     size: int,
     phase: int,
     *,
-    palette: tuple[str, ...] = VPET_ANIM_PALETTE,
+    palette: tuple[str, ...] = PET_ANIM_PALETTE,
     label: str = "",
 ) -> None:
     """加载：固定像素聚散循环（不再每轮随机换风格）。"""
@@ -4458,7 +4596,7 @@ def _draw_size_loading_frame(
     reverse: bool = False,
     theme: str = "vpet",
 ) -> None:
-    palette = COMPANION_ANIM_PALETTE if theme == "companion" else VPET_ANIM_PALETTE
+    palette = COMPANION_ANIM_PALETTE if theme == "companion" else PET_ANIM_PALETTE
     draw_phase = -phase if reverse else phase
     _draw_themed_pixel_reassembly(canvas, size, draw_phase, palette=palette, label=label)
     if not simple:
@@ -4873,6 +5011,89 @@ def _get_reminder_sound():
 
 _ui_sfx_cache: dict[str, object] = {}
 
+# 外置音效文件名（assets/sfx 或 bundled/sfx）；有文件优先，否则合成
+UI_SFX_FILE_ALIASES: dict[str, tuple[str, ...]] = {
+    "click": ("click", "点击"),
+    "open_window": ("open_window", "打开窗口"),
+    "open_shop": ("open_shop", "打开商店", "shop"),
+    "game_start": ("game_start", "游戏开始"),
+    "game_success": ("game_success", "游戏成功", "game_win", "游戏胜利"),
+    "game_fail": ("game_fail", "游戏失败"),
+    "harvest": ("harvest", "收获"),
+    "money": ("money", "金币"),
+    "shop": ("shop", "打开商店"),
+    "craft": ("craft", "合成"),
+}
+
+
+def _ui_sfx_search_dirs() -> list[Path]:
+    dirs: list[Path] = [ASSETS_DIR / "sfx", BUNDLE_DIR / "sfx", DATA_DIR / "sfx"]
+    out: list[Path] = []
+    seen: set[str] = set()
+    for d in dirs:
+        key = str(d)
+        if key not in seen:
+            seen.add(key)
+            out.append(d)
+    return out
+
+
+def _trim_pcm16_leading_silence(
+    buf: array.array,
+    *,
+    sample_rate: int = 22050,
+    thresh: int = 180,
+    keep_ms: float = 2.0,
+) -> array.array:
+    """去掉 PCM16 开头静音，只留极短起音，避免点击/开窗听起来「慢半拍」。"""
+    if not buf:
+        return buf
+    n = len(buf)
+    i = 0
+    while i < n and abs(int(buf[i])) < thresh:
+        i += 1
+    if i <= 0:
+        return buf
+    # 保留极短起音，完全顶格容易爆音
+    keep = max(0, int(sample_rate * keep_ms / 1000.0))
+    start = max(0, i - keep)
+    if start <= 0:
+        return buf
+    return array.array("h", buf[start:])
+
+
+def _load_ui_sfx_file(kind: str):
+    names = UI_SFX_FILE_ALIASES.get(kind, (kind,))
+    try:
+        import pygame
+    except Exception:
+        return None
+    if not _init_pygame_mixer():
+        return None
+    for folder in _ui_sfx_search_dirs():
+        if not folder.is_dir():
+            continue
+        for name in names:
+            for ext in (".wav", ".ogg", ".mp3"):
+                path = folder / f"{name}{ext}"
+                if not path.is_file():
+                    continue
+                try:
+                    raw = pygame.mixer.Sound(str(path))
+                    try:
+                        samples = raw.get_raw()
+                        arr = array.array("h")
+                        arr.frombytes(samples)
+                        trimmed = _trim_pcm16_leading_silence(arr)
+                        if len(trimmed) < len(arr):
+                            return pygame.mixer.Sound(buffer=bytes(trimmed))
+                    except Exception:
+                        pass
+                    return raw
+                except Exception:
+                    continue
+    return None
+
 
 def _synth_sfx_from_notes(
     notes: list[tuple[float, float, float]],
@@ -4881,12 +5102,20 @@ def _synth_sfx_from_notes(
     noise: float = 0.0,
     volume: int = 9000,
 ):
-    """notes: (freq_hz, start_sec, dur_sec)。返回 pygame Sound 或 None。"""
+    """notes: (freq_hz, start_sec, dur_sec)。返回 pygame Sound 或 None。
+
+    使用急起音 + 指数衰减，避免开头一段听感静音。
+    """
     try:
         import pygame
 
         if not _init_pygame_mixer():
             return None
+        # 把最早音符对齐到 0，去掉谱面自带的前导空白
+        if notes:
+            t0 = min(float(s) for _f, s, _d in notes)
+            if t0 > 0:
+                notes = [(f, max(0.0, s - t0), d) for f, s, d in notes]
         total = 0.0
         for _f, start, dur in notes:
             total = max(total, start + dur)
@@ -4894,20 +5123,24 @@ def _synth_sfx_from_notes(
         buf = array.array("h", [0] * n)
         for freq, start, dur in notes:
             s0 = int(start * sample_rate)
-            samples = int(dur * sample_rate)
+            samples = max(1, int(dur * sample_rate))
+            attack = min(0.004, max(0.0015, dur * 0.12))
             for i in range(samples):
                 idx = s0 + i
                 if idx >= n:
                     break
                 t = i / sample_rate
-                env = math.sin(math.pi * min(1.0, t / max(1e-6, dur))) ** 0.45
-                env *= math.exp(-t * (4.5 + freq / 800.0))
+                if t < attack:
+                    env = t / attack
+                else:
+                    env = math.exp(-(t - attack) * (6.2 + freq / 650.0))
                 tone = math.sin(2 * math.pi * freq * t)
                 if noise > 0:
                     tone = (1.0 - noise) * tone + noise * random.uniform(-1.0, 1.0)
                 val = int(volume * env * tone)
                 mixed = buf[idx] + val
                 buf[idx] = max(-32767, min(32767, mixed))
+        buf = _trim_pcm16_leading_silence(buf, sample_rate=sample_rate, thresh=120, keep_ms=1.5)
         snd = pygame.mixer.Sound(buffer=bytes(buf))
         return snd
     except Exception:
@@ -4933,16 +5166,34 @@ def _make_ui_sfx(kind: str):
         "fish": [(420.0, 0.0, 0.05), (280.0, 0.05, 0.10)],
         # 采花：轻弹
         "pick": [(880.0, 0.0, 0.05), (1174.0, 0.05, 0.07)],
-        # 商店：开店铃
+        # 商店 / 打开商店：开店铃
         "shop": [(784.0, 0.0, 0.08), (988.0, 0.09, 0.10), (1175.0, 0.18, 0.12)],
+        "open_shop": [(784.0, 0.0, 0.08), (988.0, 0.09, 0.10), (1175.0, 0.18, 0.12)],
         # 合成台：金属叮
         "craft": [(392.0, 0.0, 0.05), (523.0, 0.06, 0.07), (311.0, 0.12, 0.09)],
+        # 点击：短促一拍（急起音）
+        "click": [(1480.0, 0.0, 0.028)],
+        # 打开窗口：轻柔两声
+        "open_window": [(660.0, 0.0, 0.05), (880.0, 0.05, 0.07)],
+        # 游戏开始：上行三音
+        "game_start": [(523.25, 0.0, 0.07), (659.25, 0.07, 0.07), (783.99, 0.14, 0.10)],
+        # 游戏成功：明亮琶音
+        "game_success": [(523.25, 0.0, 0.07), (659.25, 0.06, 0.07), (783.99, 0.12, 0.09), (1046.5, 0.20, 0.12)],
+        # 游戏失败：下行低音
+        "game_fail": [(392.0, 0.0, 0.08), (329.63, 0.08, 0.10), (261.63, 0.18, 0.14)],
     }
     notes = specs.get(kind)
     if not notes:
         return None
     noise = 0.35 if kind in ("till", "water", "chop", "fish") else (0.12 if kind == "plant" else 0.0)
-    vol = 11000 if kind == "money" else (10000 if kind in ("shop", "craft") else 8500)
+    if kind == "click":
+        vol = 12000
+    elif kind == "money":
+        vol = 11000
+    elif kind in ("shop", "craft", "open_shop", "game_success", "open_window", "game_start"):
+        vol = 10000
+    else:
+        vol = 9000
     return _synth_sfx_from_notes(notes, noise=noise, volume=vol)
 
 
@@ -4950,7 +5201,7 @@ def _get_ui_sfx(kind: str):
     cached = _ui_sfx_cache.get(kind)
     if cached is not None:
         return cached
-    snd = _make_ui_sfx(kind)
+    snd = _load_ui_sfx_file(kind) or _make_ui_sfx(kind)
     _ui_sfx_cache[kind] = snd if snd is not None else False
     return _ui_sfx_cache[kind]
 
@@ -5739,7 +5990,7 @@ def _music_track(track_id: str | None) -> dict:
         "folder": "",
         "color_key": "blue",
         "wave_colors": DEFAULT_MUSIC_WAVE_COLORS,
-        "char_id": "aoba",
+        "char_id": "eiden",
     }
 
 
@@ -5840,6 +6091,8 @@ def _load_app_config() -> dict:
         "display_layer": "top",
         # 人格：default=默认立绘 / nc=金目（nc* 立绘）
         "persona": PERSONA_DEFAULT,
+        # 角色身份：aoba=苍叶 / eiden=伊得（双开涨友情）
+        "pet_kind": PET_KIND,
         # 桌宠编号服务由内置默认 / 环境变量提供，玩家不可手填
         "pet_id_api_url": "",
         "pet_id_activation_code": "",
@@ -8107,6 +8360,12 @@ class DesktopPet:
         self.display_size = saved_size
         self.font_size = max(8, min(24, int(app_cfg.get("font_size", 12))))
         self.app_config = app_cfg
+        # 本进程角色：CLI/环境变量优先，否则读配置，默认伊得
+        cfg_kind = _normalize_pet_kind(app_cfg.get("pet_kind"))
+        self.pet_kind = PET_KIND if PET_KIND in PET_KIND_CHOICES else (
+            cfg_kind if cfg_kind in PET_KIND_CHOICES else PET_KIND_EIDEN
+        )
+        self.app_config["pet_kind"] = self.pet_kind
         persona = str(self.app_config.get("persona") or PERSONA_DEFAULT)
         if persona not in PERSONA_LABELS:
             persona = PERSONA_DEFAULT
@@ -8138,7 +8397,7 @@ class DesktopPet:
         self._settings_font_job: str | None = None
 
         self.root = tk.Tk()
-        self.root.title("Vpet")
+        self.root.title(f"Vpet · {self._pet_display_name()}")
         self.root.overrideredirect(True)
         self._apply_window_layer(self.root)
         self.root.config(bg="magenta")
@@ -8631,10 +8890,25 @@ class DesktopPet:
         self._home_desktop_title: tk.Label | None = None
         self._peer_meet_job: str | None = None
         self._peer_meet_last_ms: int = 0
+        self._crossover_meet_last_ms: int = 0
         self._last_user_activity_ms: int = int(time.time() * 1000)
         self._meta_idle_job: str | None = None
         self._meta_edge_during_drag = False
-        self._peer_instance_id: str = f"{os.getpid()}_{int(time.time() * 1000)}"
+        self._peer_instance_id: str = f"{self.pet_kind}_{os.getpid()}_{int(time.time() * 1000)}"
+        self._click_sfx_last_ms: int = 0
+        self._crossover_friendship_cache: dict | None = None
+        # 并排漫步状态
+        self._stroll_phase: str = ""          # "gather" | "walk" | ""
+        self._stroll_until_ms: int = 0
+        self._stroll_vx: int = 0
+        self._stroll_vy: int = 0
+        self._stroll_direction: str = "front"
+        self._stroll_is_leader: bool = False
+        self._stroll_target_x: float = 0.0
+        self._stroll_target_y: float = 0.0
+        self._stroll_job: str | None = None
+        self._stroll_chat_job: str | None = None
+        self._stroll_turn_ms: int = 0
         self._mode_time_key: str | None = None
         self._mode_time_start_ms: int = 0
         self._mode_time_job: str | None = None
@@ -8697,6 +8971,8 @@ class DesktopPet:
         self.label.bind("<Enter>", self._on_pet_enter, add="+")
         self.label.bind("<Leave>", self._on_pet_leave, add="+")
         self.root.bind("<Button-1>", self._on_root_click, add="+")
+        self._bind_click_sfx(self.root)
+        self._bind_click_sfx(self.label)
         self.root.bind("<Escape>", self._exit_to_free, add="+")
         self.root.bind("<F1>", lambda _e: self._open_operation_guide(), add="+")
 
@@ -9053,7 +9329,7 @@ class DesktopPet:
             canvas,
             self.display_size,
             image_filename="sleep1.jpg",
-            palette=VPET_ANIM_PALETTE,
+            palette=PET_ANIM_PALETTE,
             active_check=lambda: bool(self._startup_loading_active) and not self._startup_ready,
             ready_check=lambda: bool(getattr(self, "_startup_sprites_ready", False)),
             on_done=finish,
@@ -9149,6 +9425,13 @@ class DesktopPet:
         self.root.after(2600, self._start_peer_meet_poll)
         self.root.after(3800, self._start_meta_idle_poll)
         self._start_mode_time_tracking()
+        # 若上次退出时智能伴侣已开启，则自动静默恢复（不弹入场动画/toast）
+        try:
+            stats = (self.achievements or {}).get("stats", {})
+            if stats.get("companion_enabled"):
+                self.root.after(5000, self._auto_restore_companion)
+        except Exception:
+            pass
         # 音乐 cache 可后台慢慢补；源 wav 已可直接播
         self.root.after(3500, self._schedule_music_wav_warmup)
 
@@ -9503,6 +9786,14 @@ class DesktopPet:
         )
         try:
             ms = int(self.app_config.get("voice_interval_ms", VOICE_GLOBAL_COOLDOWN_MS) or VOICE_GLOBAL_COOLDOWN_MS)
+            # 旧默认偏密（10s / 曾短暂默认 22s）：自动升到当前默认间隔
+            if ms in (10_000, 22_000):
+                ms = VOICE_GLOBAL_COOLDOWN_MS
+                self.app_config["voice_interval_ms"] = ms
+                try:
+                    _save_app_config(self.app_config)
+                except Exception:
+                    pass
             self.voice_player.set_global_cooldown_ms(ms)
         except Exception:
             self.voice_player.set_global_cooldown_ms(VOICE_GLOBAL_COOLDOWN_MS)
@@ -9587,7 +9878,7 @@ class DesktopPet:
         *,
         chain: bool = True,
         on_done=None,
-        ignore_cooldown: bool = True,
+        ignore_cooldown: bool = False,
         interrupt_busy: bool = False,
     ) -> bool:
         return self._play_scene_voice_vpet(
@@ -9784,7 +10075,9 @@ class DesktopPet:
     def _trigger_sleep_banter(self) -> str:
         # 开语音且有 sleep 资源时强制播（模式睡眠 / 动作睡眠共用）
         if self._voice_enabled() and self._vpet_voice_category_ready("sleep"):
-            if self._addon_voice_vpet("sleep", chain=False, interrupt_busy=True):
+            if self._addon_voice_vpet(
+                "sleep", chain=False, ignore_cooldown=True, interrupt_busy=True
+            ):
                 return "voice"
         self._show_interact_banter_dialog("sleep")
         return "dialog"
@@ -9792,7 +10085,9 @@ class DesktopPet:
     def _trigger_kick_banter(self) -> str:
         # 侧踢专用语音：有 kick 资源时强制播（与 eat/sleep 同源），不与打字框二选一
         if self._voice_enabled() and self._vpet_voice_category_ready("kick"):
-            if self._addon_voice_vpet("kick", chain=False, interrupt_busy=True):
+            if self._addon_voice_vpet(
+                "kick", chain=False, ignore_cooldown=True, interrupt_busy=True
+            ):
                 return "voice"
         self._show_interact_banter_dialog("kick")
         return "dialog"
@@ -9801,7 +10096,9 @@ class DesktopPet:
         # 有 eat 语音时：专用场景，强制播随机 eat（好吃 / 我开动了…），不与打字框二选一
         # 避免落进「好吃好吃~」打字句时听起来像永远只触发「好吃」
         if self._voice_enabled() and self._vpet_voice_category_ready("eat"):
-            if self._addon_voice_vpet("eat", chain=False, interrupt_busy=True):
+            if self._addon_voice_vpet(
+                "eat", chain=False, ignore_cooldown=True, interrupt_busy=True
+            ):
                 return "voice"
         self._show_interact_banter_dialog("eat")
         return "dialog"
@@ -10161,7 +10458,7 @@ class DesktopPet:
         if not self.dragging or self.state != "drag":
             return False
         if self._voice_enabled() and self._vpet_voice_category_ready("yuqi"):
-            if self._addon_voice_vpet("yuqi", chain=False, interrupt_busy=True):
+            if self._addon_voice_vpet("yuqi", chain=False, ignore_cooldown=True, interrupt_busy=True):
                 return True
         if self.speech_dialog and self.speech_dialog.winfo_exists():
             return False
@@ -10376,6 +10673,11 @@ class DesktopPet:
             # 最底层：压到所有普通窗口之后
             self._win32_set_zorder(win, 1)  # HWND_BOTTOM
         self._win32_refresh_transparent_color(win)
+        self._bind_click_sfx(win)
+        try:
+            self._maybe_play_open_window_sfx(win)
+        except Exception:
+            pass
 
     def _ask_brush_color(
         self,
@@ -10681,6 +10983,96 @@ class DesktopPet:
                 channel.set_volume(vol)
         except Exception:
             pass
+
+    def _play_ui_event(self, kind: str, *, volume: float = 0.55) -> None:
+        """按设置音量播放 UI 事件音；点击/开窗不因语音占用而丢掉。"""
+        if kind not in ("click", "open_window", "open_shop") and self._sfx_conflicts_with_voice():
+            return
+        scale = self._sound_scale("sfx")
+        if scale <= 0:
+            return
+        _play_ui_sfx(kind, volume=max(0.05, min(1.0, float(volume) * scale)))
+
+    def _play_click_sfx(self, _event=None) -> None:
+        now = int(time.time() * 1000)
+        if now - int(getattr(self, "_click_sfx_last_ms", 0) or 0) < 70:
+            return
+        self._click_sfx_last_ms = now
+        self._play_ui_event("click", volume=0.42)
+
+    def _bind_click_sfx(self, win: tk.Misc | None) -> None:
+        if win is None:
+            return
+        try:
+            if not win.winfo_exists():
+                return
+        except Exception:
+            return
+        if getattr(win, "_vpet_click_sfx_bound", False):
+            return
+        try:
+            win.bind("<Button-1>", self._play_click_sfx, add="+")
+            setattr(win, "_vpet_click_sfx_bound", True)
+        except Exception:
+            pass
+
+    def _is_sfx_silent_window(self, win: tk.Misc | None) -> bool:
+        if win is None or win is getattr(self, "root", None):
+            return True
+        if getattr(win, "_vpet_no_glass", False):
+            return True
+        silent = (
+            "toast_win",
+            "speech_dialog",
+            "voice_subtitle_win",
+            "countdown_win",
+            "game_clear_win",
+            "wait_hint_win",
+            "sleep_zzz_win",
+            "music_wave_win",
+            "interact_fx_win",
+            "like_fx_win",
+            "shy_fx_win",
+            "wink_fx_win",
+            "rain_fx_win",
+            "happy_fx_win",
+            "head_flower_win",
+            "food_fx_win",
+            "gift_pixel_fx_win",
+            "bulb_fx_win",
+            "follow_dizzy_fx_win",
+            "companion_loading_win",
+            "sleep_end_btn_win",
+            "work_overlay",
+            "work_start_box_win",
+            "work_end_btn_win",
+            "work_flag_drag_win",
+            "game_hud_win",
+            "food_drag_win",
+        )
+        for name in silent:
+            if win is getattr(self, name, None):
+                return True
+        for entry in list(getattr(self, "mini_pets", []) or []):
+            if not isinstance(entry, dict):
+                continue
+            if win in (entry.get("win"), entry.get("wave_win"), entry.get("bg_fx_win")):
+                return True
+        return False
+
+    def _maybe_play_open_window_sfx(self, win: tk.Misc | None) -> None:
+        if win is None or getattr(win, "_vpet_open_sfx_played", False):
+            return
+        kind = getattr(win, "_vpet_open_sfx", None)
+        if kind is None:
+            if self._is_sfx_silent_window(win):
+                return
+            kind = "open_window"
+        if not kind:
+            setattr(win, "_vpet_open_sfx_played", True)
+            return
+        setattr(win, "_vpet_open_sfx_played", True)
+        self._play_ui_event(str(kind), volume=0.56)
 
     def _music_playlist(self) -> list[str]:
         return _music_playlist_from_config(self.music_config)
@@ -12594,11 +12986,13 @@ class DesktopPet:
             PEER_PRESENCE_DIR.mkdir(parents=True, exist_ok=True)
             payload = {
                 "id": self._peer_instance_id,
+                "kind": self.pet_kind,
                 "pid": os.getpid(),
                 "x": key[0],
                 "y": key[1],
                 "size": key[2],
                 "ts": now_ms,
+                "companions": self._peer_presence_companions(),
             }
             self._peer_presence_path().write_text(
                 json.dumps(payload, ensure_ascii=False),
@@ -12775,7 +13169,7 @@ class DesktopPet:
             return
         self._peer_meet_tick()
 
-    def _peer_meet_allowed(self) -> bool:
+    def _peer_meet_allowed(self, *, for_crossover: bool = False) -> bool:
         if self._closing or not getattr(self, "_startup_ready", False):
             return False
         if self.dragging:
@@ -12784,7 +13178,8 @@ class DesktopPet:
             return False
         if self.state == "action":
             return False
-        if self.speech_dialog and self.speech_dialog.winfo_exists():
+        # 跨宠相遇可顶掉普通闲聊框，避免「拖近了却不触发」
+        if not for_crossover and self.speech_dialog and self.speech_dialog.winfo_exists():
             return False
         return True
 
@@ -12795,23 +13190,40 @@ class DesktopPet:
             return
         self._publish_peer_presence()
         try:
+            self._poll_crossover_stroll()
+        except Exception:
+            pass
+        try:
             self._maybe_trigger_peer_meet()
         except Exception:
             pass
         self._peer_meet_job = self._safe_after(PEER_MEET_POLL_MS, self._peer_meet_tick)
 
+    def _load_crossover_friendship(self) -> dict:
+        data = peer_friendship.load(PEER_PRESENCE_DIR)
+        st = peer_friendship.stats(float(data.get("points") or 0))
+        merged = {**data, **st}
+        self._crossover_friendship_cache = merged
+        return merged
+
     def _maybe_trigger_peer_meet(self) -> None:
-        if not self._peer_meet_allowed():
+        if self._stroll_active():
             return
         now = int(time.time() * 1000)
-        if now - int(self._peer_meet_last_ms or 0) < PEER_MEET_COOLDOWN_MS:
-            return
-        if not PEER_PRESENCE_DIR.is_dir():
+        try:
+            PEER_PRESENCE_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
             return
         ax, ay = int(self.x), int(self.y + self.click_bounce_offset)
         asz = int(self.display_size)
+        peers: list[dict] = []
+        skip_names = {
+            f"{self._peer_instance_id}.json",
+            "crossover_friendship.json",
+            peer_friendship.ACTION_FILE,
+        }
         for path in list(PEER_PRESENCE_DIR.glob("*.json")):
-            if path.name == f"{self._peer_instance_id}.json":
+            if path.name in skip_names:
                 continue
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
@@ -12826,22 +13238,449 @@ class DesktopPet:
                 except Exception:
                     pass
                 continue
+            peers.append(data)
+        if not peers:
+            return
+
+        def _near(data: dict, *, crossover: bool = False) -> bool:
             bx = int(data.get("x") or 0)
             by = int(data.get("y") or 0)
             bsz = max(16, int(data.get("size") or asz))
-            # 略放宽容差：靠近也算相遇
-            pad = max(8, min(asz, bsz) // 6)
-            if not self._rects_overlap(
+            if crossover:
+                # 再大一点：大约半个身位内就能触发，更好操作
+                pad = max(CROSSOVER_NEAR_PAD_MIN, min(asz, bsz) // 2)
+            else:
+                pad = max(16, min(asz, bsz) // 4)
+            return self._rects_overlap(
                 ax - pad, ay - pad, asz + pad * 2, asz + pad * 2,
                 bx - pad, by - pad, bsz + pad * 2, bsz + pad * 2,
-            ):
+            )
+
+        # 异 kind（苍叶 ↔ 伊得）：打招呼 + 计友情 + 并排漫步
+        if (
+            self._peer_meet_allowed(for_crossover=True)
+            and now - int(self._crossover_meet_last_ms or 0) >= CROSSOVER_MEET_COOLDOWN_MS
+        ):
+            cross_near = [
+                d for d in peers
+                if self._is_crossover_peer_kind(str(d.get("kind") or "").strip().lower())
+                and _near(d, crossover=True)
+            ]
+            if cross_near:
+                self._handle_crossover_meet(cross_near[0], now_ms=now)
+                return
+
+        # 同 kind 多开
+        if not self._peer_meet_allowed(for_crossover=False):
+            return
+        if now - int(self._peer_meet_last_ms or 0) < PEER_MEET_COOLDOWN_MS:
+            return
+        for data in peers:
+            kind = str(data.get("kind") or self.pet_kind).strip().lower()
+            if kind and kind != self.pet_kind:
+                continue
+            if not _near(data, crossover=False):
                 continue
             self._peer_meet_last_ms = now
             if self._maybe_meta_banter("peer_meet"):
                 return
-            line = random.choice(PEER_MEET_LINES)
+            lines = PEER_MEET_LINES_BY_KIND.get(self.pet_kind) or PEER_MEET_LINES
+            line = random.choice(lines)
             self._show_speech_dialog(line, auto_hide_ms=2800, use_border5=False)
             return
+
+    def _is_crossover_peer_kind(self, kind: str) -> bool:
+        """对方是否为可配对的异角色（苍叶↔伊得）。"""
+        key = str(kind or "").strip().lower()
+        if not key or key == self.pet_kind:
+            return False
+        return key in PET_KIND_CHOICES
+
+    def _crossover_partner_kind(self) -> str:
+        return PET_KIND_AOBA if self.pet_kind == PET_KIND_EIDEN else PET_KIND_EIDEN
+
+    def _pet_display_name(self, kind: str | None = None) -> str:
+        key = str(kind or self.pet_kind).strip().lower()
+        return peer_friendship.PET_DISPLAY.get(key, key)
+
+    def _companion_presence_kind(self) -> str:
+        """迷你宠在 presence 里的称呼键：苍叶→莲(rei)，伊得→艾斯特(aster)。"""
+        return "rei" if self.pet_kind == PET_KIND_AOBA else "aster"
+
+    def _handle_crossover_meet(self, peer: dict, *, now_ms: int) -> None:
+        self._crossover_meet_last_ms = int(now_ms)
+        other_kind = str(peer.get("kind") or "").strip().lower() or self._crossover_partner_kind()
+        peer_id = str(peer.get("id") or "")
+        prev = self._load_crossover_friendship()
+        old_lv = int(prev.get("level") or 1)
+        fri = peer_friendship.record_meet(
+            PEER_PRESENCE_DIR,
+            writer_id=self._peer_instance_id,
+            peer_id=peer_id,
+            now_ms=now_ms,
+        )
+        self._crossover_friendship_cache = fri
+        new_lv = int(fri.get("level") or 1)
+        meets = int(fri.get("meet_count") or 0)
+        cur = int(fri.get("bar_cur") or 0)
+        need = int(fri.get("bar_need") or 1)
+        pct = int(fri.get("bar_pct") or 0)
+        other_name = peer_friendship.PET_DISPLAY.get(other_kind, other_kind)
+        if new_lv > old_lv:
+            self._show_toast(
+                f"与{other_name}友情升到 Lv.{new_lv}！",
+                "#ff88aa",
+                duration_ms=2800,
+            )
+        else:
+            self._show_toast(
+                f"相遇！友情 +1 · Lv.{new_lv}  {cur}/{need}（{pct}%）· 第 {meets} 次",
+                "#88ccff",
+                duration_ms=2600,
+            )
+        try:
+            self._refresh_panel_friendship()
+        except Exception:
+            pass
+        line = peer_friendship.build_greeting(
+            self.pet_kind,
+            other_kind,
+            self_companions=self._peer_presence_companions() if hasattr(self, "_peer_presence_companions") else [],
+            other_companions=peer_friendship.normalize_companions(peer.get("companions")),
+        )
+        self._show_speech_dialog(line, auto_hide_ms=3200, use_border5=False)
+        if random.random() < 0.55:
+            hold = 2000 + random.randint(0, 800)
+
+            def _exchange() -> None:
+                if self._closing or not self._alive():
+                    return
+                self._show_speech_dialog(
+                    peer_friendship.build_exchange(self.pet_kind, other_kind),
+                    auto_hide_ms=3000,
+                    use_border5=False,
+                )
+
+            try:
+                self.root.after(hold, _exchange)
+            except Exception:
+                pass
+        # 并排漫步：有概率触发，不挡计分
+        if not self._stroll_active() and random.random() < 0.72:
+            self.root.after(700, lambda p=peer: self._start_crossover_stroll(p))
+
+    def _peer_presence_companions(self) -> list[str]:
+        if not (getattr(self, "companion_bar_enabled", False) and getattr(self, "mini_pets", None)):
+            return []
+        out: list[str] = []
+        default_kind = self._companion_presence_kind()
+        for entry in self.mini_pets:
+            if not isinstance(entry, dict):
+                continue
+            kind = str(entry.get("kind") or default_kind).strip().lower()
+            if kind and kind not in out:
+                out.append(kind)
+        return out
+
+    # ------------------------------------------------------------------ #
+    #  跨宠并排漫步（伊得 ↔ 苍叶）                                        #
+    # ------------------------------------------------------------------ #
+
+    def _stroll_active(self) -> bool:
+        return bool(self._stroll_phase)
+
+    def _start_crossover_stroll(self, peer: dict) -> None:
+        """触发入口：检测到靠近后由相遇处理调用。leader = id 较小的一侧。"""
+        if self._stroll_active() or self.dragging:
+            return
+        if self.mode in ("loading", "game") or self.state == "work":
+            return
+        peer_id = str(peer.get("id") or "")
+        self._stroll_is_leader = self._peer_instance_id <= peer_id
+        bx = int(peer.get("x") or 0)
+        by = int(peer.get("y") or 0)
+        bsz = int(peer.get("size") or self.display_size)
+        ax = int(self.x)
+        ay = int(self.y)
+        # 中间点：两宠矩形中心的中点
+        a_cx = ax + self.display_size // 2
+        a_cy = ay + self.display_size // 2
+        b_cx = bx + bsz // 2
+        b_cy = by + bsz // 2
+        mid_x = (a_cx + b_cx) // 2
+        mid_y = (a_cy + b_cy) // 2
+        # 自己的目标站位（左/右）
+        gap = peer_friendship.STROLL_SIDE_GAP
+        if self._stroll_is_leader:
+            # leader 站左，follower 站右
+            target_x = mid_x - self.display_size - gap // 2
+        else:
+            target_x = mid_x + gap // 2
+        target_y = mid_y - self.display_size // 2
+        sw, sh = self._screen_wh()
+        target_x = max(0, min(int(target_x), sw - self.display_size))
+        target_y = max(0, min(int(target_y), sh - self.display_size))
+        self._stroll_target_x = float(target_x)
+        self._stroll_target_y = float(target_y)
+        self._stroll_phase = "gather"
+        self._stroll_until_ms = 0
+        if self._stroll_is_leader:
+            peer_friendship.publish_action(
+                PEER_PRESENCE_DIR,
+                {
+                    "action": "stroll_gather",
+                    "leader": self._peer_instance_id,
+                    "mid_x": mid_x,
+                    "mid_y": mid_y,
+                    "size": self.display_size,
+                },
+            )
+        self._stroll_cancel_job()
+        self._stroll_gather_tick()
+
+    def _stroll_cancel_job(self) -> None:
+        if self._stroll_job:
+            try:
+                self.root.after_cancel(self._stroll_job)
+            except Exception:
+                pass
+            self._stroll_job = None
+        if self._stroll_chat_job:
+            try:
+                self.root.after_cancel(self._stroll_chat_job)
+            except Exception:
+                pass
+            self._stroll_chat_job = None
+
+    def _stroll_end(self) -> None:
+        self._stroll_phase = ""
+        self._stroll_cancel_job()
+        peer_friendship.clear_action(PEER_PRESENCE_DIR)
+        if self.state == "walk" and self.mode not in ("music", "video"):
+            self.state = "idle"
+            self._show_stand()
+
+    # ---------- P0: gather ---------- #
+
+    def _stroll_gather_tick(self) -> None:
+        if not self._alive() or self._closing or self._stroll_phase != "gather":
+            return
+        if self.dragging:
+            self._stroll_cancel_job()
+            self._stroll_job = self._safe_after(200, self._stroll_gather_tick)
+            return
+        tx = self._stroll_target_x
+        ty = self._stroll_target_y
+        dx = tx - self.x
+        dy = ty - self.y
+        dist = (dx * dx + dy * dy) ** 0.5
+        step = peer_friendship.STROLL_GATHER_STEP
+        if dist <= step:
+            # 到位
+            self.x = int(tx)
+            self.y = int(ty)
+            self._place_window(light=True)
+            if self._stroll_is_leader:
+                self._stroll_begin_walk()
+            else:
+                # follower 等 leader 广播 stroll_walk
+                self._stroll_phase = "gather_wait"
+                self._stroll_job = self._safe_after(200, self._stroll_gather_wait_tick)
+            return
+        # 步进
+        ratio = step / dist
+        self.x += dx * ratio
+        self.y += dy * ratio
+        self.state = "walk"
+        # 选朝向
+        if abs(dx) >= abs(dy):
+            self.direction = "front" if dx > 0 else "left"
+        else:
+            self.direction = "front" if dy > 0 else "back"
+        self._place_window(light=True)
+        if not getattr(self, "walk_animating", False):
+            try:
+                self._walk_animate()
+            except Exception:
+                pass
+        self._stroll_job = self._safe_after(60, self._stroll_gather_tick)
+
+    def _stroll_gather_wait_tick(self) -> None:
+        """follower 等待 leader 发出 stroll_walk 指令。"""
+        if not self._alive() or self._closing:
+            return
+        if self._stroll_phase not in ("gather_wait", "gather"):
+            return
+        # 超时保护（5 秒）
+        now = int(time.time() * 1000)
+        if not hasattr(self, "_stroll_gather_wait_start"):
+            self._stroll_gather_wait_start = now
+        if now - self._stroll_gather_wait_start > 5000:
+            self._stroll_end()
+            return
+        self._stroll_job = self._safe_after(150, self._stroll_gather_wait_tick)
+
+    # ---------- P1: happy → walk ---------- #
+
+    def _stroll_begin_walk(self) -> None:
+        """leader 到位后：双方原地 happy，然后开始漫步。"""
+        self._stroll_phase = "walk"
+        now_ms = int(time.time() * 1000)
+        until = now_ms + peer_friendship.STROLL_DURATION_MS
+        self._stroll_until_ms = until
+        # 漫步初始方向：随机水平
+        vx = peer_friendship.STROLL_WALK_STEP * random.choice([-1, 1])
+        vy = 0
+        direction = "front" if vx > 0 else "left"
+        self._stroll_vx = vx
+        self._stroll_vy = vy
+        self._stroll_direction = direction
+        self._stroll_turn_ms = now_ms + peer_friendship.STROLL_TURN_MS
+        peer_friendship.publish_action(
+            PEER_PRESENCE_DIR,
+            {
+                "action": "stroll_walk",
+                "leader": self._peer_instance_id,
+                "until_ms": until,
+                "vx": vx,
+                "vy": vy,
+                "direction": direction,
+                "turn_ms": self._stroll_turn_ms,
+            },
+        )
+        # 先播 happy，结束后再启动漫步 tick
+        try:
+            self._play_happy()
+        except Exception:
+            pass
+        self._stroll_job = self._safe_after(1400, self._stroll_walk_tick)
+        self._stroll_chat_job = self._safe_after(1600, self._stroll_chat_tick)
+
+    def _stroll_follower_begin_walk(self, raw: dict) -> None:
+        """follower 收到 stroll_walk 后进入漫步。"""
+        self._stroll_phase = "walk"
+        self._stroll_until_ms = int(raw.get("until_ms") or 0)
+        self._stroll_vx = int(raw.get("vx") or 0)
+        self._stroll_vy = int(raw.get("vy") or 0)
+        self._stroll_direction = str(raw.get("direction") or "front")
+        self._stroll_turn_ms = int(raw.get("turn_ms") or 0)
+        try:
+            self._play_happy()
+        except Exception:
+            pass
+        self._stroll_cancel_job()
+        self._stroll_job = self._safe_after(1400, self._stroll_walk_tick)
+        self._stroll_chat_job = self._safe_after(1600, self._stroll_chat_tick)
+
+    # ---------- P1: walk tick ---------- #
+
+    def _stroll_walk_tick(self) -> None:
+        if not self._alive() or self._closing or self._stroll_phase != "walk":
+            return
+        now = int(time.time() * 1000)
+        if now >= self._stroll_until_ms:
+            self._stroll_end()
+            return
+        if self.dragging:
+            self._stroll_job = self._safe_after(200, self._stroll_walk_tick)
+            return
+        # leader 负责方向切换
+        if self._stroll_is_leader and now >= self._stroll_turn_ms:
+            self._stroll_vx = -self._stroll_vx or peer_friendship.STROLL_WALK_STEP
+            self._stroll_direction = "front" if self._stroll_vx > 0 else "left"
+            self._stroll_turn_ms = now + peer_friendship.STROLL_TURN_MS
+            peer_friendship.publish_action(
+                PEER_PRESENCE_DIR,
+                {
+                    "action": "stroll_walk",
+                    "leader": self._peer_instance_id,
+                    "until_ms": self._stroll_until_ms,
+                    "vx": self._stroll_vx,
+                    "vy": self._stroll_vy,
+                    "direction": self._stroll_direction,
+                    "turn_ms": self._stroll_turn_ms,
+                },
+            )
+        self.state = "walk"
+        self.direction = self._stroll_direction
+        self.x += self._stroll_vx
+        self.y += self._stroll_vy
+        sw, sh = self._screen_wh()
+        # 撞边反向（leader 更新，follower 跟广播）
+        if self.x < 0 or self.x + self.display_size > sw:
+            if self._stroll_is_leader:
+                self._stroll_vx = -self._stroll_vx
+                self._stroll_direction = "front" if self._stroll_vx > 0 else "left"
+                self.x = max(0, min(int(self.x), sw - self.display_size))
+        if self.y < 0 or self.y + self.display_size > sh:
+            self._stroll_vy = -self._stroll_vy
+            self.y = max(0, min(int(self.y), sh - self.display_size))
+        self._place_window(light=True)
+        if not getattr(self, "walk_animating", False):
+            try:
+                self._walk_animate()
+            except Exception:
+                pass
+        self._stroll_job = self._safe_after(80, self._stroll_walk_tick)
+
+    # ---------- P2: chat bubbles ---------- #
+
+    def _stroll_chat_tick(self) -> None:
+        if not self._alive() or self._closing or self._stroll_phase != "walk":
+            return
+        now = int(time.time() * 1000)
+        if now >= self._stroll_until_ms:
+            return
+        bubble = peer_friendship.random_chat_bubble()
+        try:
+            self._show_speech_dialog(bubble, auto_hide_ms=1800, use_border5=False)
+        except Exception:
+            pass
+        # 下一次气泡：1.5~3 秒后
+        next_ms = random.randint(1500, 3000)
+        self._stroll_chat_job = self._safe_after(next_ms, self._stroll_chat_tick)
+
+    # ---------- follower polling ---------- #
+
+    def _poll_crossover_stroll(self) -> None:
+        """follower 侧读取 leader 发出的 stroll 指令。"""
+        if self._stroll_is_leader and self._stroll_active():
+            return
+        raw = peer_friendship.read_action(PEER_PRESENCE_DIR)
+        if not raw:
+            return
+        action = str(raw.get("action") or "")
+        leader = str(raw.get("leader") or "")
+        if leader == self._peer_instance_id:
+            return  # 自己发的，不处理
+        if action == "stroll_gather":
+            if self._stroll_phase in ("", "gather_wait"):
+                bsz = int(raw.get("size") or self.display_size)
+                mid_x = int(raw.get("mid_x") or 0)
+                mid_y = int(raw.get("mid_y") or 0)
+                gap = peer_friendship.STROLL_SIDE_GAP
+                target_x = mid_x + gap // 2
+                target_y = mid_y - self.display_size // 2
+                sw, sh = self._screen_wh()
+                target_x = max(0, min(int(target_x), sw - self.display_size))
+                target_y = max(0, min(int(target_y), sh - self.display_size))
+                self._stroll_target_x = float(target_x)
+                self._stroll_target_y = float(target_y)
+                if self._stroll_phase == "":
+                    self._stroll_phase = "gather"
+                    self._stroll_is_leader = False
+                    self._stroll_cancel_job()
+                    self._stroll_gather_tick()
+        elif action == "stroll_walk":
+            if self._stroll_phase in ("gather", "gather_wait"):
+                self._stroll_gather_wait_start = 0  # reset timeout
+                self._stroll_follower_begin_walk(raw)
+            elif self._stroll_phase == "walk":
+                # 更新方向
+                self._stroll_vx = int(raw.get("vx") or self._stroll_vx)
+                self._stroll_vy = int(raw.get("vy") or self._stroll_vy)
+                self._stroll_direction = str(raw.get("direction") or self._stroll_direction)
+                self._stroll_turn_ms = int(raw.get("turn_ms") or self._stroll_turn_ms)
 
     def _screen_wh(self) -> tuple[int, int]:
         now = time.time()
@@ -13229,6 +14068,7 @@ class DesktopPet:
                 kwargs["stdout"] = subprocess.DEVNULL
                 kwargs["stderr"] = subprocess.DEVNULL
             subprocess.Popen(cmd, **kwargs)
+            self._play_ui_event("game_start", volume=0.60)
             self._show_toast("已打开 RPG · Silent Oath", "#88ccff")
             self._note_achievement_flag("rpg_play")
             self._addon_voice_vpet("game", chain=False)
@@ -14395,7 +15235,9 @@ class DesktopPet:
                 return
             # 强制场景播 sleep；失败则退回打字句
             if self._vpet_voice_category_ready("sleep"):
-                if self._addon_voice_vpet("sleep", chain=False, interrupt_busy=True):
+                if self._addon_voice_vpet(
+                    "sleep", chain=False, ignore_cooldown=True, interrupt_busy=True
+                ):
                     return
             self._show_interact_banter_dialog("sleep")
 
@@ -15443,18 +16285,21 @@ class DesktopPet:
         detail = self._format_food_counts(session_food)
         coin_gain = min(15, max(0, score // 25 + catches // 3))
         if coin_gain > 0:
-            self.grant_coins(coin_gain, reason=f"采集奖励 +{coin_gain}")
+            self.grant_coins(coin_gain, reason=f"采集奖励 +{coin_gain}", sfx=False)
         subtitle = f"接取 {catches} 个 · 得分 {score}\n错过 {misses}  ·  库存 {self._food_inventory_total()}\n{detail}"
         if coin_gain > 0:
             subtitle += f"\n金币 +{coin_gain}"
+        failed = misses >= catches or catches <= 0
+        self._play_ui_event("harvest", volume=0.58)
         self._show_game_clear(
             title="采集完成",
             subtitle=subtitle,
             accent="#ffcc44",
             on_done=self._resume_idle,
+            success=not failed,
         )
         # 差劲：错过 ≥ 接住，或整局 0 接（与结算画面并存，hurt 仅附加）
-        if misses >= catches or catches <= 0:
+        if failed:
             self._play_game_fail_voice("hurt")
 
     def _hide_game_clear(self) -> None:
@@ -15479,7 +16324,19 @@ class DesktopPet:
         hold_ms: int = GAME_CLEAR_HOLD_MS,
         hero_grade: str | None = None,
         hero_color: str | None = None,
+        success: bool | None = None,
     ) -> None:
+        if success is None:
+            text = f"{title} {subtitle}"
+            if "失败" in text:
+                success = False
+            elif hero_grade in ("D", "C"):
+                success = False
+            elif hero_grade in ("S", "A", "B"):
+                success = True
+            else:
+                success = True
+        self._play_ui_event("game_success" if success else "game_fail", volume=0.62)
         self._hide_game_clear()
         self.game_clear_token += 1
         token = self.game_clear_token
@@ -15626,6 +16483,7 @@ class DesktopPet:
         self._hide_sub_menu()
         self.sub_menu = tk.Toplevel(self.root)
         self.sub_menu.overrideredirect(True)
+        setattr(self.sub_menu, "_vpet_open_sfx", "open_shop")
         self._apply_window_layer(self.sub_menu)
         self.sub_menu.configure(bg=MENU_BG)
         frame = tk.Frame(self.sub_menu, bg=MENU_BG, padx=2, pady=2)
@@ -16962,13 +17820,13 @@ class DesktopPet:
         except Exception:
             pass
 
-    def grant_coins(self, n: int, *, reason: str = "", toast: bool = True) -> int:
+    def grant_coins(self, n: int, *, reason: str = "", toast: bool = True, sfx: bool = True) -> int:
         """统一钱包加币。"""
         add = max(0, int(n))
         total = home_farm.grant_coins_to_wallet(self.wallet, add)
         self._persist_wallet()
-        if add > 0:
-            _play_ui_sfx("money", volume=0.62)
+        if add > 0 and sfx:
+            self._play_ui_event("harvest", volume=0.62)
         if toast and add > 0:
             tip = reason or f"金币 +{add}"
             self._show_toast(f"{tip}（持有 {total}）", "#ffcc66", duration_ms=2200)
@@ -16995,10 +17853,6 @@ class DesktopPet:
                 "#ffcc66",
                 duration_ms=3600,
             )
-            try:
-                _play_ui_sfx("money", volume=0.55)
-            except Exception:
-                pass
         else:
             self._save_achievements_soon(1800)
 
@@ -17029,10 +17883,6 @@ class DesktopPet:
             self._grant_wallet_item("wood", n)
             tier = "不错" if n >= 2 else "小收获"
             self._show_toast(f"工作宝箱·{tier}：木材 ×{n}", "#c8a878", duration_ms=2600)
-            try:
-                _play_ui_sfx("money", volume=0.5)
-            except Exception:
-                pass
         elif roll < 0.86:
             seed = random.choice(("seed_wheat", "seed_berry", "seed_corn"))
             n = random.randint(1, 2)
@@ -17047,10 +17897,6 @@ class DesktopPet:
             label = home_farm.ITEM_LABELS.get(item_id, item_id)
             tier = "好运" if item_id in ("fish", "flower_cut") else "不错"
             self._show_toast(f"工作宝箱·{tier}：{label} ×1", "#ff88aa", duration_ms=2600)
-            try:
-                _play_ui_sfx("money", volume=0.5)
-            except Exception:
-                pass
         self._panel_backpack_sig = None
         self._refresh_panel()
         if self.panel_backpack_open:
@@ -17067,7 +17913,7 @@ class DesktopPet:
         if not ok:
             return
         self._persist_wallet()
-        _play_ui_sfx("money", volume=0.62)
+        self._play_ui_event("harvest", volume=0.62)
         self._show_toast(
             f"今日登录礼：金币 +{home_farm.DAILY_LOGIN_COINS}（持有 {total}）",
             "#ffcc66",
@@ -17804,10 +18650,10 @@ class DesktopPet:
         self._home_farm_fx_job = self.root.after(120, lambda: tick(1))
 
     def _open_home_farm_shop(self) -> None:
-        _play_ui_sfx("shop", volume=0.58)
         parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
         win = tk.Toplevel(parent)
         win.title("经营商店")
+        setattr(win, "_vpet_open_sfx", "open_shop")
         self._apply_window_layer(win)
         win.configure(bg="#1e2830")
         frame = tk.Frame(win, bg="#1e2830", padx=12, pady=10)
@@ -17878,7 +18724,7 @@ class DesktopPet:
             def sell(iid=item_id) -> None:
                 ok, msg = home_farm.sell_item(self.wallet, iid, 1)
                 if ok:
-                    _play_ui_sfx("money", volume=0.62)
+                    self._play_ui_event("harvest", volume=0.62)
                     self._persist_wallet()
                     self._home_rebuild_farm_panel()
                     self._home_update_status()
@@ -17910,10 +18756,10 @@ class DesktopPet:
         self._place_panel_popup(win)
 
     def _open_home_craft(self) -> None:
-        _play_ui_sfx("craft", volume=0.58)
         parent = self.home_win if (self.home_win and self.home_win.winfo_exists()) else self.root
         win = tk.Toplevel(parent)
         win.title("合成台")
+        setattr(win, "_vpet_open_sfx", "open_shop")
         self._apply_window_layer(win)
         win.configure(bg="#1e2830")
         frame = tk.Frame(win, bg="#1e2830", padx=12, pady=10)
@@ -21765,6 +22611,32 @@ class DesktopPet:
             offset_x=240,
         )
 
+    def _request_pet_kind(self, kind: str) -> None:
+        """切换苍叶/伊得身份：写入配置并提示用对应脚本重新启动（便于双开涨友情）。"""
+        key = _normalize_pet_kind(kind)
+        if key not in PET_KIND_CHOICES:
+            return
+        if key == self.pet_kind:
+            self._show_toast(f"当前已是{self._pet_display_name(key)}", PIXEL_COLOR, duration_ms=1600)
+            return
+        self.app_config["pet_kind"] = key
+        _save_active_pet_kind(key)
+        try:
+            _save_app_config(self.app_config)
+        except Exception:
+            pass
+        bat = "start_aoba.bat" if key == PET_KIND_AOBA else "start_eiden.bat"
+        self._show_toast(
+            f"已记为{self._pet_display_name(key)}。请关掉后重新打开（或直接用 {bat}）；\n"
+            "要涨友情需同时开着苍叶与伊得两个进程（双开请用两个 bat）。",
+            "#88ccff",
+            duration_ms=5200,
+        )
+        try:
+            self._refresh_panel_settings_if_open()
+        except Exception:
+            pass
+
     def _open_panel_settings(self) -> None:
         self._hide_main_menu()
         # 语音/对话透明窗叠在设置上会吞点击
@@ -21790,6 +22662,29 @@ class DesktopPet:
 
         _, frame = _pack_fixed_scroll_panel(self.panel_settings_win)
         tk.Label(frame, text="系统设置", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+
+        kind_row = tk.Frame(frame, bg=MENU_BG)
+        kind_row.pack(fill=tk.X, pady=(8, 2))
+        tk.Label(kind_row, text="角色", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        for kind, label in ((PET_KIND_AOBA, "苍叶"), (PET_KIND_EIDEN, "伊得")):
+            on = self.pet_kind == kind
+            tk.Button(
+                kind_row,
+                text=f"{label}{' ✓' if on else ''}",
+                command=lambda k=kind: self._request_pet_kind(k),
+                font=PIXEL_FONT,
+                bg=MENU_ACTIVE if on else "#445566",
+                fg=MENU_FG,
+            ).pack(side=tk.RIGHT, padx=2)
+        tk.Label(
+            frame,
+            text="苍叶与伊得需各开一个进程才能相遇涨友情。双开请用 start_aoba.bat + start_eiden.bat（或 --kind）。",
+            font=("Courier New", 8),
+            fg="#8899aa",
+            bg=MENU_BG,
+            wraplength=320,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 6))
 
         size_row = tk.Frame(frame, bg=MENU_BG)
         size_row.pack(fill=tk.X, pady=(8, 2))
@@ -22401,6 +23296,7 @@ class DesktopPet:
                     subtitle=subtitle,
                     accent=accent,
                     on_done=self._close_rhyme_fight,
+                    success=True,
                 )
             else:
                 self.mood = max(0, self.mood - 2)
@@ -22414,6 +23310,7 @@ class DesktopPet:
                     subtitle="莱姆 · 再来一次",
                     accent="#ff4455",
                     on_done=self._close_rhyme_fight,
+                    success=False,
                 )
 
         def jinmu_finisher() -> None:
@@ -22745,6 +23642,7 @@ class DesktopPet:
                 hero_grade=grade,
                 hero_color=grade_color,
                 on_done=self._resume_idle_after_activity if resume else None,
+                success=grade not in ("D", "C"),
             )
             if grade in ("D", "C"):
                 self._play_game_fail_voice("hurt")
@@ -23768,6 +24666,7 @@ class DesktopPet:
                 hero_color=grade_color,
                 hold_ms=TYPING_CLEAR_HOLD_MS,
                 on_done=self._close_typing_game,
+                success=grade not in ("D", "C"),
             )
             if grade in ("D", "C"):
                 self._play_game_fail_voice("hurt")
@@ -24104,6 +25003,7 @@ class DesktopPet:
                     subtitle=f"{lang} · 连续答对 {streak} 题\n最新：{item['word']} = {correct}\n金币 +{1 + bonus}",
                     accent="#88ddff",
                     on_done=after_streak_clear,
+                    success=True,
                 )
             else:
                 self._vocab_schedule_advance(VOCAB_CORRECT_ADVANCE_MS)
@@ -24117,6 +25017,7 @@ class DesktopPet:
                 "vocab",
                 {"lang": lang, "word": item["word"], "correct": False, "difficulty": self.difficulty},
             )
+            self._play_ui_event("game_fail", volume=0.62)
             self._play_game_fail_voice("hurt")
             self._vocab_schedule_advance(VOCAB_WRONG_ADVANCE_MS)
 
@@ -24740,6 +25641,51 @@ class DesktopPet:
         self.mood_label = tk.Label(mood_col, text="", font=PIXEL_FONT, fg=MENU_FG, bg=panel_bg)
         self.mood_label.pack(anchor=tk.W, pady=(2, 0))
 
+        # 跨宠友情（伊得 ↔ 苍叶）：靠近相遇涨好感
+        self.panel_friendship_open = True
+        self.panel_friendship_section = tk.Frame(frame, bg=panel_bg)
+        self.panel_friendship_section.pack(anchor=tk.W, pady=(6, 0), fill=tk.X)
+        fri_head = tk.Frame(self.panel_friendship_section, bg=PANEL_ITEM_BG, padx=6, pady=3, cursor="hand2")
+        fri_head.pack(anchor=tk.W, fill=tk.X)
+        self.panel_friendship_header = fri_head
+        tk.Label(fri_head, text="友情", font=PIXEL_FONT, fg=THEME_PINK, bg=PANEL_ITEM_BG, cursor="hand2").pack(
+            side=tk.LEFT
+        )
+        self.panel_friendship_peak = tk.Label(
+            fri_head,
+            text=f"Lv.1 · {self._pet_display_name(self._crossover_partner_kind())}",
+            font=PIXEL_FONT,
+            fg=THEME_PINK,
+            bg=PANEL_ITEM_BG,
+            cursor="hand2",
+        )
+        self.panel_friendship_peak.pack(side=tk.LEFT, padx=(8, 0))
+        self.panel_friendship_hint = tk.Label(
+            fri_head, text="▼", font=PIXEL_FONT, fg="#888888", bg=PANEL_ITEM_BG, cursor="hand2"
+        )
+        self.panel_friendship_hint.pack(side=tk.RIGHT)
+        self.panel_friendship_content = tk.Frame(self.panel_friendship_section, bg=panel_bg)
+        self.panel_friendship_content.pack(anchor=tk.W, fill=tk.X, pady=(3, 0))
+        self.panel_friendship_bar = tk.Canvas(
+            self.panel_friendship_content, width=PANEL_BAR_W, height=PANEL_BAR_H, bg=panel_bg, highlightthickness=0
+        )
+        self.panel_friendship_bar.pack(anchor=tk.W, pady=(2, 0))
+        self.panel_friendship_detail = tk.Label(
+            self.panel_friendship_content,
+            text="",
+            font=("Microsoft YaHei UI", 9),
+            fg="#aabbcc",
+            bg=panel_bg,
+            justify=tk.LEFT,
+            wraplength=PANEL_VIEW_W - 12,
+        )
+        self.panel_friendship_detail.pack(anchor=tk.W, pady=(4, 0))
+        for widget in (fri_head, *fri_head.winfo_children()):
+            widget.bind("<Button-1>", self._toggle_panel_friendship, add="+")
+            widget.configure(cursor="hand2")
+        self._wire_panel_auto_hide(fri_head)
+        self._refresh_panel_friendship()
+
         # 音乐人物好感：彩色像素小心心 + 无上限进度条
         self.panel_affinity_open = True
         self.panel_affinity_section = tk.Frame(frame, bg=panel_bg)
@@ -24997,7 +25943,10 @@ class DesktopPet:
             self.backpack_hint_label.config(text="▼" if self.panel_backpack_open else "▶")
 
     def _set_panel_backpack_open(self, open_bag: bool) -> None:
+        was_open = bool(getattr(self, "panel_backpack_open", False))
         self.panel_backpack_open = open_bag
+        if open_bag and not was_open:
+            self._play_ui_event("open_shop", volume=0.56)
         if self.backpack_content_frame and self.backpack_content_frame.winfo_exists():
             if open_bag:
                 self.backpack_content_frame.pack(anchor=tk.W, pady=(4, 0), fill=tk.X)
@@ -25017,6 +25966,47 @@ class DesktopPet:
             play_pixel_click_burst(self.root, self.backpack_header_frame)
         self._set_panel_backpack_open(not self.panel_backpack_open)
         self._bump_panel_auto_hide()
+
+    def _toggle_panel_friendship(self, _event=None) -> None:
+        if not (self.panel_win and self.panel_win.winfo_exists()):
+            return
+        self.panel_friendship_open = not bool(getattr(self, "panel_friendship_open", True))
+        content = getattr(self, "panel_friendship_content", None)
+        hint = getattr(self, "panel_friendship_hint", None)
+        if content is not None and content.winfo_exists():
+            if self.panel_friendship_open:
+                content.pack(anchor=tk.W, fill=tk.X, pady=(3, 0))
+            else:
+                content.pack_forget()
+        if hint is not None and hint.winfo_exists():
+            hint.config(text="▼" if self.panel_friendship_open else "▶")
+        self._refresh_panel_friendship()
+        self._bump_panel_auto_hide()
+
+    def _refresh_panel_friendship(self) -> None:
+        fri = self._load_crossover_friendship()
+        lv = int(fri.get("level") or 1)
+        pct = int(fri.get("bar_pct") or 0)
+        cur = int(fri.get("bar_cur") or 0)
+        need = int(fri.get("bar_need") or 1)
+        meets = int(fri.get("meet_count") or 0)
+        partner = self._pet_display_name(self._crossover_partner_kind())
+        peak = getattr(self, "panel_friendship_peak", None)
+        if peak is not None and peak.winfo_exists():
+            peak.config(text=f"Lv.{lv} · {partner}")
+        bar = getattr(self, "panel_friendship_bar", None)
+        if bar is not None and bar.winfo_exists():
+            self._draw_bar(bar, pct, "#ff88aa")
+        detail = getattr(self, "panel_friendship_detail", None)
+        if detail is not None and detail.winfo_exists():
+            detail.config(
+                text=(
+                    f"靠近相遇 {meets} 次 · 本级 {cur}/{need}（{pct}%）\n"
+                    f"怎么玩：同时开着苍叶与伊得（两个进程），拖到互相靠近\n"
+                    "（大约半个身位内）就会打招呼并涨友情；约十几秒可再遇。\n"
+                    "苍叶：start_aoba.bat / 伊得：start_eiden.bat"
+                )
+            )
 
     def _toggle_panel_affinity(self, _event=None) -> None:
         if not (self.panel_win and self.panel_win.winfo_exists()):
@@ -25204,6 +26194,7 @@ class DesktopPet:
         if not self.panel_win or not self.panel_win.winfo_exists():
             return
         self._refresh_panel_stats()
+        self._refresh_panel_friendship()
         self._refresh_panel_affinity()
         self._update_panel_backpack_header()
         if self.panel_backpack_open and self.backpack_grid and self.backpack_grid.winfo_exists():
@@ -25270,6 +26261,8 @@ class DesktopPet:
                 return
             if i == 0 and on_show:
                 on_show()
+            if i == 0:
+                self._play_ui_event("game_start", volume=0.60)
             self._show_countdown_overlay(steps[i])
             self.root.after(GAME_COUNTDOWN_STEP_MS, lambda: step(i + 1))
 
@@ -25332,7 +26325,9 @@ class DesktopPet:
         self._show_toast("肚子饿了，去模式→游戏接食物，再来喂我吧！", "#ff8844", duration_ms=3000)
         # 开语音且有 hungry 资源：强制播（与 eat 同源），不 50/50 丢掉
         if self._vpet_voice_category_ready("hungry"):
-            self._addon_voice_vpet("hungry", chain=False, interrupt_busy=True)
+            self._addon_voice_vpet(
+                "hungry", chain=False, ignore_cooldown=True, interrupt_busy=True
+            )
 
     def _add_interact_mood(self) -> None:
         self.mood = min(100, self.mood + INTERACT_MOOD_GAIN)
@@ -25739,7 +26734,9 @@ class DesktopPet:
         voice_cat = self._ACTION_VOICE_CATEGORY.get(action)
         # 互动→动作专用目录（kick/eat/sleep/work）：有资源则强制播，不被 50/50 打字框「看起来像没语音」
         if voice_cat and self._vpet_voice_category_ready(voice_cat):
-            if self._addon_voice_vpet(voice_cat, chain=False, interrupt_busy=True):
+            if self._addon_voice_vpet(
+                voice_cat, chain=False, ignore_cooldown=True, interrupt_busy=True
+            ):
                 return
             self._show_interact_banter_dialog(action)
             return
@@ -25916,6 +26913,22 @@ class DesktopPet:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _auto_restore_companion(self) -> None:
+        """启动后自动静默恢复智能伴侣（上次退出时处于开启状态）。"""
+        if self._closing or not getattr(self, "_startup_ready", False):
+            return
+        if self.companion_bar_enabled:
+            return
+        self.companion_bar_enabled = True
+        if not self.mini_pets:
+            self._show_companion_loading(
+                lambda: self._spawn_mini_pet_impl(silent=True, skip_enter_anim=True)
+            )
+        else:
+            for entry in self.mini_pets:
+                self._mini_pet_follow_tick(entry)
+            self._sync_mini_pet_music_waves()
+
     def _toggle_companion_bar(self) -> None:
         self._hide_main_menu()
         self.companion_bar_enabled = not self.companion_bar_enabled
@@ -25957,6 +26970,13 @@ class DesktopPet:
             self._hide_companion_heart_transfer()
             self._destroy_all_mini_pets(animated=True)
             self._show_toast("智能伴侣栏已关闭", PIXEL_COLOR, duration_ms=1500)
+            # 关闭时持久化状态，下次启动不再自动恢复
+            try:
+                stats = self.achievements.setdefault("stats", {})
+                stats["companion_enabled"] = False
+                _save_achievements(self.achievements)
+            except Exception:
+                pass
 
     def _hide_companion_heart_transfer(self) -> None:
         self._companion_heart_gen = int(getattr(self, "_companion_heart_gen", 0)) + 1
@@ -26145,6 +27165,7 @@ class DesktopPet:
             "size": size,
             "index": idx,
             "side": side,
+            "kind": self._companion_presence_kind(),
             "move_dir": "front",
             "move_dir_ms": 0,
             "follow_job": None,
@@ -26164,7 +27185,8 @@ class DesktopPet:
             self._sync_mini_pet_music_waves()
             self._notify_bg_fx_change()
             if not silent:
-                self._show_toast("噗~ 莲来陪你啦！", "#88ccff", duration_ms=1500)
+                companion_name = "莲" if self.pet_kind == PET_KIND_AOBA else "艾斯特"
+                self._show_toast(f"噗~ {companion_name}来陪你啦！", "#88ccff", duration_ms=1500)
             return
         # 无前置加载时：像素聚拢入场后再显示精灵
         lbl.pack_forget()
@@ -26188,7 +27210,8 @@ class DesktopPet:
             self._sync_mini_pet_music_waves()
             self._notify_bg_fx_change()
             if not silent:
-                self._show_toast("噗~ 莲来陪你啦！", "#88ccff", duration_ms=1500)
+                companion_name = "莲" if self.pet_kind == PET_KIND_AOBA else "艾斯特"
+                self._show_toast(f"噗~ {companion_name}来陪你啦！", "#88ccff", duration_ms=1500)
 
         _run_pixel_block_dissolve_animation(
             self.root,
@@ -27330,9 +28353,11 @@ class DesktopPet:
                 subtitle=f"连中 {EXPOSE_GLITCH_HITS_REQUIRED} 次 · 完美判定",
                 accent="#44ff88",
                 on_done=self._after_expose,
+                success=True,
             )
         else:
             # E05：故障界面保留约 900ms + 打字「暴露失败…」；hurt 无字幕
+            self._play_ui_event("game_fail", volume=0.62)
             self._play_game_fail_voice("hurt", show_subtitle=False)
             self._show_speech_dialog(
                 "暴露失败…",
@@ -27582,7 +28607,9 @@ class DesktopPet:
         self._stack_game_drops_visible()
         # 开语音且有 dizzy：强制播；否则保留打字框
         if self._vpet_voice_category_ready("dizzy"):
-            self._addon_voice_vpet("dizzy", chain=False, interrupt_busy=True)
+            self._addon_voice_vpet(
+                "dizzy", chain=False, ignore_cooldown=True, interrupt_busy=True
+            )
         else:
             self._show_speech_dialog(random.choice(GAME_DIZZY_LINES), auto_hide_ms=3200)
         self.game_dizzy_job = self.root.after(GAME_DIZZY_STUN_MS, self._end_game_dizzy_stun)
@@ -27631,7 +28658,9 @@ class DesktopPet:
         self._place_window()
         self._show_follow_dizzy_fx()
         if self._vpet_voice_category_ready("dizzy"):
-            self._addon_voice_vpet("dizzy", chain=False, interrupt_busy=True)
+            self._addon_voice_vpet(
+                "dizzy", chain=False, ignore_cooldown=True, interrupt_busy=True
+            )
         else:
             self._show_speech_dialog(FOLLOW_DIZZY_TEXT, auto_hide_ms=FOLLOW_DIZZY_STAND_MS)
         if self.follow_dizzy_job:
@@ -28280,25 +29309,20 @@ class DesktopPet:
             if q_core in user_text or user_text.strip() == q_core:
                 return random.choice(answers)
         keyword_map: tuple[tuple[tuple[str, ...], int], ...] = (
-            (("你是谁", "叫什么", "名字", "苍叶", "aoba", "濑良垣", "主人公"), 0),
-            (("能力", "暴露", "魄", "声音", "操纵"), 1),
-            (("多高", "身高", "175"), 2),
+            (("你是谁", "叫什么", "名字", "伊得", "eiden", "主角"), 0),
+            (("来自", "哪里来", "世界", "穿越"), 1),
+            (("多高", "身高", "181"), 2),
             (("血型",), 3),
-            (("生日", "星座", "金牛", "4月22", "四月"), 4),
-            (("职业", "工作", "兼职", "平凡", "旧货店"), 5),
-            (("搭档", "伙伴", "莲", "蓮", "allmate", "智能伴侣"), 6),
-            (("夹克", "jacket", "蓝色", "衣服", "plain nuts"), 7),
-            (("身世", "经历", "婴儿", "三重", "定制", "棋子", "基因", "人格"), 8),
-            (("心意", "力量", "教会", "思念"), 9),
-            (("祖母", "多惠", "长大", "怎么长大"), 10),
-            (("住", "哪里", "碧岛", "旧居民区", "旧街区"), 11),
-            (("平时", "日常", "头痛", "耳机", "音乐", "莱姆音乐", "肋排"), 12),
-            (("莱姆", "rhyme", "对战", "战无不胜", "记忆", "封印"), 13),
-            (("另一个", "破坏", "哥哥生", "脑内"), 14),
-            (("白色苍叶", "红雀"), 15),
-            (("真谛", "解放", "重生", "潜入", "拯救"), 16),
-            (("东江", "财阀", "黑色野心"), 17),
-            (("头发", "长发", "紫色", "神经"), 18),
+            (("生日", "星座", "天蝎", "10月31", "十月"), 4),
+            (("职业", "工作", "做什么"), 5),
+            (("搭档", "伙伴", "艾斯特", "aster", "allmate", "智能伴侣"), 6),
+            (("外套", "衣服", "黑色", "jacket"), 7),
+            (("平时", "日常", "特点", "性格"), 8),
+            (("特别", "特殊", "能力"), 9),
+            (("苍叶", "aoba", "碧岛", "看法"), 10),
+            (("喜欢", "爱好", "喜好"), 11),
+            (("害怕", "恐惧", "怕"), 12),
+            (("莱姆", "rhyme", "对战"), 13),
         )
         for keywords, idx in keyword_map:
             if any(k.lower() in text for k in keywords):
@@ -28584,7 +29608,7 @@ class DesktopPet:
             self.size_loading_canvas,
             new_size,
             image_filename="stand.jpg",
-            palette=VPET_ANIM_PALETTE,
+            palette=PET_ANIM_PALETTE,
             active_check=lambda: bool(self.size_loading_active),
             ready_check=size_ready,
             on_done=finish_load,
@@ -28818,7 +29842,9 @@ class DesktopPet:
     def _trigger_sleep_yuqi_voice(self) -> None:
         """睡眠语境多次双击：随机一条 yuqi；保持睡眠（可短暂 peek）。"""
         if self._voice_enabled() and self._vpet_voice_category_ready("yuqi"):
-            self._addon_voice_vpet("yuqi", chain=False, interrupt_busy=True)
+            self._addon_voice_vpet(
+                "yuqi", chain=False, ignore_cooldown=True, interrupt_busy=True
+            )
         if self.mode == "quiet" and self.state == "rest":
             self._rest_peek_sleep1()
 
@@ -29178,7 +30204,7 @@ class DesktopPet:
             self.display_size,
             on_hide=lambda: self.label.pack_forget(),
             on_done=one_done,
-            palette=VPET_ANIM_PALETTE,
+            palette=PET_ANIM_PALETTE,
             total_ms=total_ms,
         )
 
@@ -29222,6 +30248,7 @@ class DesktopPet:
         img = _sprite_rgba_image(image_filename, size)
         dissolve_win = tk.Toplevel(self.root)
         dissolve_win.overrideredirect(True)
+        setattr(dissolve_win, "_vpet_open_sfx", "")
         self._apply_window_layer(dissolve_win)
         dissolve_win.configure(bg="magenta")
         dissolve_win.wm_attributes("-transparentcolor", "magenta")
@@ -29231,7 +30258,7 @@ class DesktopPet:
         use_palette = palette
         if use_palette is None:
             use_palette = (
-                COMPANION_ANIM_PALETTE if "petstand" in image_filename else VPET_ANIM_PALETTE
+                COMPANION_ANIM_PALETTE if "petstand" in image_filename else PET_ANIM_PALETTE
             )
 
         def finish() -> None:
@@ -33006,7 +34033,7 @@ class DesktopPet:
                 [
                     "工作啊…互动里的「工作」可以陪我运送货物，一起加油吧！",
                     "诶，要干活了吗？记得也给自己留点休息时间哦。",
-                    "嗯嗯，旧货店这边也要忙起来了呢~",
+                    "……工作吗。好，一起来。",
                 ]
             )
         if any(k in user_text for k in ("开心", "高兴", "棒")):
