@@ -1,0 +1,846 @@
+From 9d9f0305e2e0d85da626dc29d346cc6ee0608fcb Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 4 Sep 2026 08:37:05 +0000
+Subject: [PATCH] =?UTF-8?q?feat(eiden):=20=E5=BC=BA=E9=80=80=E6=94=AF?=
+ =?UTF-8?q?=E6=8C=81=20Ctrl+Shift+Q=20+=20=E8=A1=A8=E6=83=85=E8=A3=85?=
+ =?UTF-8?q?=E6=89=AE?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Ctrl+Alt+Q 保留；同时支持 Ctrl+Shift+Q（后台看门狗/Tk 绑定/硬退）
+- 互动→表情装扮：无语/尴尬/疑惑/生气/睡觉Z 常驻叠层
+- 去黑框泛洪可穿过透明外圈
+---
+ KIND.txt        |   1 +
+ pet.py          | 563 ++++++++++++++++++++++++++++++++++++++++++++----
+ start_eiden.bat |  12 ++
+ 3 files changed, 535 insertions(+), 41 deletions(-)
+ create mode 100644 KIND.txt
+ create mode 100644 start_eiden.bat
+
+diff --git a/KIND.txt b/KIND.txt
+new file mode 100644
+index 0000000..91c8c92
+--- /dev/null
++++ b/KIND.txt
+@@ -0,0 +1 @@
++eiden
+diff --git a/pet.py b/pet.py
+index 0b473ae..1ba3645 100644
+--- a/pet.py
++++ b/pet.py
+@@ -2151,6 +2151,18 @@ SLEEP_RECOVER_MS = 3000
+ SLEEP_TRANSITION_MS = 600
+ SLEEP_DEEP_HOLD_MS = 30000
+ SLEEP_ZZZ_MS = 700
++# 表情旁装扮（无语/尴尬/疑惑/生气/睡觉Z）
++COSMETIC_FX_MS = 140
++COSMETIC_IDS: tuple[str, ...] = ("wuyu", "ganga", "yihuo", "angry", "zzz")
++COSMETIC_LABELS: dict[str, str] = {
++    "wuyu": "无语",
++    "ganga": "尴尬",
++    "yihuo": "疑惑",
++    "angry": "生气",
++    "zzz": "睡觉Z",
++}
++FORCE_QUIT_POLL_S = 0.05
++FORCE_QUIT_HARD_EXIT_S = 0.45
+ 
+ REST_BOBBLE_PX = 3
+ REST_BOBBLE_MS = 160
+@@ -2486,7 +2498,7 @@ PERSONA_SPRITE_BATCH_MS = 10
+ UI_BUSY_LAG_THRESHOLD_MS = 800
+ IDLE_WATCHDOG_MS = 5000
+ # 代码修订号：右键菜单会短暂提示，用于确认是否加载到新 pet.py
+-CODE_REV = "eiden-sfx-voice-20260903"
++CODE_REV = "eiden-forcequit-cosmetics-20260904"
+ # 站立过久（含 idle 定时器丢了/幽灵菜单）强制重排走动
+ STAND_STUCK_FORCE_MS = 12_000
+ STAND_IDLE_OVERDUE_MS = 4_000
+@@ -4068,7 +4080,8 @@ GUIDE_TOPICS: dict[str, dict] = {
+             "【全局 · 伊得】按住 Ctrl+Alt 再按字母：\n"
+             "· H 打招呼　E 喂食　T 电话　J 下蹲\n"
+             "· N 睡眠　V 主菜单　Q 强制退出　A AI 对话（未开放）\n"
+-            "（苍叶桌宠为 Ctrl+Shift，可同时开）\n\n"
++            "· 强退也可用 Ctrl+Shift+Q（与苍叶相同，双开时靠轮询）\n"
++            "（日常热键仍建议 Ctrl+Alt，避免与苍叶抢键）\n\n"
+             "【窗口内】F1 说明　Esc 退出当前玩法或关窗\n\n"
+             "【玩法内】音游 D/F/J/K；经营用数字键选工具；\n"
+             "　　RPG 编辑器 Ctrl+S 保存，Ctrl+E / Ctrl+Shift+S 导出"
+@@ -5114,6 +5127,7 @@ _GUID_SESSION_DISPLAY_STATUS = "{2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5}"
+ MOD_ALT = 0x0001
+ MOD_CONTROL = 0x0002
+ MOD_SHIFT = 0x0004
++MOD_NOREPEAT = 0x4000
+ # 伊得全局热键修饰键（苍叶为 Ctrl+Shift）
+ HOTKEY_MOD = MOD_CONTROL | MOD_ALT
+ # 开场静置期就开始预热其它尺寸；完成一档再开下一档（错开入场高峰）
+@@ -5444,51 +5458,55 @@ def _is_outer_lime_screen(r: int, g: int, b: int) -> bool:
+     return g > 170 and b < 45 and 90 < r < 210 and (g - r) > 20 and (g - b) > 120
+ 
+ 
+-def _flood_outer_key_mask(key) -> object:
+-    """从四边泛洪，返回与边缘连通的键色布尔掩码。"""
++def _flood_outer_key_mask(key, *, walkable=None) -> object:
++    """从四边泛洪；walkable 可穿越（如透明外圈），最终只标记 key。"""
+     import numpy as np
+     from collections import deque
+ 
+     h, w = key.shape
+-    vis = np.zeros((h, w), dtype=bool)
++    if walkable is None:
++        walkable = key
++    else:
++        walkable = np.asarray(walkable, dtype=bool) | np.asarray(key, dtype=bool)
++    reached = np.zeros((h, w), dtype=bool)
+     q: deque[tuple[int, int]] = deque()
+-    xs = np.where(key[0])[0]
++    xs = np.where(walkable[0])[0]
+     for x in xs.tolist():
+-        vis[0, x] = True
++        reached[0, x] = True
+         q.append((0, x))
+-    xs = np.where(key[h - 1])[0]
++    xs = np.where(walkable[h - 1])[0]
+     for x in xs.tolist():
+-        vis[h - 1, x] = True
++        reached[h - 1, x] = True
+         q.append((h - 1, x))
+-    ys = np.where(key[:, 0])[0]
++    ys = np.where(walkable[:, 0])[0]
+     for y in ys.tolist():
+-        vis[y, 0] = True
++        reached[y, 0] = True
+         q.append((y, 0))
+-    ys = np.where(key[:, w - 1])[0]
++    ys = np.where(walkable[:, w - 1])[0]
+     for y in ys.tolist():
+-        vis[y, w - 1] = True
++        reached[y, w - 1] = True
+         q.append((y, w - 1))
+     while q:
+         y, x = q.popleft()
+         for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+             ny, nx = y + dy, x + dx
+-            if 0 <= ny < h and 0 <= nx < w and key[ny, nx] and not vis[ny, nx]:
+-                vis[ny, nx] = True
++            if 0 <= ny < h and 0 <= nx < w and walkable[ny, nx] and not reached[ny, nx]:
++                reached[ny, nx] = True
+                 q.append((ny, nx))
+-    return vis
++    return reached & np.asarray(key, dtype=bool)
+ 
+ 
+-def _remove_outer_key_rgba(img: Image.Image, key_mask) -> Image.Image:
++def _remove_outer_key_rgba(img: Image.Image, key_mask, *, walkable=None) -> Image.Image:
+     """按键色掩码只清除与边缘连通区域。"""
+     import numpy as np
+ 
+     arr = np.asarray(img.convert("RGBA"), dtype=np.uint8).copy()
+-    vis = _flood_outer_key_mask(key_mask)
++    vis = _flood_outer_key_mask(key_mask, walkable=walkable)
+     arr[..., 3] = np.where(vis, 0, arr[..., 3])
+     return Image.fromarray(arr, "RGBA")
+ 
+ 
+-def _remove_outer_key_pil(img: Image.Image, is_key) -> Image.Image:
++def _remove_outer_key_pil(img: Image.Image, is_key, *, pass_transparent: bool = False) -> Image.Image:
+     """无 numpy 时的边缘泛洪回退。"""
+     from collections import deque
+ 
+@@ -5508,10 +5526,13 @@ def _remove_outer_key_pil(img: Image.Image, is_key) -> Image.Image:
+         if x < 0 or y < 0 or x >= w or y >= h or visited[y][x]:
+             continue
+         r, g, b, a = px[x, y]
+-        if a < 8 or not is_key(r, g, b):
++        transparent = a < 8
++        keyed = (not transparent) and is_key(r, g, b)
++        if not keyed and not (pass_transparent and transparent):
+             continue
+         visited[y][x] = True
+-        px[x, y] = (r, g, b, 0)
++        if keyed:
++            px[x, y] = (r, g, b, 0)
+         q.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
+     return rgba
+ 
+@@ -5540,8 +5561,8 @@ def _remove_outer_lime_green(img: Image.Image) -> Image.Image:
+         return _remove_outer_key_pil(img, _is_outer_lime_screen)
+ 
+ 
+-def _remove_outer_black_frame(img: Image.Image, *, thresh: int = 52) -> Image.Image:
+-    """只去掉与画面边缘连通的近黑外框，保留角色内部黑发/描边。"""
++def _remove_outer_black_frame(img: Image.Image, *, thresh: int = 78) -> Image.Image:
++    """只去掉与画面外圈连通的近黑外框；可穿过透明外圈。"""
+     try:
+         import numpy as np
+ 
+@@ -5551,14 +5572,15 @@ def _remove_outer_black_frame(img: Image.Image, *, thresh: int = 52) -> Image.Im
+         b = arr[..., 2].astype(np.int16)
+         a = arr[..., 3]
+         mx = np.maximum(np.maximum(r, g), b)
+-        key = (a > 8) & (mx <= thresh) & (np.abs(r - g) < 20) & (np.abs(g - b) < 20)
+-        return _remove_outer_key_rgba(img, key)
++        key = (a > 8) & (mx <= thresh) & (np.abs(r - g) < 28) & (np.abs(g - b) < 28) & (np.abs(r - b) < 28)
++        transparent = a <= 8
++        return _remove_outer_key_rgba(img, key, walkable=transparent)
+     except Exception:
+ 
+         def is_black(r: int, g: int, b: int) -> bool:
+-            return max(r, g, b) <= thresh and abs(r - g) < 20 and abs(g - b) < 20
++            return max(r, g, b) <= thresh and abs(r - g) < 28 and abs(g - b) < 28 and abs(r - b) < 28
+ 
+-        return _remove_outer_key_pil(img, is_black)
++        return _remove_outer_key_pil(img, is_black, pass_transparent=True)
+ 
+ 
+ def _remove_green(img: Image.Image) -> Image.Image:
+@@ -8480,6 +8502,35 @@ def _normalize_profile_pet_id(data: dict) -> dict:
+     return data
+ 
+ 
++def _normalize_cosmetics(raw) -> list[str]:
++    """表情旁装扮勾选：无语/尴尬/疑惑/生气/睡觉Z。"""
++    out: list[str] = []
++    seen: set[str] = set()
++    items: list = []
++    if isinstance(raw, dict):
++        items = [k for k, v in raw.items() if v]
++    elif isinstance(raw, (list, tuple, set)):
++        items = list(raw)
++    elif isinstance(raw, str) and raw.strip():
++        items = [p.strip() for p in raw.replace("，", ",").split(",") if p.strip()]
++    alias = {
++        "无语": "wuyu", "speechless": "wuyu",
++        "尴尬": "ganga", "awkward": "ganga", "sweat": "ganga",
++        "疑惑": "yihuo", "疑问": "yihuo", "question": "yihuo",
++        "生气": "angry", "anger": "angry",
++        "睡觉z": "zzz", "睡觉Z": "zzz", "sleep": "zzz", "sleep_z": "zzz",
++    }
++    for item in items:
++        key = str(item or "").strip()
++        if not key:
++            continue
++        key = alias.get(key, alias.get(key.lower(), key.lower()))
++        if key in COSMETIC_IDS and key not in seen:
++            seen.add(key)
++            out.append(key)
++    return out
++
++
+ def _normalize_gift_pixels(raw) -> list[int]:
+     """礼物像素画：一维色板下标，长度 GIFT_PIXEL_SIZE²。"""
+     n = GIFT_PIXEL_SIZE * GIFT_PIXEL_SIZE
+@@ -8563,6 +8614,7 @@ def _load_pet_profile() -> dict:
+     profile.setdefault("last_pet_bday_nudge_ymd", "")
+     profile.setdefault("wear_flower", False)
+     profile["wear_flower"] = bool(profile.get("wear_flower"))
++    profile["cosmetics"] = _normalize_cosmetics(profile.get("cosmetics"))
+     profile["outfit_decors"] = pet_outfit.normalize_decors(profile.get("outfit_decors"))
+ 
+     if PET_ID_FEATURE:
+@@ -11156,6 +11208,11 @@ class DesktopPet:
+         self.head_flower_win: tk.Toplevel | None = None
+         self.head_flower_canvas: tk.Canvas | None = None
+         self._head_flower_place_sig: tuple[int, int] | None = None
++        self.cosmetic_fx_win: tk.Toplevel | None = None
++        self.cosmetic_fx_canvas: tk.Canvas | None = None
++        self._cosmetic_fx_place_sig: tuple[int, int] | None = None
++        self._cosmetic_fx_phase = 0
++        self._cosmetic_fx_job: str | None = None
+         self.outfit_win: tk.Toplevel | None = None
+         self.outfit_label: tk.Label | None = None
+         self.outfit_photo: ImageTk.PhotoImage | None = None
+@@ -11594,9 +11651,13 @@ class DesktopPet:
+         self._place_window()
+         self.root.update_idletasks()
+         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+-        # 尽早注册全局热键：启动卡住时也能 Ctrl+Alt+Q 强制退出
++        # 尽早注册全局热键：Ctrl+Alt+Q / Ctrl+Shift+Q 强制退出（含后台看门狗）
+         self._force_quit_chord_down = False
++        self._force_quit_hotkey_ok = False
++        self._force_quit_thread_started = False
++        self._bind_force_quit_keys()
+         self._register_hotkey()
++        self._start_force_quit_watchdog_thread()
+         self._install_tk_exception_guard()
+         tick_ms = self._difficulty_params()["stamina_tick_ms"]
+         self.root.after(tick_ms, self._stamina_tick)
+@@ -12479,6 +12540,7 @@ class DesktopPet:
+             self.root.after(900, self._maybe_daily_login_coin)
+             self.root.after(1100, self._maybe_restore_home_desktop)
+             self.root.after(1200, self._sync_head_flower)
++            self.root.after(1250, self._sync_cosmetics)
+             self.root.after(1250, self._sync_outfit_layer)
+             if PET_ID_FEATURE:
+                 self.root.after(1400, lambda: self._schedule_cloud_pet_id_sync(force=False, toast=False))
+@@ -12521,6 +12583,7 @@ class DesktopPet:
+         self.root.after(500, self._maybe_daily_login_coin)
+         self.root.after(700, self._maybe_restore_home_desktop)
+         self.root.after(800, self._sync_head_flower)
++        self.root.after(850, self._sync_cosmetics)
+         self.root.after(850, self._sync_outfit_layer)
+         if PET_ID_FEATURE:
+             self.root.after(1000, lambda: self._schedule_cloud_pet_id_sync(force=False, toast=False))
+@@ -17084,8 +17147,30 @@ class DesktopPet:
+     def _persist_food_inventory(self) -> None:
+         _save_food_inventory(self.food_inventory)
+ 
++    def _bind_force_quit_keys(self) -> None:
++        """窗口焦点内的 Tk 兜底：Ctrl+Alt+Q 与 Ctrl+Shift+Q。"""
++        for seq in (
++            "<Control-Alt-Q>",
++            "<Control-Alt-q>",
++            "<Control-Shift-Q>",
++            "<Control-Shift-q>",
++        ):
++            try:
++                self.root.bind_all(seq, self._force_quit, add="+")
++            except Exception:
++                try:
++                    self.root.bind(seq, self._force_quit, add="+")
++                except Exception:
++                    pass
++
+     def _register_hotkey(self) -> None:
+         if sys.platform != "win32":
++            if not getattr(self, "_hotkey_polling", False):
++                self._hotkey_polling = True
++                try:
++                    self.root.after(50, self._poll_hotkey)
++                except Exception:
++                    pass
+             return
+         # 先卸再挂，避免启动前后重复注册失败
+         self._unregister_hotkey()
+@@ -17094,16 +17179,76 @@ class DesktopPet:
+         except Exception:
+             return
+         self.hotkey_ids.clear()
+-        for hotkey_id, key, _action in HOTKEY_ACTIONS:
+-            ok = ctypes.windll.user32.RegisterHotKey(
+-                hwnd, hotkey_id, HOTKEY_MOD, key
+-            )
++        self._force_quit_hotkey_ok = False
++        mods = HOTKEY_MOD | MOD_NOREPEAT
++        for hotkey_id, key, action in HOTKEY_ACTIONS:
++            try:
++                ok = bool(ctypes.windll.user32.RegisterHotKey(hwnd, hotkey_id, mods, key))
++            except Exception:
++                ok = False
+             if ok:
+                 self.hotkey_ids.append(hotkey_id)
+-        # 无论 RegisterHotKey 是否成功，都开轮询（物理强制退出兜底）
++                if action == "force_quit":
++                    self._force_quit_hotkey_ok = True
++        # 额外尝试注册 Ctrl+Shift+Q（用户习惯 / 与说明一致）；失败则靠物理轮询
++        try:
++            shift_q_id = 208
++            ok2 = bool(
++                ctypes.windll.user32.RegisterHotKey(
++                    hwnd, shift_q_id, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, ord("Q")
++                )
++            )
++            if ok2:
++                self.hotkey_ids.append(shift_q_id)
++                self._force_quit_hotkey_ok = True
++        except Exception:
++            pass
+         if not getattr(self, "_hotkey_polling", False):
+             self._hotkey_polling = True
+             self.root.after(50, self._poll_hotkey)
++        if not self._force_quit_hotkey_ok:
++            try:
++                self.root.after(2500, self._retry_force_quit_hotkey)
++            except Exception:
++                pass
++
++    def _retry_force_quit_hotkey(self) -> None:
++        if sys.platform != "win32" or getattr(self, "_closing", False):
++            return
++        if getattr(self, "_force_quit_hotkey_ok", False):
++            return
++        try:
++            hwnd = int(self.root.winfo_id())
++        except Exception:
++            return
++        force_id = None
++        force_vk = ord("Q")
++        for hid, key, action in HOTKEY_ACTIONS:
++            if action == "force_quit":
++                force_id = hid
++                force_vk = key
++                break
++        if force_id is None:
++            return
++        if force_id in self.hotkey_ids:
++            self._force_quit_hotkey_ok = True
++            return
++        try:
++            ok = bool(
++                ctypes.windll.user32.RegisterHotKey(
++                    hwnd, force_id, HOTKEY_MOD | MOD_NOREPEAT, force_vk
++                )
++            )
++        except Exception:
++            ok = False
++        if ok:
++            self.hotkey_ids.append(force_id)
++            self._force_quit_hotkey_ok = True
++            return
++        try:
++            self.root.after(4000, self._retry_force_quit_hotkey)
++        except Exception:
++            pass
+ 
+     def _unregister_hotkey(self) -> None:
+         if sys.platform != "win32" or not self.hotkey_ids:
+@@ -17119,17 +17264,21 @@ class DesktopPet:
+             except Exception:
+                 pass
+         self.hotkey_ids.clear()
++        self._force_quit_hotkey_ok = False
+ 
+     def _force_quit_combo_pressed(self) -> bool:
+-        """物理键轮询 Ctrl+Alt+Q（不依赖 RegisterHotKey / 窗口焦点）。"""
++        """物理键：Ctrl+Alt+Q 或 Ctrl+Shift+Q。"""
+         if sys.platform != "win32":
+             return False
+         try:
+             u = ctypes.windll.user32
+             ctrl = bool(u.GetAsyncKeyState(0x11) & 0x8000)
+             alt = bool(u.GetAsyncKeyState(0x12) & 0x8000)
++            shift = bool(u.GetAsyncKeyState(0x10) & 0x8000)
+             q = bool(u.GetAsyncKeyState(0x51) & 0x8000)
+-            return ctrl and alt and q
++            if not (ctrl and q):
++                return False
++            return bool(alt or shift)
+         except Exception:
+             return False
+ 
+@@ -17140,6 +17289,50 @@ class DesktopPet:
+         if down and not was:
+             self._force_quit()
+ 
++    def _start_force_quit_watchdog_thread(self) -> None:
++        """后台线程强退：双开抢热键失败、或 Tk 主线程卡死时仍可用。"""
++        if getattr(self, "_force_quit_thread_started", False):
++            return
++        if sys.platform != "win32":
++            return
++        self._force_quit_thread_started = True
++
++        def _loop() -> None:
++            was_down = False
++            while True:
++                if getattr(self, "_force_quitting", False) or getattr(
++                    self, "_finalize_close_done", False
++                ):
++                    return
++                down = False
++                try:
++                    down = self._force_quit_combo_pressed()
++                except Exception:
++                    down = False
++                if down and not was_down:
++                    try:
++                        self.root.after(0, self._force_quit)
++                    except Exception:
++                        pass
++                    deadline = time.time() + FORCE_QUIT_HARD_EXIT_S
++                    while time.time() < deadline:
++                        if getattr(self, "_force_quitting", False) or getattr(
++                            self, "_finalize_close_done", False
++                        ):
++                            break
++                        time.sleep(0.05)
++                    try:
++                        os._exit(0)
++                    except Exception:
++                        return
++                was_down = down
++                time.sleep(FORCE_QUIT_POLL_S)
++
++        try:
++            threading.Thread(target=_loop, daemon=True, name="force-quit-watchdog").start()
++        except Exception:
++            self._force_quit_thread_started = False
++
+     def _handle_hotkey_action(self, action: str) -> None:
+         if action == "force_quit":
+             self._force_quit()
+@@ -17159,11 +17352,23 @@ class DesktopPet:
+             self._play_action(action)
+ 
+     def _force_quit(self, _event=None) -> None:
+-        """Ctrl+Alt+Q：强制退出，跳过 end 语音与像素出场。"""
++        """Ctrl+Alt+Q / Ctrl+Shift+Q：强制退出，跳过 end 语音与像素出场。"""
+         if getattr(self, "_force_quitting", False):
+-            return
++            return "break"
+         self._force_quitting = True
+         self._closing = True
++
++        def _hard_exit() -> None:
++            time.sleep(FORCE_QUIT_HARD_EXIT_S)
++            try:
++                os._exit(0)
++            except Exception:
++                pass
++
++        try:
++            threading.Thread(target=_hard_exit, daemon=True).start()
++        except Exception:
++            pass
+         try:
+             self._stop_peer_meet_poll()
+         except Exception:
+@@ -17199,6 +17404,7 @@ class DesktopPet:
+             os._exit(0)
+         except Exception:
+             pass
++        return "break"
+ 
+     def _toggle_main_menu_from_hotkey(self) -> None:
+         if self.menu_bar and self.menu_bar.winfo_exists():
+@@ -17618,10 +17824,13 @@ class DesktopPet:
+                 ctypes.byref(msg), 0, WM_HOTKEY, WM_HOTKEY, 1
+             ):
+                 if msg.message == WM_HOTKEY:
+-                    for hotkey_id, _key, action in HOTKEY_ACTIONS:
+-                        if msg.wParam == hotkey_id:
+-                            self._handle_hotkey_action(action)
+-                            break
++                    if msg.wParam == 208:
++                        self._handle_hotkey_action("force_quit")
++                    else:
++                        for hotkey_id, _key, action in HOTKEY_ACTIONS:
++                            if msg.wParam == hotkey_id:
++                                self._handle_hotkey_action(action)
++                                break
+         self._safe_after(120, self._poll_hotkey)
+ 
+     def _alive(self) -> bool:
+@@ -17678,6 +17887,7 @@ class DesktopPet:
+         # 拖动/走动：只做轻量位置更新，避免每帧重排一层特效导致卡顿
+         self._reposition_pet_attached_popups(force=False)
+         self._place_head_flower()
++        self._place_cosmetic_fx()
+         self._place_outfit_layer()
+         self._sync_work_end_button_beside_pet()
+         if self._work_desk_active():
+@@ -33352,6 +33562,7 @@ class DesktopPet:
+             [
+                 ("动作 ▶", self._open_action_menu),
+                 ("表情 ▶", self._open_expression_menu),
++                ("表情装扮 ▶", self._open_cosmetic_menu),
+                 ("对话 ▶", self._open_dialog_menu),
+                 ("工具 ▶", self._open_tools_menu),
+             ],
+@@ -39697,6 +39908,7 @@ class DesktopPet:
+         self._hide_companion_loading()
+         self._hide_happy_fx()
+         self._hide_head_flower()
++        self._hide_cosmetic_fx()
+         self._hide_outfit_layer()
+         self._hide_food_fx()
+         self._hide_rain_fx()
+@@ -40342,6 +40554,275 @@ class DesktopPet:
+         except Exception:
+             pass
+ 
++
++    # --- 表情旁装扮：无语/尴尬/疑惑/生气/睡觉Z（常驻叠层） ---
++
++    def _active_cosmetics(self) -> list[str]:
++        return _normalize_cosmetics((self.pet_profile or {}).get("cosmetics"))
++
++    def _cosmetic_enabled(self, key: str) -> bool:
++        return str(key) in set(self._active_cosmetics())
++
++    def _persist_cosmetics(self, items: list[str]) -> None:
++        self.pet_profile["cosmetics"] = _normalize_cosmetics(items)
++        try:
++            _save_pet_profile(self.pet_profile)
++        except Exception:
++            pass
++
++    def _set_cosmetic(self, key: str, on: bool, *, toast: bool = True) -> None:
++        cid = str(key or "").strip().lower()
++        if cid not in COSMETIC_IDS:
++            return
++        cur = self._active_cosmetics()
++        has = cid in cur
++        if on and not has:
++            cur.append(cid)
++        elif (not on) and has:
++            cur = [x for x in cur if x != cid]
++        else:
++            if toast:
++                label = COSMETIC_LABELS.get(cid, cid)
++                self._show_toast(
++                    f"已是「{label}」装扮" if on else f"未佩戴「{label}」",
++                    "#88ccff",
++                    duration_ms=1400,
++                )
++            return
++        self._persist_cosmetics(cur)
++        self._sync_cosmetics()
++        if toast:
++            label = COSMETIC_LABELS.get(cid, cid)
++            self._show_toast(
++                f"装扮：{label} ✓" if on else f"已取消：{label}",
++                "#ffcc88",
++                duration_ms=1500,
++            )
++
++    def _toggle_cosmetic(self, key: str) -> None:
++        self._hide_main_menu()
++        self._set_cosmetic(key, not self._cosmetic_enabled(key))
++
++    def _open_cosmetic_menu(self) -> None:
++        """互动 → 表情装扮：无语/尴尬等旁效果常驻。"""
++        items: list[tuple[str, object]] = []
++        for cid in COSMETIC_IDS:
++            label = COSMETIC_LABELS.get(cid, cid)
++            on = self._cosmetic_enabled(cid)
++            items.append((f"{label}{' ✓' if on else ''}", lambda k=cid: self._toggle_cosmetic(k)))
++        items.append(("全部摘下表情装扮", self._clear_expression_cosmetics))
++        self._show_sub_menu(items, offset_x=200)
++
++    def _clear_expression_cosmetics(self) -> None:
++        self._hide_main_menu()
++        if self._active_cosmetics():
++            self._persist_cosmetics([])
++            self._sync_cosmetics()
++            self._show_toast("已摘下表情装扮", "#88ccff", duration_ms=1500)
++        else:
++            self._show_toast("当前没有表情装扮", "#88ccff", duration_ms=1200)
++
++    def _sync_cosmetics(self) -> None:
++        if self._closing:
++            self._hide_cosmetic_fx()
++            return
++        if self._active_cosmetics():
++            self._show_cosmetic_fx()
++        else:
++            self._hide_cosmetic_fx()
++
++    def _hide_cosmetic_fx(self) -> None:
++        job = getattr(self, "_cosmetic_fx_job", None)
++        if job:
++            try:
++                self.root.after_cancel(job)
++            except Exception:
++                pass
++        self._cosmetic_fx_job = None
++        if self.cosmetic_fx_win and self.cosmetic_fx_win.winfo_exists():
++            try:
++                self.cosmetic_fx_win.destroy()
++            except Exception:
++                pass
++        self.cosmetic_fx_win = None
++        self.cosmetic_fx_canvas = None
++        self._cosmetic_fx_place_sig = None
++
++    def _show_cosmetic_fx(self) -> None:
++        if not self._active_cosmetics():
++            self._hide_cosmetic_fx()
++            return
++        if self.cosmetic_fx_win and self.cosmetic_fx_win.winfo_exists():
++            self._place_cosmetic_fx(force=True)
++            self._animate_cosmetic_fx()
++            return
++        pad = 22
++        size = self.display_size + pad * 2
++        win = tk.Toplevel(self.root)
++        self.cosmetic_fx_win = win
++        win.overrideredirect(True)
++        self._apply_window_layer(win)
++        win.configure(bg="magenta")
++        try:
++            win.wm_attributes("-transparentcolor", "magenta")
++        except Exception:
++            pass
++        canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
++        canvas.pack()
++        self.cosmetic_fx_canvas = canvas
++        self._cosmetic_fx_phase = 0
++        self._cosmetic_fx_place_sig = None
++        self._place_cosmetic_fx(force=True)
++        self._animate_cosmetic_fx()
++        try:
++            win.lift()
++        except Exception:
++            pass
++        self._notify_bg_fx_change()
++
++    def _place_cosmetic_fx(self, *, force: bool = False) -> None:
++        if not self._active_cosmetics():
++            self._hide_cosmetic_fx()
++            return
++        if not self.cosmetic_fx_win or not self.cosmetic_fx_win.winfo_exists():
++            if self._active_cosmetics():
++                self._show_cosmetic_fx()
++            return
++        pad = 22
++        display_y = self.y + self.click_bounce_offset + int(getattr(self, "happy_bounce_offset", 0) or 0)
++        ox = self.x - pad
++        oy = display_y - pad
++        sig = (ox, oy)
++        if not force and sig == getattr(self, "_cosmetic_fx_place_sig", None):
++            return
++        self._cosmetic_fx_place_sig = sig
++        try:
++            self.cosmetic_fx_win.geometry(f"+{ox}+{oy}")
++            self.cosmetic_fx_win.lift()
++        except Exception:
++            pass
++
++    def _draw_pixel_waterdrop(
++        self,
++        canvas: tk.Canvas,
++        x: int,
++        y: int,
++        px: int,
++        *,
++        color: str = "#5dade2",
++        highlight: str = "#d6eaf8",
++    ) -> None:
++        p = max(2, int(px))
++        canvas.create_polygon(
++            x + p, y, x, y + p * 2, x + p * 2, y + p * 2, fill=color, outline=""
++        )
++        canvas.create_oval(x, y + p, x + p * 2, y + p * 3, fill=color, outline="")
++        canvas.create_rectangle(
++            x + p // 2, y + p + p // 2, x + p, y + p * 2, fill=highlight, outline=""
++        )
++
++    def _draw_pixel_sweat_spray(
++        self, canvas: tk.Canvas, origin_x: int, origin_y: int, px: int, phase: int
++    ) -> None:
++        p = max(2, int(px))
++        specs = (
++            (0.0, -1.2, 0.9, "#7ec8e8"),
++            (1.1, -0.4, 0.75, "#5dade2"),
++            (1.8, 0.6, 0.6, "#85c1e9"),
++        )
++        t = (phase % 6) / 6.0
++        for i, (dx, dy, scale, color) in enumerate(specs):
++            drift = ((phase + i * 2) % 6) * max(1, p // 2)
++            sx = int(origin_x + dx * p * 3 + drift * 0.35)
++            sy = int(origin_y + dy * p * 2 + drift * 0.55 + t * p)
++            sp = max(2, int(p * scale))
++            self._draw_pixel_waterdrop(canvas, sx, sy, sp, color=color, highlight="#eaf6fb")
++
++    def _draw_pixel_question_mark(self, canvas: tk.Canvas, x: int, y: int, px: int) -> None:
++        p = max(2, int(px))
++        color = "#ffcc33"
++        canvas.create_rectangle(x + p, y, x + p * 3, y + p, fill=color, outline="")
++        canvas.create_rectangle(x + p * 2, y + p, x + p * 3, y + p * 2, fill=color, outline="")
++        canvas.create_rectangle(x + p, y + p * 2, x + p * 2, y + p * 3, fill=color, outline="")
++        canvas.create_rectangle(x + p, y + p * 4, x + p * 2, y + p * 5, fill=color, outline="")
++
++    def _draw_pixel_angry_mark(self, canvas: tk.Canvas, x: int, y: int, px: int) -> None:
++        p = max(2, int(px))
++        color = "#ff3333"
++        cx, cy = x + p * 2, y + p * 2
++        canvas.create_rectangle(cx - p * 2, cy - p // 2, cx + p * 2, cy + p // 2, fill=color, outline="")
++        canvas.create_rectangle(cx - p // 2, cy - p * 2, cx + p // 2, cy + p * 2, fill=color, outline="")
++        for ox, oy in ((-p * 2, -p * 2), (p * 2, -p * 2), (-p * 2, p * 2), (p * 2, p * 2)):
++            canvas.create_rectangle(cx + ox, cy + oy, cx + ox + p, cy + oy + p, fill=color, outline="")
++
++    def _animate_cosmetic_fx(self) -> None:
++        job = getattr(self, "_cosmetic_fx_job", None)
++        if job:
++            try:
++                self.root.after_cancel(job)
++            except Exception:
++                pass
++            self._cosmetic_fx_job = None
++        if self._closing or not self._active_cosmetics():
++            self._hide_cosmetic_fx()
++            return
++        canvas = self.cosmetic_fx_canvas
++        if not canvas or not self.cosmetic_fx_win or not self.cosmetic_fx_win.winfo_exists():
++            self._show_cosmetic_fx()
++            return
++        try:
++            canvas.delete("all")
++        except Exception:
++            self._hide_cosmetic_fx()
++            return
++        pad = 22
++        size = self.display_size + pad * 2
++        px = max(3, self.display_size // 28)
++        phase = int(getattr(self, "_cosmetic_fx_phase", 0) or 0)
++        active = set(self._active_cosmetics())
++        if "wuyu" in active:
++            bob = (phase % 4) * max(1, px // 3)
++            self._draw_pixel_waterdrop(canvas, pad + px, pad + px - bob // 2, px + 1)
++        if "ganga" in active:
++            sweat_x = size - pad - px * 6
++            sweat_y = pad + px
++            if "yihuo" in active or "angry" in active:
++                sweat_x = size - pad - px * 2
++                sweat_y = pad + max(2, px // 2)
++            if "zzz" in active:
++                sweat_y = pad + max(2, px // 2)
++            self._draw_pixel_sweat_spray(canvas, sweat_x, sweat_y, px, phase)
++        if "yihuo" in active and "angry" in active:
++            self._draw_pixel_question_mark(canvas, size - pad - px * 12, pad + px, px)
++            self._draw_pixel_angry_mark(canvas, size - pad - px * 6, pad + px * 5, px)
++        elif "yihuo" in active:
++            self._draw_pixel_question_mark(canvas, size - pad - px * 7, pad + px, px)
++        elif "angry" in active:
++            self._draw_pixel_angry_mark(canvas, size - pad - px * 7, pad + px, px)
++        if "zzz" in active:
++            sleep_on = bool(
++                self.sleep_zzz_win and self.sleep_zzz_win.winfo_exists() and self._should_show_zzz()
++            )
++            offset = (phase % 3) * max(3, px // 2)
++            shift = px * 6 if sleep_on else 0
++            colors = ("#aabbff", "#8899ee", "#6677dd")
++            self._draw_pixel_z(canvas, size - px * 9 - shift, px * 2 + offset, px, colors[0])
++            self._draw_pixel_z(
++                canvas, size - px * 13 - shift, px * 5 + offset, max(2, px - 1), colors[1]
++            )
++            self._draw_pixel_z(
++                canvas, size - px * 17 - shift, px * 8 + offset, max(2, px - 1), colors[2]
++            )
++        self._cosmetic_fx_phase = phase + 1
++        self._place_cosmetic_fx()
++        need_anim = bool(active & {"ganga", "zzz", "wuyu"})
++        delay = COSMETIC_FX_MS if need_anim else COSMETIC_FX_MS * 4
++        try:
++            self._cosmetic_fx_job = self.root.after(delay, self._animate_cosmetic_fx)
++        except Exception:
++            self._cosmetic_fx_job = None
++
++
+     # —— 装扮（烘焙进立绘，不另开透明窗，避免走动双窗卡顿）——
+ 
+     def _outfit_decors(self) -> list[dict]:
+diff --git a/start_eiden.bat b/start_eiden.bat
+new file mode 100644
+index 0000000..ebd4c5e
+--- /dev/null
++++ b/start_eiden.bat
+@@ -0,0 +1,12 @@
++@echo off
++chcp 65001 >nul
++cd /d "%~dp0"
++rem 以伊得身份启动（可与苍叶双开）
++set VPET_KIND=eiden
++if exist "pet.py" (
++  start "" pythonw "%~dp0pet.py" --kind eiden
++) else if exist "release\Vpet\Vpet.exe" (
++  start "" "%~dp0release\Vpet\Vpet.exe" --kind eiden
++) else (
++  start "" pythonw "%~dp0vpet_app.py" --kind eiden
++)
+-- 
+2.43.0
+
