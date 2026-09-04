@@ -3677,6 +3677,15 @@ INTERACT_BANTER: dict[str, tuple[str, ...]] = {
 WM_HOTKEY = 0x0312
 MOD_CONTROL = 0x0002
 MOD_SHIFT = 0x0004
+MOD_NOREPEAT = 0x4000
+# 强制退出：物理键轮询间隔（后台线程，不依赖 Tk 主循环）
+FORCE_QUIT_POLL_S = 0.05
+FORCE_QUIT_HARD_EXIT_S = 0.45
+# RegisterHotKey 的 id 按角色错开，避免双开时同进程内冲突（组合键仍可能被系统独占）
+HOTKEY_ID_BASE_BY_KIND: dict[str, int] = {
+    PET_KIND_AOBA: 0xA00,
+    PET_KIND_EIDEN: 0xE00,
+}
 PRELOAD_IDLE_DELAY_MS = 12000
 PRELOAD_STEP_MS = 10000
 _SOURCE_FILE_CACHE: dict[str, Image.Image] = {}
@@ -9011,9 +9020,13 @@ class DesktopPet:
         self._place_window()
         self.root.update_idletasks()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-        # 尽早注册全局热键：启动卡住时也能 Ctrl+Shift+Q 强制退出
+        # 尽早注册全局热键 + 后台强退看门狗：双开/主线程卡住也能 Ctrl+Shift+Q
         self._force_quit_chord_down = False
+        self._force_quit_hotkey_ok = False
+        self._force_quit_thread_started = False
+        self._bind_force_quit_keys()
         self._register_hotkey()
+        self._start_force_quit_watchdog_thread()
         tick_ms = self._difficulty_params()["stamina_tick_ms"]
         self.root.after(tick_ms, self._stamina_tick)
         self.root.after(REMINDER_CHECK_MS, self._reminder_tick)
@@ -12491,8 +12504,30 @@ class DesktopPet:
     def _persist_food_inventory(self) -> None:
         _save_food_inventory(self.food_inventory)
 
+    def _hotkey_id_base(self) -> int:
+        kind = str(getattr(self, "pet_kind", "") or PET_KIND).strip().lower()
+        return int(HOTKEY_ID_BASE_BY_KIND.get(kind, 0xB00))
+
+    def _bind_force_quit_keys(self) -> None:
+        """窗口有焦点时的 Tk 兜底（全局仍靠 RegisterHotKey / 后台线程）。"""
+        for seq in ("<Control-Shift-Q>", "<Control-Shift-q>"):
+            try:
+                self.root.bind_all(seq, self._force_quit, add="+")
+            except Exception:
+                try:
+                    self.root.bind(seq, self._force_quit, add="+")
+                except Exception:
+                    pass
+
     def _register_hotkey(self) -> None:
         if sys.platform != "win32":
+            # 非 Windows：依赖 Tk 绑定 +（若有）轮询占位
+            if not getattr(self, "_hotkey_polling", False):
+                self._hotkey_polling = True
+                try:
+                    self.root.after(50, self._poll_hotkey)
+                except Exception:
+                    pass
             return
         # 先卸再挂，避免启动前后重复注册失败
         self._unregister_hotkey()
@@ -12501,16 +12536,70 @@ class DesktopPet:
         except Exception:
             return
         self.hotkey_ids.clear()
-        for hotkey_id, key, _action in HOTKEY_ACTIONS:
-            ok = ctypes.windll.user32.RegisterHotKey(
-                hwnd, hotkey_id, MOD_CONTROL | MOD_SHIFT, key
-            )
+        self._force_quit_hotkey_ok = False
+        base = self._hotkey_id_base()
+        mods = MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT
+        for local_id, key, action in HOTKEY_ACTIONS:
+            hotkey_id = base + int(local_id)
+            try:
+                ok = bool(
+                    ctypes.windll.user32.RegisterHotKey(hwnd, hotkey_id, mods, key)
+                )
+            except Exception:
+                ok = False
             if ok:
                 self.hotkey_ids.append(hotkey_id)
+                if action == "force_quit":
+                    self._force_quit_hotkey_ok = True
         # 无论 RegisterHotKey 是否成功，都开轮询（物理 Ctrl+Shift+Q 兜底）
         if not getattr(self, "_hotkey_polling", False):
             self._hotkey_polling = True
             self.root.after(50, self._poll_hotkey)
+        # 双开时组合键常被另一宠独占：稍后重试强退热键
+        if not self._force_quit_hotkey_ok:
+            try:
+                self.root.after(2500, self._retry_force_quit_hotkey)
+            except Exception:
+                pass
+
+    def _retry_force_quit_hotkey(self) -> None:
+        """另一进程退出后，补注册 Ctrl+Shift+Q。"""
+        if sys.platform != "win32" or getattr(self, "_closing", False):
+            return
+        if getattr(self, "_force_quit_hotkey_ok", False):
+            return
+        try:
+            hwnd = int(self.root.winfo_id())
+        except Exception:
+            return
+        base = self._hotkey_id_base()
+        force_id = None
+        force_vk = ord("Q")
+        for local_id, key, action in HOTKEY_ACTIONS:
+            if action == "force_quit":
+                force_id = base + int(local_id)
+                force_vk = key
+                break
+        if force_id is None:
+            return
+        if force_id in self.hotkey_ids:
+            self._force_quit_hotkey_ok = True
+            return
+        mods = MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT
+        try:
+            ok = bool(
+                ctypes.windll.user32.RegisterHotKey(hwnd, force_id, mods, force_vk)
+            )
+        except Exception:
+            ok = False
+        if ok:
+            self.hotkey_ids.append(force_id)
+            self._force_quit_hotkey_ok = True
+            return
+        try:
+            self.root.after(4000, self._retry_force_quit_hotkey)
+        except Exception:
+            pass
 
     def _unregister_hotkey(self) -> None:
         if sys.platform != "win32" or not self.hotkey_ids:
@@ -12526,6 +12615,7 @@ class DesktopPet:
             except Exception:
                 pass
         self.hotkey_ids.clear()
+        self._force_quit_hotkey_ok = False
 
     def _force_quit_combo_pressed(self) -> bool:
         """物理键轮询 Ctrl+Shift+Q（不依赖 RegisterHotKey / 窗口焦点）。"""
@@ -12546,6 +12636,51 @@ class DesktopPet:
         self._force_quit_chord_down = down
         if down and not was:
             self._force_quit()
+
+    def _start_force_quit_watchdog_thread(self) -> None:
+        """后台线程强退：双开抢热键失败、或 Tk 主线程卡死时仍可用。"""
+        if getattr(self, "_force_quit_thread_started", False):
+            return
+        if sys.platform != "win32":
+            return
+        self._force_quit_thread_started = True
+
+        def _loop() -> None:
+            was_down = False
+            while True:
+                if getattr(self, "_force_quitting", False) or getattr(
+                    self, "_finalize_close_done", False
+                ):
+                    return
+                down = False
+                try:
+                    down = self._force_quit_combo_pressed()
+                except Exception:
+                    down = False
+                if down and not was_down:
+                    # 先尽量走主线程清理；超时则硬退
+                    try:
+                        self.root.after(0, self._force_quit)
+                    except Exception:
+                        pass
+                    deadline = time.time() + FORCE_QUIT_HARD_EXIT_S
+                    while time.time() < deadline:
+                        if getattr(self, "_force_quitting", False) or getattr(
+                            self, "_finalize_close_done", False
+                        ):
+                            break
+                        time.sleep(0.05)
+                    try:
+                        os._exit(0)
+                    except Exception:
+                        return
+                was_down = down
+                time.sleep(FORCE_QUIT_POLL_S)
+
+        try:
+            threading.Thread(target=_loop, daemon=True, name="force-quit-watchdog").start()
+        except Exception:
+            self._force_quit_thread_started = False
 
     def _handle_hotkey_action(self, action: str) -> None:
         if action == "force_quit":
@@ -12568,9 +12703,21 @@ class DesktopPet:
     def _force_quit(self, _event=None) -> None:
         """Ctrl+Shift+Q：强制退出，跳过 end 语音与像素出场。"""
         if getattr(self, "_force_quitting", False):
-            return
+            return "break"
         self._force_quitting = True
         self._closing = True
+        # 清理若卡住，后台硬退兜底
+        def _hard_exit() -> None:
+            time.sleep(FORCE_QUIT_HARD_EXIT_S)
+            try:
+                os._exit(0)
+            except Exception:
+                pass
+
+        try:
+            threading.Thread(target=_hard_exit, daemon=True).start()
+        except Exception:
+            pass
         try:
             self._stop_peer_meet_poll()
         except Exception:
@@ -12602,6 +12749,7 @@ class DesktopPet:
             os._exit(0)
         except Exception:
             pass
+        return "break"
 
     def _toggle_main_menu_from_hotkey(self) -> None:
         if self.menu_bar and self.menu_bar.winfo_exists():
@@ -12920,18 +13068,25 @@ class DesktopPet:
             self._hotkey_polling = False
             return
         # 物理键兜底：即使 RegisterHotKey 失败/启动卡住也能强制退出
-        self._poll_force_quit_chord()
+        try:
+            self._poll_force_quit_chord()
+        except Exception:
+            pass
         if self.hotkey_ids:
-            msg = wintypes.MSG()
-            # hwnd=0：取本线程全部 WM_HOTKEY（Tk 窗口句柄有时对不上）
-            while ctypes.windll.user32.PeekMessageW(
-                ctypes.byref(msg), 0, WM_HOTKEY, WM_HOTKEY, 1
-            ):
-                if msg.message == WM_HOTKEY:
-                    for hotkey_id, _key, action in HOTKEY_ACTIONS:
-                        if msg.wParam == hotkey_id:
-                            self._handle_hotkey_action(action)
-                            break
+            try:
+                msg = wintypes.MSG()
+                base = self._hotkey_id_base()
+                # hwnd=0：取本线程全部 WM_HOTKEY（Tk 窗口句柄有时对不上）
+                while ctypes.windll.user32.PeekMessageW(
+                    ctypes.byref(msg), 0, WM_HOTKEY, WM_HOTKEY, 1
+                ):
+                    if msg.message == WM_HOTKEY:
+                        for local_id, _key, action in HOTKEY_ACTIONS:
+                            if msg.wParam == base + int(local_id):
+                                self._handle_hotkey_action(action)
+                                break
+            except Exception:
+                pass
         self._safe_after(80, self._poll_hotkey)
 
     def _alive(self) -> bool:
