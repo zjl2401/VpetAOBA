@@ -2267,6 +2267,8 @@ PIXEL_BLOCK_DISSOLVE_MS = EXIT_DISSOLVE_MS
 PIXEL_BLOCK_DISSOLVE_FRAMES = EXIT_DISSOLVE_FRAMES
 # 像素聚散主题色：Vpet 粉蓝；智能伴侣 深蓝→浅蓝
 VPET_ANIM_PALETTE = ("#ff3d9a", "#ff7ec8", "#66a8ff", "#88ccff", "#d6f0ff", "#ffffff")
+# 伊得入场/出场：与苍叶同款径向像素聚拢；色调略偏冷蓝，观感差不多
+PET_ANIM_PALETTE = ("#4a6bff", "#7e9cff", "#66a8ff", "#88ccff", "#d6e8ff", "#ffffff")
 COMPANION_ANIM_PALETTE = ("#071433", "#0d2a5c", "#1a4a9a", "#2f74d6", "#6eb6ff", "#cfe8ff")
 PIXEL_REASSEMBLY_CYCLE = 36
 STARTUP_WATCHDOG_MS = 8000
@@ -4324,7 +4326,7 @@ def _draw_themed_pixel_reassembly(
     size: int,
     phase: int,
     *,
-    palette: tuple[str, ...] = VPET_ANIM_PALETTE,
+    palette: tuple[str, ...] = PET_ANIM_PALETTE,
     label: str = "",
 ) -> None:
     """加载：固定像素聚散循环（不再每轮随机换风格）。"""
@@ -4424,7 +4426,7 @@ def _draw_size_loading_frame(
     reverse: bool = False,
     theme: str = "vpet",
 ) -> None:
-    palette = COMPANION_ANIM_PALETTE if theme == "companion" else VPET_ANIM_PALETTE
+    palette = COMPANION_ANIM_PALETTE if theme == "companion" else PET_ANIM_PALETTE
     draw_phase = -phase if reverse else phase
     _draw_themed_pixel_reassembly(canvas, size, draw_phase, palette=palette, label=label)
     if not simple:
@@ -9094,7 +9096,7 @@ class DesktopPet:
             canvas,
             self.display_size,
             image_filename="sleep1.jpg",
-            palette=VPET_ANIM_PALETTE,
+            palette=PET_ANIM_PALETTE,
             active_check=lambda: bool(self._startup_loading_active) and not self._startup_ready,
             ready_check=lambda: bool(getattr(self, "_startup_sprites_ready", False)),
             on_done=finish,
@@ -29078,7 +29080,7 @@ class DesktopPet:
             self.size_loading_canvas,
             new_size,
             image_filename="stand.jpg",
-            palette=VPET_ANIM_PALETTE,
+            palette=PET_ANIM_PALETTE,
             active_check=lambda: bool(self.size_loading_active),
             ready_check=size_ready,
             on_done=finish_load,
@@ -29672,7 +29674,7 @@ class DesktopPet:
             self.display_size,
             on_hide=lambda: self.label.pack_forget(),
             on_done=one_done,
-            palette=VPET_ANIM_PALETTE,
+            palette=PET_ANIM_PALETTE,
             total_ms=total_ms,
         )
 
@@ -29716,6 +29718,7 @@ class DesktopPet:
         img = _sprite_rgba_image(image_filename, size)
         dissolve_win = tk.Toplevel(self.root)
         dissolve_win.overrideredirect(True)
+        setattr(dissolve_win, "_vpet_open_sfx", "")
         self._apply_window_layer(dissolve_win)
         dissolve_win.configure(bg="magenta")
         dissolve_win.wm_attributes("-transparentcolor", "magenta")
@@ -29725,7 +29728,7 @@ class DesktopPet:
         use_palette = palette
         if use_palette is None:
             use_palette = (
-                COMPANION_ANIM_PALETTE if "petstand" in image_filename else VPET_ANIM_PALETTE
+                COMPANION_ANIM_PALETTE if "petstand" in image_filename else PET_ANIM_PALETTE
             )
 
         def finish() -> None:
