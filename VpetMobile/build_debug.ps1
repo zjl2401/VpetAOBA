@@ -45,6 +45,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $apk = Join-Path $root "app\build\outputs\apk\debug\app-debug.apk"
 $out = Join-Path $root "dist"
 New-Item -ItemType Directory -Force -Path $out | Out-Null
-Copy-Item $apk (Join-Path $out "VpetMobile-debug.apk") -Force
-Write-Host "OK: $(Join-Path $out 'VpetMobile-debug.apk')"
-Get-Item (Join-Path $out "VpetMobile-debug.apk") | Format-List FullName, Length, LastWriteTime
+Copy-Item $apk (Join-Path $out "VpetAoba-debug.apk") -Force
+Write-Host "OK: $(Join-Path $out 'VpetAoba-debug.apk')"
+Get-Item (Join-Path $out "VpetAoba-debug.apk") | Format-List FullName, Length, LastWriteTime
+# 不再另存 VpetMobile-debug.apk，避免同包双份
+Remove-Item -Force (Join-Path $out "VpetMobile-debug.apk") -ErrorAction SilentlyContinue

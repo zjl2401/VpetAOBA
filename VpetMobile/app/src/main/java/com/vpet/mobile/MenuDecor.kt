@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
@@ -20,38 +21,53 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * 对照桌面 panel_decor：菜单 chrome、像素小图标、点击粒子散开。
+ * 可爱像素风菜单：粉蓝奶油面板、像素图标、点击粒子。
  */
 object MenuDecor {
-    val THEME_BLUE = Color.parseColor("#66CCFF")
-    val THEME_PINK = Color.parseColor("#FF88CC")
-    val THEME_BLUE_DEEP = Color.parseColor("#4488DD")
-    val THEME_WHITE = Color.parseColor("#F4F8FF")
-    val THEME_BLACK = Color.parseColor("#0A0C12")
-    val MENU_BG = Color.parseColor("#141824")
-    val MENU_FG = Color.parseColor("#EEF2FF")
-    val MENU_ACTIVE = Color.parseColor("#2A3558")
-    val THEME_ITEM_BG = Color.parseColor("#181F34")
+    val THEME_BLUE = Color.parseColor("#7EC8FF")
+    val THEME_PINK = Color.parseColor("#FF7EB0")
+    val THEME_BLUE_DEEP = Color.parseColor("#5AA8E8")
+    val THEME_WHITE = Color.parseColor("#FFF8FB")
+    val THEME_BLACK = Color.parseColor("#4A3550")
+    val MENU_BG = Color.parseColor("#FFF8FB")
+    val MENU_FG = Color.parseColor("#4A3550")
+    val MENU_ACTIVE = Color.parseColor("#FFB8D8")
+    val THEME_ITEM_BG = Color.parseColor("#FFE8F2")
+    val THEME_CREAM = Color.parseColor("#FFF0F5")
 
     private val glyphColors = intArrayOf(THEME_BLUE_DEEP, THEME_BLUE, THEME_PINK, THEME_BLACK, THEME_WHITE)
     private val glyphCache = HashMap<Pair<String, Int>, Bitmap>()
+    private var cuteTypeface: Typeface? = null
+
+    fun cuteFont(ctx: Context): Typeface {
+        cuteTypeface?.let { return it }
+        val tf = try {
+            androidx.core.content.res.ResourcesCompat.getFont(ctx, R.font.youyuan)
+        } catch (_: Exception) {
+            null
+        } ?: Typeface.create("sans-serif", Typeface.BOLD)
+        cuteTypeface = tf
+        return tf
+    }
 
     fun dp(ctx: Context, v: Float): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, ctx.resources.displayMetrics).toInt()
 
     fun chromeOuterBg(): GradientDrawable = GradientDrawable().apply {
-        setColor(THEME_BLUE)
+        setColor(THEME_PINK)
+        cornerRadius = 10f
     }
 
     fun menuItemBg(pressed: Boolean = false): GradientDrawable = GradientDrawable().apply {
         setColor(if (pressed) MENU_ACTIVE else THEME_ITEM_BG)
-        cornerRadius = 2f
+        cornerRadius = 10f
+        setStroke(2, if (pressed) THEME_PINK else THEME_BLUE)
     }
 
     fun moduleBtnBg(selected: Boolean): GradientDrawable = GradientDrawable().apply {
-        setColor(if (selected) MENU_ACTIVE else MENU_BG)
-        setStroke(1, if (selected) THEME_PINK else THEME_BLUE_DEEP)
-        cornerRadius = 2f
+        setColor(if (selected) MENU_ACTIVE else THEME_CREAM)
+        setStroke(2, if (selected) THEME_PINK else THEME_BLUE)
+        cornerRadius = 12f
     }
 
     fun glyphDrawable(ctx: Context, label: String, sizeDp: Float = 14f): BitmapDrawable {

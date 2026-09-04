@@ -36,9 +36,9 @@ class CompanionFollower(
         const val TURN_HOLD_MS = 380L
         const val TURN_AXIS_RATIO = 1.4f
         const val WALK_FRAME_MS = 210L
-        /** 桌面 MINI_PET_SIZE=120 相对 DEFAULT_SIZE=128 */
+        /** 桌面 MINI_PET_SIZE=120 / DEFAULT_SIZE=128；画布底对齐后角色占比接近抠图不放大 */
         fun companionSize(petPx: Int): Int =
-            (petPx * 120f / 128f).toInt().coerceIn(72, 220)
+            (petPx * 120f / 128f).toInt().coerceIn(64, 168)
     }
 
     private var view: ImageView? = null
@@ -158,7 +158,7 @@ class CompanionFollower(
         bmpRight2 = bmpLeft2?.let { flipH(it) }
     }
 
-    private fun loadMini(path: String, maxSide: Int): Bitmap? {
+    private fun loadMini(path: String, canvasSize: Int): Bitmap? {
         return try {
             val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
             context.assets.open(path).use {
@@ -166,14 +166,36 @@ class CompanionFollower(
             }
             var sample = 1
             val side = maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1)
-            while (side / sample > maxSide) sample *= 2
+            // 解码略大于画布，再底对齐缩进，避免糊成一团又过大
+            val decodeSide = (canvasSize * 2).coerceAtLeast(128)
+            while (side / sample > decodeSide) sample *= 2
             val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
-            context.assets.open(path).use {
+            val raw = context.assets.open(path).use {
                 android.graphics.BitmapFactory.decodeStream(it, null, opts)
+            } ?: return null
+            packBottomCenter(raw, canvasSize).also { packed ->
+                if (packed !== raw) raw.recycle()
             }
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** 对齐桌宠 _to_fixed_canvas：底对齐放进正方形，保留透明边，避免裁切/撑满。 */
+    private fun packBottomCenter(src: Bitmap, canvasSize: Int): Bitmap {
+        val w = src.width.coerceAtLeast(1)
+        val h = src.height.coerceAtLeast(1)
+        val scale = minOf(canvasSize.toFloat() / w, canvasSize.toFloat() / h, 1f)
+        val nw = (w * scale).toInt().coerceAtLeast(1)
+        val nh = (h * scale).toInt().coerceAtLeast(1)
+        val scaled = if (nw == w && nh == h) src else Bitmap.createScaledBitmap(src, nw, nh, true)
+        val out = Bitmap.createBitmap(canvasSize, canvasSize, Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(out)
+        val left = (canvasSize - nw) / 2f
+        val top = (canvasSize - nh).toFloat()
+        c.drawBitmap(scaled, left, top, null)
+        if (scaled !== src) scaled.recycle()
+        return out
     }
 
     private fun flipH(src: Bitmap): Bitmap {

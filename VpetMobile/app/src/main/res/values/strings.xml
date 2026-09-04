@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Vpet 手机试做</string>
+    <string name="app_name">Vpet Aoba</string>
     <string name="room_title">调试·房间模式</string>
     <string name="overlay_channel">桌宠悬浮</string>
     <string name="overlay_notify">苍叶悬浮中 · 点桌宠打开菜单</string>

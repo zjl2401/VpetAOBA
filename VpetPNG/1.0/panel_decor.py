@@ -146,12 +146,28 @@ def pack_menu_chrome(parent, *, bg: str):
     return inner
 
 
-def pack_panel_accent_bar(parent, *, bg: str) -> None:
+def pack_panel_accent_bar(parent, *, bg: str, signs_dir: Path | None = None) -> None:
     import tkinter as tk
 
     tk.Frame(parent, bg=THEME_PINK, height=3).pack(fill=tk.X)
     tk.Frame(parent, bg=THEME_BLUE, height=1).pack(fill=tk.X)
     tk.Frame(parent, bg=bg, height=2).pack(fill=tk.X)
+
+
+def pack_panel_shell(parent, *, bg: str, signs_dir: Path | None = None, padx: int = 10, pady: int = 8):
+    """面板壳：蓝粉描边 + 顶栏。"""
+    import tkinter as tk
+
+    wrap = tk.Frame(parent, bg=THEME_BLUE, padx=1, pady=1)
+    wrap.pack(fill=tk.BOTH, expand=True)
+    tk.Frame(wrap, bg=THEME_PINK, height=2).pack(fill=tk.X)
+    body = tk.Frame(wrap, bg=bg)
+    body.pack(fill=tk.BOTH, expand=True)
+    tk.Frame(wrap, bg=THEME_BLUE_DEEP, height=1).pack(fill=tk.X)
+    inner = tk.Frame(body, bg=bg, padx=padx, pady=pady)
+    inner.pack(fill=tk.BOTH, expand=True)
+    pack_panel_accent_bar(inner, bg=bg, signs_dir=signs_dir)
+    return inner
 
 
 # 深蓝 / 浅蓝 / 粉 / 黑 / 白 —— 菜单像素小图标与点击动画

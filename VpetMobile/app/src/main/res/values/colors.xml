@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_dark">#FF1A2030</color>
-    <color name="launcher_bg">#FF000000</color>
-    <color name="accent_pink">#FFFF88CC</color>
-    <color name="theme_blue">#FF66CCFF</color>
-    <color name="theme_blue_deep">#FF4488DD</color>
-    <color name="text_main">#FFEEF2FF</color>
-    <color name="menu_bg">#FF141824</color>
-    <color name="menu_fg">#FFEEF2FF</color>
-    <color name="menu_item_bg">#FF181F34</color>
-    <color name="btn_bg">#FF2A4060</color>
-    <color name="room_wall">#FF243044</color>
+    <color name="bg_dark">#FFFFF4F8</color>
+    <color name="launcher_bg">#FFFFF0F5</color>
+    <color name="accent_pink">#FFFF7EB0</color>
+    <color name="theme_blue">#FF7EC8FF</color>
+    <color name="theme_blue_deep">#FF5AA8E8</color>
+    <color name="text_main">#FF4A3550</color>
+    <color name="menu_bg">#FFFFF8FB</color>
+    <color name="menu_fg">#FF4A3550</color>
+    <color name="menu_item_bg">#FFFFE8F2</color>
+    <color name="btn_bg">#FFFFD0E4</color>
+    <color name="room_wall">#FFFFEAF2</color>
 </resources>

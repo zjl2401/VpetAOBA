@@ -33,7 +33,7 @@
         <activity
             android:name=".ToolsActivity"
             android:exported="false"
-            android:label="工具与档案" />
+            android:label="档案·音乐" />
 
         <activity
             android:name=".HomeActivity"

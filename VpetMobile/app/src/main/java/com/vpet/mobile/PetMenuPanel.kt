@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Point
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.view.Gravity
@@ -38,8 +37,8 @@ class PetMenuPanel(
     companion object {
         const val POPUP_PET_GAP = 10
         const val POPUP_EDGE_MARGIN = 20
-        private const val MODULE_H_DP = 36f
-        private const val ITEM_H_DP = 34f
+        private const val MODULE_H_DP = 48f
+        private const val ITEM_H_DP = 36f
     }
 
     private var binding: OverlayMainMenuBinding? = null
@@ -155,7 +154,7 @@ class PetMenuPanel(
     private fun styleClose(tv: TextView) {
         tv.background = MenuDecor.menuItemBg()
         tv.setTextColor(MenuDecor.MENU_FG)
-        tv.typeface = Typeface.MONOSPACE
+        tv.typeface = MenuDecor.cuteFont(context)
         bindPressBg(tv, MenuDecor.THEME_ITEM_BG, MenuDecor.MENU_ACTIVE)
     }
 
@@ -227,14 +226,14 @@ class PetMenuPanel(
             val btn = TextView(context).apply {
                 text = mod.title
                 setTextColor(MenuDecor.MENU_FG)
-                textSize = 12f
-                typeface = Typeface.MONOSPACE
+                textSize = 13f
+                typeface = MenuDecor.cuteFont(context)
                 gravity = Gravity.CENTER
                 includeFontPadding = false
                 setPadding(MenuDecor.dp(context, 2f), 0, MenuDecor.dp(context, 2f), 0)
-                val glyph = MenuDecor.glyphDrawable(context, mod.title, 12f)
-                setCompoundDrawables(glyph, null, null, null)
-                compoundDrawablePadding = MenuDecor.dp(context, 3f)
+                val glyph = MenuDecor.glyphDrawable(context, mod.title, 14f)
+                setCompoundDrawables(null, glyph, null, null)
+                compoundDrawablePadding = MenuDecor.dp(context, 2f)
                 background = MenuDecor.moduleBtnBg(false)
                 setOnClickListener { v ->
                     clickBurst.play(v)
@@ -329,12 +328,12 @@ class PetMenuPanel(
         return TextView(context).apply {
             this.text = text
             setTextColor(MenuDecor.MENU_FG)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            typeface = Typeface.MONOSPACE
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = MenuDecor.cuteFont(context)
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
             includeFontPadding = false
             setPadding(MenuDecor.dp(context, 8f), 0, MenuDecor.dp(context, 8f), 0)
-            val glyph = MenuDecor.glyphDrawable(context, text, 12f)
+            val glyph = MenuDecor.glyphDrawable(context, text, 14f)
             setCompoundDrawables(glyph, null, null, null)
             compoundDrawablePadding = MenuDecor.dp(context, 6f)
             background = MenuDecor.menuItemBg()

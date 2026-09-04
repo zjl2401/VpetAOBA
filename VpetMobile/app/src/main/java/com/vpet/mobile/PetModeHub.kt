@@ -606,6 +606,12 @@ class PetModeHub(
 
     fun startWorkFree() = startWork(continuous = true, total = 5, fromPomo = false, timedMs = 0L)
 
+    /** 对照睡眠：点一次开启自由运送，再点（或 HUD）结束。 */
+    fun toggleWork() {
+        if (isWorking) endWork(fromMenu = true)
+        else startWorkFree()
+    }
+
     fun startWorkBoxes(n: Int) = startWork(continuous = false, total = n, fromPomo = false, timedMs = 0L)
 
     fun startWorkTimed(durationMs: Long) =
@@ -803,7 +809,7 @@ class PetModeHub(
         }
         val uriStr = PetProfileStore.musicUri(context)
         if (uriStr.isNullOrBlank()) {
-            showToast("请先在「工具与档案」导入本地歌曲（网易云云端无法直连）")
+            showToast("请先在设置→档案·音乐 导入本地歌曲")
             openTools()
             return
         }
