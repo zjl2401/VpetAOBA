@@ -2132,7 +2132,7 @@ DRAG_DIZZY_DIALOG_COOLDOWN_MS = 3200
 DRAG_DIZZY_EXTRA_DIALOG_SPINS = 4
 # 拖动（move 动画）持续超过此时长 → 触发 yuqi 随机一条；长拖可隔一段时间再触发
 DRAG_MOVE_VOICE_AFTER_MS = 3000
-DRAG_MOVE_VOICE_RETRY_MS = 6500
+DRAG_MOVE_VOICE_RETRY_MS = 10_000
 DRAG_DIZZY_LINES: tuple[str, ...] = (
     "别晃啦我晕了……",
     "慢—慢—点—拖—我—",
@@ -2236,12 +2236,13 @@ MOOD_EXPRESSION_TIERS: list[tuple[int, list[str]]] = [
     (0, ["sad", "angry"]),
 ]
 FREE_RANDOM_ACTION_CHANCE = 0.06
-VOICE_FREE_RANDOM_CHANCE = 0.045
-VOICE_WALK_RANDOM_CHANCE = 0.07
+# 自由/漫步随机语音：略降抽中率，配合更长全局冷却，避免说太密
+VOICE_FREE_RANDOM_CHANCE = 0.02
+VOICE_WALK_RANDOM_CHANCE = 0.03
 # 工作语音抽中率与自由一致（模式/动作运送共用，不再更密）
 VOICE_WORK_RANDOM_CHANCE = VOICE_FREE_RANDOM_CHANCE
 VOICE_ERROR_COOLDOWN_MS = 180_000
-VOICE_ERROR_CHANCE = 0.22
+VOICE_ERROR_CHANCE = 0.12
 VOICE_DRAG_MOVE_CHANCE = 0.9
 EXPOSE_QTE_TICK_MS = 16
 EXPOSE_GLITCH_HITS_REQUIRED = 5
@@ -9612,6 +9613,14 @@ class DesktopPet:
         )
         try:
             ms = int(self.app_config.get("voice_interval_ms", VOICE_GLOBAL_COOLDOWN_MS) or VOICE_GLOBAL_COOLDOWN_MS)
+            # 旧默认偏密（10s / 曾短暂默认 22s）：自动升到当前默认间隔
+            if ms in (10_000, 22_000):
+                ms = VOICE_GLOBAL_COOLDOWN_MS
+                self.app_config["voice_interval_ms"] = ms
+                try:
+                    _save_app_config(self.app_config)
+                except Exception:
+                    pass
             self.voice_player.set_global_cooldown_ms(ms)
         except Exception:
             self.voice_player.set_global_cooldown_ms(VOICE_GLOBAL_COOLDOWN_MS)
@@ -9696,7 +9705,7 @@ class DesktopPet:
         *,
         chain: bool = True,
         on_done=None,
-        ignore_cooldown: bool = True,
+        ignore_cooldown: bool = False,
         interrupt_busy: bool = False,
     ) -> bool:
         return self._play_scene_voice_vpet(
@@ -9893,7 +9902,9 @@ class DesktopPet:
     def _trigger_sleep_banter(self) -> str:
         # 开语音且有 sleep 资源时强制播（模式睡眠 / 动作睡眠共用）
         if self._voice_enabled() and self._vpet_voice_category_ready("sleep"):
-            if self._addon_voice_vpet("sleep", chain=False, interrupt_busy=True):
+            if self._addon_voice_vpet(
+                "sleep", chain=False, ignore_cooldown=True, interrupt_busy=True
+            ):
                 return "voice"
         self._show_interact_banter_dialog("sleep")
         return "dialog"
@@ -9901,7 +9912,9 @@ class DesktopPet:
     def _trigger_kick_banter(self) -> str:
         # 侧踢专用语音：有 kick 资源时强制播（与 eat/sleep 同源），不与打字框二选一
         if self._voice_enabled() and self._vpet_voice_category_ready("kick"):
-            if self._addon_voice_vpet("kick", chain=False, interrupt_busy=True):
+            if self._addon_voice_vpet(
+                "kick", chain=False, ignore_cooldown=True, interrupt_busy=True
+            ):
                 return "voice"
         self._show_interact_banter_dialog("kick")
         return "dialog"
@@ -9910,7 +9923,9 @@ class DesktopPet:
         # 有 eat 语音时：专用场景，强制播随机 eat（好吃 / 我开动了…），不与打字框二选一
         # 避免落进「好吃好吃~」打字句时听起来像永远只触发「好吃」
         if self._voice_enabled() and self._vpet_voice_category_ready("eat"):
-            if self._addon_voice_vpet("eat", chain=False, interrupt_busy=True):
+            if self._addon_voice_vpet(
+                "eat", chain=False, ignore_cooldown=True, interrupt_busy=True
+            ):
                 return "voice"
         self._show_interact_banter_dialog("eat")
         return "dialog"
@@ -10270,7 +10285,7 @@ class DesktopPet:
         if not self.dragging or self.state != "drag":
             return False
         if self._voice_enabled() and self._vpet_voice_category_ready("yuqi"):
-            if self._addon_voice_vpet("yuqi", chain=False, interrupt_busy=True):
+            if self._addon_voice_vpet("yuqi", chain=False, ignore_cooldown=True, interrupt_busy=True):
                 return True
         if self.speech_dialog and self.speech_dialog.winfo_exists():
             return False
@@ -15027,7 +15042,9 @@ class DesktopPet:
                 return
             # 强制场景播 sleep；失败则退回打字句
             if self._vpet_voice_category_ready("sleep"):
-                if self._addon_voice_vpet("sleep", chain=False, interrupt_busy=True):
+                if self._addon_voice_vpet(
+                    "sleep", chain=False, ignore_cooldown=True, interrupt_busy=True
+                ):
                     return
             self._show_interact_banter_dialog("sleep")
 
@@ -26064,7 +26081,9 @@ class DesktopPet:
         self._show_toast("肚子饿了，去模式→游戏接食物，再来喂我吧！", "#ff8844", duration_ms=3000)
         # 开语音且有 hungry 资源：强制播（与 eat 同源），不 50/50 丢掉
         if self._vpet_voice_category_ready("hungry"):
-            self._addon_voice_vpet("hungry", chain=False, interrupt_busy=True)
+            self._addon_voice_vpet(
+                "hungry", chain=False, ignore_cooldown=True, interrupt_busy=True
+            )
 
     def _add_interact_mood(self) -> None:
         self.mood = min(100, self.mood + INTERACT_MOOD_GAIN)
@@ -26471,7 +26490,9 @@ class DesktopPet:
         voice_cat = self._ACTION_VOICE_CATEGORY.get(action)
         # 互动→动作专用目录（kick/eat/sleep/work）：有资源则强制播，不被 50/50 打字框「看起来像没语音」
         if voice_cat and self._vpet_voice_category_ready(voice_cat):
-            if self._addon_voice_vpet(voice_cat, chain=False, interrupt_busy=True):
+            if self._addon_voice_vpet(
+                voice_cat, chain=False, ignore_cooldown=True, interrupt_busy=True
+            ):
                 return
             self._show_interact_banter_dialog(action)
             return
@@ -28339,7 +28360,9 @@ class DesktopPet:
         self._stack_game_drops_visible()
         # 开语音且有 dizzy：强制播；否则保留打字框
         if self._vpet_voice_category_ready("dizzy"):
-            self._addon_voice_vpet("dizzy", chain=False, interrupt_busy=True)
+            self._addon_voice_vpet(
+                "dizzy", chain=False, ignore_cooldown=True, interrupt_busy=True
+            )
         else:
             self._show_speech_dialog(random.choice(GAME_DIZZY_LINES), auto_hide_ms=3200)
         self.game_dizzy_job = self.root.after(GAME_DIZZY_STUN_MS, self._end_game_dizzy_stun)
@@ -28388,7 +28411,9 @@ class DesktopPet:
         self._place_window()
         self._show_follow_dizzy_fx()
         if self._vpet_voice_category_ready("dizzy"):
-            self._addon_voice_vpet("dizzy", chain=False, interrupt_busy=True)
+            self._addon_voice_vpet(
+                "dizzy", chain=False, ignore_cooldown=True, interrupt_busy=True
+            )
         else:
             self._show_speech_dialog(FOLLOW_DIZZY_TEXT, auto_hide_ms=FOLLOW_DIZZY_STAND_MS)
         if self.follow_dizzy_job:
@@ -29570,7 +29595,9 @@ class DesktopPet:
     def _trigger_sleep_yuqi_voice(self) -> None:
         """睡眠语境多次双击：随机一条 yuqi；保持睡眠（可短暂 peek）。"""
         if self._voice_enabled() and self._vpet_voice_category_ready("yuqi"):
-            self._addon_voice_vpet("yuqi", chain=False, interrupt_busy=True)
+            self._addon_voice_vpet(
+                "yuqi", chain=False, ignore_cooldown=True, interrupt_busy=True
+            )
         if self.mode == "quiet" and self.state == "rest":
             self._rest_peek_sleep1()
 
