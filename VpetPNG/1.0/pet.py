@@ -6099,6 +6099,8 @@ def _load_app_config() -> dict:
         "persona": PERSONA_DEFAULT,
         # 角色身份：aoba=苍叶 / eiden=伊得（双开涨友情）
         "pet_kind": PET_KIND,
+        # 智能伴侣上次开启则下次自动恢复
+        "companion_enabled": False,
         # 桌宠编号服务由内置默认 / 环境变量提供，玩家不可手填
         "pet_id_api_url": "",
         "pet_id_activation_code": "",
@@ -9433,9 +9435,8 @@ class DesktopPet:
         self._start_mode_time_tracking()
         # 若上次退出时智能伴侣已开启，则自动静默恢复（不弹入场动画/toast）
         try:
-            stats = (self.achievements or {}).get("stats", {})
-            if stats.get("companion_enabled"):
-                self.root.after(5000, self._auto_restore_companion)
+            if self._should_restore_companion():
+                self.root.after(1800, lambda: self._auto_restore_companion(0))
         except Exception:
             pass
         # 音乐 cache 可后台慢慢补；源 wav 已可直接播
@@ -26985,13 +26986,51 @@ class DesktopPet:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _auto_restore_companion(self) -> None:
+    def _should_restore_companion(self) -> bool:
+        """成就统计或 app_config 任一记为开启，则下次启动恢复。"""
+        try:
+            stats = (self.achievements or {}).get("stats", {})
+            if bool(stats.get("companion_enabled")):
+                return True
+        except Exception:
+            pass
+        try:
+            if bool((self.app_config or {}).get("companion_enabled")):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _persist_companion_enabled(self, enabled: bool) -> None:
+        """双写成就 + 配置，避免关窗/分目录存档丢状态。"""
+        flag = bool(enabled)
+        try:
+            stats = self.achievements.setdefault("stats", {})
+            stats["companion_enabled"] = flag
+            _save_achievements(self.achievements)
+        except Exception:
+            pass
+        try:
+            self.app_config["companion_enabled"] = flag
+            _save_app_config(self.app_config)
+        except Exception:
+            pass
+
+    def _auto_restore_companion(self, tries: int = 0) -> None:
         """启动后自动静默恢复智能伴侣（上次退出时处于开启状态）。"""
-        if self._closing or not getattr(self, "_startup_ready", False):
+        if self._closing:
             return
-        if self.companion_bar_enabled:
+        if not getattr(self, "_startup_ready", False):
+            if int(tries) < 12:
+                self.root.after(700, lambda t=int(tries) + 1: self._auto_restore_companion(t))
+            return
+        if not self._should_restore_companion():
+            return
+        if self.companion_bar_enabled and self.mini_pets:
             return
         self.companion_bar_enabled = True
+        # 再写一次，统一双存档
+        self._persist_companion_enabled(True)
         if not self.mini_pets:
             self._show_companion_loading(
                 lambda: self._spawn_mini_pet_impl(silent=True, skip_enter_anim=True)
@@ -27011,11 +27050,11 @@ class DesktopPet:
                 stats = self.achievements.setdefault("stats", {})
                 open_n = int(stats.get("companion_open_count", 0) or 0) + 1
                 stats["companion_open_count"] = open_n
-                stats["companion_enabled"] = True
-                _save_achievements(self.achievements)
+                self._persist_companion_enabled(True)
                 self._check_achievements(source="companion")
             except Exception:
                 open_n = 1
+                self._persist_companion_enabled(True)
 
             def after_ready() -> None:
                 self.root.after(120, self._play_happy)
@@ -27043,12 +27082,7 @@ class DesktopPet:
             self._destroy_all_mini_pets(animated=True)
             self._show_toast("智能伴侣栏已关闭", PIXEL_COLOR, duration_ms=1500)
             # 关闭时持久化状态，下次启动不再自动恢复
-            try:
-                stats = self.achievements.setdefault("stats", {})
-                stats["companion_enabled"] = False
-                _save_achievements(self.achievements)
-            except Exception:
-                pass
+            self._persist_companion_enabled(False)
 
     def _hide_companion_heart_transfer(self) -> None:
         self._companion_heart_gen = int(getattr(self, "_companion_heart_gen", 0)) + 1
@@ -30356,6 +30390,12 @@ class DesktopPet:
         if getattr(self, "_finalize_close_done", False):
             return
         self._finalize_close_done = True
+        # 退出前若伴侣仍开着，务必落盘，避免重启丢失
+        try:
+            if getattr(self, "companion_bar_enabled", False):
+                self._persist_companion_enabled(True)
+        except Exception:
+            pass
         try:
             self._flush_achievements_save()
         except Exception:

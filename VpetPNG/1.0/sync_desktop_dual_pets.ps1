@@ -91,18 +91,28 @@ function Sync-OnePet($target) {
   Set-Content -Path (Join-Path $dest "KIND.txt") -Value $kind -Encoding UTF8
   # 根目录也放一份，方便从仓库根启动
   Set-Content -Path (Join-Path $root "KIND.txt") -Value $kind -Encoding UTF8
+  # 版本戳：方便确认桌面目录是否已同步到最新源码（勿再跑旧 exe）
+  $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+  $stampBody = @"
+branch=cursor/auto-restore-companion-c4c2
+kind=$kind
+synced_at=$stamp
+prefer=pet.py
+"@
+  Set-Content -Path (Join-Path $dest "SYNC_STAMP.txt") -Value $stampBody -Encoding UTF8
+  Set-Content -Path (Join-Path $root "SYNC_STAMP.txt") -Value $stampBody -Encoding UTF8
 
-  # 该目录默认启动脚本
+  # 该目录默认启动脚本（优先 pet.py，避免旧 release exe 挡住更新）
   $boot = Join-Path $dest "启动本宠.bat"
   $bootBody = @"
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
 set VPET_KIND=$kind
-if exist "release\Vpet\Vpet.exe" (
-  start "" "%~dp0release\Vpet\Vpet.exe" --kind $kind
-) else if exist "pet.py" (
+if exist "pet.py" (
   start "" pythonw "%~dp0pet.py" --kind $kind
+) else if exist "release\Vpet\Vpet.exe" (
+  start "" "%~dp0release\Vpet\Vpet.exe" --kind $kind
 ) else (
   start "" pythonw "%~dp0vpet_app.py" --kind $kind
 )
