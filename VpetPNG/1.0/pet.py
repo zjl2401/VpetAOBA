@@ -13349,24 +13349,23 @@ class DesktopPet:
             other_companions=peer_friendship.normalize_companions(peer.get("companions")),
         )
         self._show_speech_dialog(line, auto_hide_ms=3200, use_border5=False)
-        if random.random() < 0.55:
-            hold = 2000 + random.randint(0, 800)
+        # 跨宠相遇：交流句 + 并排漫步均必触发
+        hold = 2000 + random.randint(0, 800)
 
-            def _exchange() -> None:
-                if self._closing or not self._alive():
-                    return
-                self._show_speech_dialog(
-                    peer_friendship.build_exchange(self.pet_kind, other_kind),
-                    auto_hide_ms=3000,
-                    use_border5=False,
-                )
+        def _exchange() -> None:
+            if self._closing or not self._alive():
+                return
+            self._show_speech_dialog(
+                peer_friendship.build_exchange(self.pet_kind, other_kind),
+                auto_hide_ms=3000,
+                use_border5=False,
+            )
 
-            try:
-                self.root.after(hold, _exchange)
-            except Exception:
-                pass
-        # 并排漫步：有概率触发，不挡计分
-        if not self._stroll_active() and random.random() < 0.72:
+        try:
+            self.root.after(hold, _exchange)
+        except Exception:
+            pass
+        if not self._stroll_active():
             self.root.after(700, lambda p=peer: self._start_crossover_stroll(p))
 
     def _peer_presence_companions(self) -> list[str]:

@@ -26,14 +26,29 @@ PAIR_KEY = "aoba_eiden"
 # 手拉手散步（hand_hold_walk）已暂时移除，稳定后再启用。
 ACTION_BY_LEVEL: dict[int, str] = {}
 
-# 每级进度条所需点数（逐级变难；前两级略降，方便上手）
-def points_for_bar(level: int) -> int:
+# 每级进度条所需点数
+# 新表：1 不变；2–9 用旧表的 2–3；10 用旧表的 4；11+ 接旧表 5 起
+def _legacy_points_for_bar(level: int) -> int:
     lv = max(1, int(level))
     if lv == 1:
         return 3
     if lv == 2:
         return 5
     return 4 + (lv - 1) * 3 + max(0, lv - 2) * (lv - 2)
+
+
+def points_for_bar(level: int) -> int:
+    lv = max(1, int(level))
+    if lv == 1:
+        return _legacy_points_for_bar(1)
+    if 2 <= lv <= 9:
+        # 轮换旧 2 / 旧 3（5 与 11）
+        legacy_lv = 2 + ((lv - 2) % 2)
+        return _legacy_points_for_bar(legacy_lv)
+    if lv == 10:
+        return _legacy_points_for_bar(4)
+    # 11+ → 旧 5、6、7…
+    return _legacy_points_for_bar(lv - 6)
 
 def cumulative_before(level: int) -> float:
     return float(sum(points_for_bar(i) for i in range(1, max(1, int(level)))))
@@ -205,7 +220,8 @@ def build_greeting(
     oc = normalize_companions(other_companions or [])
     main = random.choice(greeting_lines(self_kind, other_kind))
     extra = minipet_line(self_kind, sc, oc)
-    if extra and random.random() < 0.72:
+    # 有迷你宠时必带称呼句
+    if extra:
         return f"{main}\n{extra}"
     return main
 
