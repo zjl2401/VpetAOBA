@@ -13,10 +13,19 @@ from PIL import Image, ImageDraw, ImageTk
 HOME_COLS = 12
 HOME_ROWS = 10
 HOME_TILE = 32
-# 室内默认：石板棋盘地砖
-HOME_FLOOR_A = "#6a7080"
-HOME_FLOOR_B = "#5a6070"
-HOME_FURN_DEFAULT = "#6aa8d8"  # 天蓝家具（画笔默认 / 旧格回退）
+# 室内默认：棕木地板 + 粉紫象牙家具
+HOME_FLOOR_A = "#9a7048"
+HOME_FLOOR_B = "#845c38"
+HOME_COLOR_PINK = "#e89ab0"
+HOME_COLOR_PURPLE = "#8a6ab0"
+HOME_COLOR_IVORY = "#f4ead8"
+HOME_COLOR_BROWN = "#8b5a2b"
+HOME_FURN_DEFAULT = HOME_COLOR_PINK  # 画笔默认樱粉
+# 旧版初始：石板地 + 全屋天蓝（加载时迁移到粉紫象牙棕色）
+_LEGACY_DEFAULT_FLOOR_A = "#6a7080"
+_LEGACY_DEFAULT_FLOOR_B = "#5a6070"
+_LEGACY_DEFAULT_FURN = "#6aa8d8"
+PALETTE_REV = 2
 HOME_COLS_MIN, HOME_COLS_MAX = 6, 24
 HOME_ROWS_MIN, HOME_ROWS_MAX = 6, 20
 HOME_ROOMS_MAX = 4
@@ -33,15 +42,22 @@ def clamp_material_span(value: object) -> int:
         return CUSTOM_SPAN_MIN
 
 
+def _as_int(value: object, default: int = 0) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except Exception:
+        return default
+
+
 def material_span_of(entry: dict | None) -> int:
     if not isinstance(entry, dict):
         return CUSTOM_SPAN_MIN
     return clamp_material_span(entry.get("span", 1))
 
-# 格子：None | "bed" | {"k":"bed","c":"#6aa8d8"} | "@bed:1,0"
+# 格子：None | "bed" | {"k":"bed","c":"#e89ab0"} | "@bed:1,0"
 Cell = str | dict | None
-HOME_WALL = "#2a3340"
-HOME_WALL_TRIM = "#4a6a88"
+HOME_WALL = "#f3eadc"
+HOME_WALL_TRIM = "#c9a8c0"
 HOME_BED_SLEEP_MS = 15_000
 HOME_SQUAT_MS = 2_500
 HOME_WALK_MS = 620  # 自由走动间隔；越大越慢
@@ -56,8 +72,8 @@ HOME_DAY_PERIOD_LABELS = {
 }
 
 FLOOR_COLOR_PRESETS: tuple[tuple[str, str, str], ...] = (
+    ("木板", "#9a7048", "#845c38"),
     ("苔绿", "#3d5a45", "#35523e"),
-    ("木板", "#8b6a45", "#7a5a38"),
     ("石砖", "#6a7080", "#5a6070"),
     ("粉格", "#c898a8", "#b88898"),
     ("青瓷", "#4a8a88", "#3a7a78"),
@@ -65,10 +81,11 @@ FLOOR_COLOR_PRESETS: tuple[tuple[str, str, str], ...] = (
 )
 
 FURN_COLOR_PRESETS: tuple[tuple[str, str], ...] = (
-    ("原木", "#8b5a2b"),
     ("樱粉", "#e89ab0"),
-    ("天蓝", "#6aa8d8"),
     ("葡萄", "#8a6ab0"),
+    ("象牙", "#f4ead8"),
+    ("原木", "#8b5a2b"),
+    ("天蓝", "#6aa8d8"),
     ("薄荷", "#6aba98"),
     ("炭灰", "#5a6068"),
 )
@@ -643,17 +660,146 @@ def _place(tiles: list[list[Cell]], kind: str, x: int, y: int, *, color: str | N
 
 def default_indoor_tiles() -> list[list[Cell]]:
     tiles = blank_tiles()
-    color = HOME_FURN_DEFAULT
-    _place(tiles, "window", 1, 0, color=color)
-    _place(tiles, "bed", 1, 2, color=color)
-    _place(tiles, "carpet", 4, 4, color=color)
-    _place(tiles, "table", 5, 6, color=color)
-    _place(tiles, "chair", 5, 7, color=color)
-    _place(tiles, "plant", 9, 7, color=color)
-    _place(tiles, "lamp", 3, 2, color=color)
-    _place(tiles, "plant", 10, 1, color=color)
-    _place(tiles, "door", 0, 5, color=color)
+    _place(tiles, "window", 1, 0, color=HOME_COLOR_BROWN)
+    _place(tiles, "bed", 1, 2, color=HOME_COLOR_PINK)
+    _place(tiles, "shelf", 10, 2, color=HOME_COLOR_BROWN)
+    _place(tiles, "carpet", 4, 4, color=HOME_COLOR_PINK)
+    _place(tiles, "table", 5, 6, color=HOME_COLOR_BROWN)
+    _place(tiles, "chair", 5, 7, color=HOME_COLOR_PURPLE)
+    _place(tiles, "plant", 9, 7, color=HOME_COLOR_BROWN)
+    _place(tiles, "lamp", 3, 2, color=HOME_COLOR_IVORY)
+    _place(tiles, "plant", 10, 1, color=HOME_COLOR_BROWN)
+    _place(tiles, "door", 0, 5, color=HOME_COLOR_BROWN)
     return tiles
+
+
+def _tiles_look_like_legacy_sky_default(tiles: object) -> bool:
+    if not isinstance(tiles, list):
+        return False
+    kinds: set[str] = set()
+    colors: set[str] = set()
+    for row in tiles:
+        if not isinstance(row, list):
+            continue
+        for cell in row:
+            if isinstance(cell, dict):
+                k = str(cell.get("k") or "").strip()
+                if k and not k.startswith("@"):
+                    kinds.add(k)
+                c = _valid_hex_color(cell.get("c"))
+                if c:
+                    colors.add(c.lower())
+            elif isinstance(cell, str) and cell and not cell.startswith("@"):
+                kinds.add(cell)
+    if not {"bed", "chair"}.issubset(kinds):
+        return False
+    if not colors:
+        return True
+    return colors == {_LEGACY_DEFAULT_FURN.lower()}
+
+
+def _should_migrate_legacy_palette(raw: dict) -> bool:
+    if _as_int(raw.get("palette_rev"), 0) >= PALETTE_REV:
+        return False
+    fa = str(raw.get("floor_a") or "").strip().lower()
+    fb = str(raw.get("floor_b") or "").strip().lower()
+    if fa != _LEGACY_DEFAULT_FLOOR_A.lower() or fb != _LEGACY_DEFAULT_FLOOR_B.lower():
+        return False
+    fc = str(raw.get("furn_color") or _LEGACY_DEFAULT_FURN).strip().lower()
+    if fc != _LEGACY_DEFAULT_FURN.lower():
+        return False
+    indoor = raw.get("indoor_tiles")
+    if not isinstance(indoor, list):
+        indoor = raw.get("tiles") if str(raw.get("zone") or "indoor") != "outdoor" else None
+    if _tiles_look_like_legacy_sky_default(indoor):
+        return True
+    rooms = raw.get("rooms")
+    if isinstance(rooms, list) and rooms and isinstance(rooms[0], dict):
+        return _tiles_look_like_legacy_sky_default(rooms[0].get("tiles"))
+    return False
+
+
+def _recolor_legacy_sky_tiles(tiles: list[list[Cell]]) -> list[list[Cell]]:
+    kind_colors = {
+        "bed": HOME_COLOR_PINK,
+        "carpet": HOME_COLOR_PINK,
+        "shelf": HOME_COLOR_BROWN,
+        "table": HOME_COLOR_BROWN,
+        "window": HOME_COLOR_BROWN,
+        "door": HOME_COLOR_BROWN,
+        "plant": HOME_COLOR_BROWN,
+        "lamp": HOME_COLOR_IVORY,
+        "chair": HOME_COLOR_PURPLE,
+        "sofa": HOME_COLOR_PURPLE,
+    }
+    legacy = _LEGACY_DEFAULT_FURN.lower()
+    out: list[list[Cell]] = []
+    for row in tiles:
+        if not isinstance(row, list):
+            out.append(row)  # type: ignore[arg-type]
+            continue
+        new_row: list[Cell] = []
+        for cell in row:
+            if isinstance(cell, dict):
+                c = dict(cell)
+                own = _valid_hex_color(c.get("c"))
+                k = str(c.get("k") or "").strip()
+                if own and own.lower() == legacy:
+                    c["c"] = kind_colors.get(k, HOME_COLOR_BROWN)
+                new_row.append(c)
+            else:
+                new_row.append(cell)
+        out.append(new_row)
+    return out
+
+
+def _apply_pink_brown_palette_to_raw(raw: dict) -> dict:
+    out = dict(raw)
+    out["floor_a"] = HOME_FLOOR_A
+    out["floor_b"] = HOME_FLOOR_B
+    out["furn_color"] = HOME_FURN_DEFAULT
+    indoor = out.get("indoor_tiles")
+    if isinstance(indoor, list):
+        out["indoor_tiles"] = _recolor_legacy_sky_tiles(indoor)
+    else:
+        out["indoor_tiles"] = [[c for c in row] for row in default_indoor_tiles()]
+    rooms = out.get("rooms")
+    if isinstance(rooms, list) and rooms:
+        new_rooms: list = []
+        for room in rooms:
+            if not isinstance(room, dict):
+                new_rooms.append(room)
+                continue
+            r = dict(room)
+            if isinstance(r.get("tiles"), list):
+                r["tiles"] = _recolor_legacy_sky_tiles(r["tiles"])
+            new_rooms.append(r)
+        out["rooms"] = new_rooms
+
+    def _ensure_shelf(grid: object) -> None:
+        if not isinstance(grid, list):
+            return
+        has_shelf = any(
+            isinstance(c, dict) and str(c.get("k") or "") == "shelf"
+            for row in grid
+            if isinstance(row, list)
+            for c in row
+        )
+        if has_shelf:
+            return
+        try:
+            _place(grid, "shelf", 10, 2, color=HOME_COLOR_BROWN)
+        except Exception:
+            pass
+
+    _ensure_shelf(out.get("indoor_tiles"))
+    rooms2 = out.get("rooms")
+    if isinstance(rooms2, list):
+        for room in rooms2:
+            if isinstance(room, dict):
+                _ensure_shelf(room.get("tiles"))
+    out["palette_rev"] = PALETTE_REV
+    return out
 
 
 def default_outdoor_tiles() -> list[list[Cell]]:
@@ -722,6 +868,7 @@ def default_layout() -> dict:
         "tree_regrow": [],
         "rooms": [{"name": "主屋", "tiles": room0_tiles, "pet": [6, 5]}],
         "active_room": 0,
+        "palette_rev": PALETTE_REV,
     }
 
 
@@ -821,6 +968,8 @@ def normalize_layout(raw: dict | None) -> dict:
     base = default_layout()
     if not isinstance(raw, dict):
         return base
+    if _should_migrate_legacy_palette(raw):
+        raw = _apply_pink_brown_palette_to_raw(raw)
     cols, rows = clamp_grid_size(int(raw.get("cols") or HOME_COLS), int(raw.get("rows") or HOME_ROWS))
     zone = str(raw.get("zone") or "indoor")
     if zone not in ("indoor", "outdoor"):
@@ -978,6 +1127,7 @@ def normalize_layout(raw: dict | None) -> dict:
         "tree_regrow": tree_regrow,
         "rooms": rooms,
         "active_room": active_room,
+        "palette_rev": max(PALETTE_REV, _as_int(raw.get("palette_rev"), 0)),
     }
 
 
@@ -1244,7 +1394,15 @@ def load_layout(path: Path) -> dict:
     if path.is_file():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            return normalize_layout(data if isinstance(data, dict) else None)
+            raw = data if isinstance(data, dict) else None
+            old_rev = _as_int((raw or {}).get("palette_rev"), 0)
+            layout = normalize_layout(raw)
+            if _as_int(layout.get("palette_rev"), 0) > old_rev:
+                try:
+                    save_layout(path, layout)
+                except Exception:
+                    pass
+            return layout
         except Exception:
             pass
     return default_layout()
@@ -1304,6 +1462,7 @@ def save_layout(path: Path, layout: dict) -> None:
         "tree_regrow": list(layout.get("tree_regrow") or []) if isinstance(layout.get("tree_regrow"), list) else [],
         "rooms": rooms_payload,
         "active_room": int(layout.get("active_room") or 0),
+        "palette_rev": max(PALETTE_REV, _as_int(layout.get("palette_rev"), 0)),
     }
     # 紧凑 JSON：涂色/走动防抖写盘时更轻
     path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
@@ -2002,16 +2161,17 @@ def _draw_furniture_rgb(
     tw, th = tile * w, tile * h
     wood = furn_color or HOME_FURN_DEFAULT
     wood_d = _shade(wood, 0.65)
-    accent = _blend(wood, "#88aacc", 0.45)
-    fabric = _blend(wood, "#ddeeff", 0.55)
+    accent = _blend(wood, HOME_COLOR_PURPLE, 0.35)
+    fabric = _blend(wood, HOME_COLOR_IVORY, 0.55)
 
     def box(x0, y0, x1, y1, fill: str, outline: str | None = None) -> None:
         d.rectangle([x0, y0, x1 - 1, y1 - 1], fill=_hex(fill), outline=_hex(outline) if outline else None)
 
     if kind == "bed":
         box(2, 6, tw - 2, th - 2, wood, wood_d)
-        box(4, 4, tw - 4, th // 2 + 2, fabric, _shade(fabric, 0.75))
-        box(tw - tile // 2 - 2, 2, tw - 4, th // 2, "#ddeeff")
+        sheet = _blend(wood, HOME_COLOR_IVORY, 0.45)
+        box(4, 4, tw - 4, th // 2 + 2, sheet, _shade(sheet, 0.75))
+        box(tw - tile // 2 - 2, 2, tw - 4, th // 2, HOME_COLOR_IVORY)
     elif kind == "table":
         box(4, th // 3, tw - 4, th - 6, wood, wood_d)
         box(6, th - 6, 10, th - 2, wood_d)
@@ -2039,13 +2199,16 @@ def _draw_furniture_rgb(
         box(7, 6, 14, 14, "#88ccff")
         box(tw - 16, th // 2, tw - 7, th // 2 + 10, "#ffcc66")
     elif kind == "lamp":
-        box(tile // 2 - 3, th // 2, tile // 2 + 3, th - 2, "#555566")
-        box(tile // 2 - 8, 4, tile // 2 + 8, th // 2, "#ffee88", "#ccaa44")
+        stand = _blend(wood, "#555566", 0.55)
+        shade = _blend(wood, "#ffee88", 0.35) if wood.lower() != HOME_COLOR_IVORY.lower() else HOME_COLOR_IVORY
+        box(tile // 2 - 3, th // 2, tile // 2 + 3, th - 2, stand)
+        box(tile // 2 - 8, 4, tile // 2 + 8, th // 2, shade, _shade(shade, 0.75))
     elif kind == "window":
-        box(2, 4, tw - 2, th - 4, "#88ccee", "#446688")
+        glass = _blend(HOME_COLOR_IVORY, "#88ccee", 0.45)
+        box(2, 4, tw - 2, th - 4, glass, wood_d)
         mid = tw // 2
-        box(mid - 1, 4, mid + 1, th - 4, "#446688")
-        box(2, th // 2 - 1, tw - 2, th // 2 + 1, "#446688")
+        box(mid - 1, 4, mid + 1, th - 4, wood_d)
+        box(2, th // 2 - 1, tw - 2, th // 2 + 1, wood_d)
         box(0, 2, tw, 6, wood)
     elif kind == "door":
         # 木框门扇（可站立切换室内外）

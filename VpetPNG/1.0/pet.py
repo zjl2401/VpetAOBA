@@ -40,6 +40,7 @@ import app_scene_desktop
 import desktop_clock
 import home_cottage as home_room
 import home_farm
+import peer_friendship
 import pet_outfit
 import rhythm_chart_editor
 from media_bundled import is_audio_media
@@ -161,6 +162,10 @@ ASSETS_DIR = BUNDLE_DIR / "assets"
 SPRITES_DIR = ASSETS_DIR / "sprites"
 PROPS_DIR = ASSETS_DIR / "props"
 MINIPET_DIR = ASSETS_DIR / "minipet"
+SPRITES_BLACK_DIR = ASSETS_DIR / "sprites_black"
+MINIPET_BLACK_DIR = ASSETS_DIR / "minipet_black"
+CUTOUT_DIR = ASSETS_DIR / "cutout"
+RAW_GREEN_DIR = ASSETS_DIR / "raw_green"
 AUDIO_ASSET_DIR = ASSETS_DIR / "audio"
 GALLERY_DIR = BUNDLE_DIR / "gallery"
 GALLERY_CONFIG_FILE = GALLERY_DIR / "gallery.json"
@@ -180,10 +185,13 @@ HOME_PRESETS_DIR = DATA_DIR / "homes"
 HOME_EXPORTS_DIR = DATA_DIR / "exports"
 DATA_CHARTS_DIR = DATA_DIR / "charts"
 WALLET_FILE = DATA_DIR / "wallet.json"
-PEER_PRESENCE_DIR = DATA_DIR / "presence"
+# 与艾登桌宠共用本机总线，才能互相发现对方在线（源码/打包均可用）
+PEER_KIND = "aoba"
+PEER_PRESENCE_DIR = _user_persistent_root() / "presence_bus"
 PEER_MEET_POLL_MS = 1400
 PEER_STALE_MS = 3200
 PEER_MEET_COOLDOWN_MS = 52_000
+CROSSOVER_MEET_COOLDOWN_MS = 95_000
 PEER_MEET_LINES: tuple[str, ...] = (
     "咦，怎么还有一个我？",
     "……你也是苍叶？",
@@ -192,6 +200,18 @@ PEER_MEET_LINES: tuple[str, ...] = (
     "嘿，那边的我，你好呀。",
     "等等，屏幕里怎么有两只我？",
     "是幻觉，还是真的有另一个我？",
+)
+# 官方联动：伊得穿到苍叶的世界（碧岛）
+CROSSOVER_MEET_LINES: tuple[str, ...] = (
+    "诶？你……不是碧岛的人？",
+    "穿过来的访客？欢迎来到碧岛。",
+    "你好，我是苍叶……你是从另一个世界来的？",
+    "伊得？听说你会穿到这边来。",
+    "另一个世界的人……好厉害。",
+    "碧岛又来了新朋友呢。",
+    "这边是旧货店附近哦，迷路的话可以找我。",
+    "嗨！我是苍叶，欢迎来碧岛。",
+    "见到你了，打个招呼吧？",
 )
 # Meta 破墙台词：低频随机；同句不重复（用尽后重置该事件池）
 META_BANTER_GLOBAL_COOLDOWN_MS = 110_000
@@ -229,6 +249,11 @@ META_BANTER_LINES: dict[str, tuple[str, ...]] = {
         "双开了？那边的我也辛苦了。",
         "屏幕里怎么站了两只……",
     ),
+    "crossover_meet": (
+        "伊得也开机了？",
+        "桌面两边各站一只……",
+        "联动访客来碧岛了呢。",
+    ),
     "screen_edge": (
         "再过去就要掉出桌面了。",
         "到边了！到边了！",
@@ -242,6 +267,7 @@ META_BANTER_CHANCE: dict[str, float] = {
     "bixin_end": 0.48,
     "idle_long": 0.40,
     "peer_meet": 0.28,
+    "crossover_meet": 0.32,
     "screen_edge": 0.22,
 }
 META_BANTER_EVENT_COOLDOWN_MS: dict[str, int] = {
@@ -251,6 +277,7 @@ META_BANTER_EVENT_COOLDOWN_MS: dict[str, int] = {
     "bixin_end": 150_000,
     "idle_long": 700_000,
     "peer_meet": 320_000,
+    "crossover_meet": 380_000,
     "screen_edge": 220_000,
 }
 PERSONA_DEV_TIP = (
@@ -654,10 +681,7 @@ ACHIEVEMENT_DEFS: tuple[dict[str, str], ...] = (
     {"id": "rhyme_win", "title": "莱姆胜者", "desc": "赢得一局莱姆对战", "cat": "小游戏"},
     {"id": "rhyme_jinmu", "title": "金目登场", "desc": "莱姆对战中触发金目觉醒并获胜", "cat": "小游戏"},
     {"id": "expose_clear", "title": "暴露成功", "desc": "完成一次暴露通关", "cat": "小游戏"},
-    # 音乐好感（少量保留）
-    {"id": "affinity_first_bar", "title": "一寸心音", "desc": "任意人物好感攒满一格", "cat": "音乐好感"},
-    {"id": "affinity_lv10", "title": "记你很久", "desc": "任意人物好感达到 Lv.10", "cat": "音乐好感"},
-    {"id": "listen_hour", "title": "听完整场", "desc": "累计听歌满 60 分钟", "cat": "音乐好感"},
+    # 音乐好感成就暂下线（好感模块尚未开发完全）
 )
 
 
@@ -878,7 +902,14 @@ _PLATE_BORDER_CACHE: dict[int, Image.Image] = {}
 
 
 def _resolve_border_file(stem: str) -> Path | None:
-    roots = (ASSETS_DIR / "ui", SPRITES_DIR, Path(__file__).resolve().parent)
+    roots = (
+        CUTOUT_DIR / "ui",
+        ASSETS_DIR / "ui",
+        SPRITES_DIR,
+        RAW_GREEN_DIR / "ui",
+        RAW_GREEN_DIR / "sprites",
+        Path(__file__).resolve().parent,
+    )
     for root in roots:
         for ext in (".png", ".jpg", ".jpeg"):
             path = root / f"{stem}{ext}"
@@ -916,7 +947,8 @@ def _load_border_asset(stem: str) -> Image.Image | None:
     if path is None:
         return None
     try:
-        return _remove_green(Image.open(path).convert("RGBA"))
+        img = Image.open(path).convert("RGBA")
+        return img if _path_is_prekeyed(path) else _remove_green(img)
     except Exception:
         return None
 
@@ -1458,20 +1490,116 @@ def _migrate_legacy_layout() -> None:
             shutil.copy2(path, dst)
 
 
+def _cutout_path_for(filename: str, *, black: bool = False) -> Path | None:
+    """预抠透明 PNG：cutout/{sprites|minipet|props|ui|…_black}/{stem}.png"""
+    stem = Path(filename).stem
+    ordered: list[Path] = []
+    low = filename.lower()
+    if black:
+        if low.startswith("pet"):
+            ordered.append(CUTOUT_DIR / "minipet_black" / f"{stem}.png")
+        ordered.append(CUTOUT_DIR / "sprites_black" / f"{stem}.png")
+        ordered.append(CUTOUT_DIR / "minipet_black" / f"{stem}.png")
+    else:
+        if low.startswith("pet"):
+            ordered.append(CUTOUT_DIR / "minipet" / f"{stem}.png")
+        if low in {"box.jpg", "flag.jpg", "box.png", "flag.png"}:
+            ordered.append(CUTOUT_DIR / "props" / f"{stem}.png")
+        for sub in ("sprites", "minipet", "props", "ui"):
+            ordered.append(CUTOUT_DIR / sub / f"{stem}.png")
+    seen: set[str] = set()
+    for path in ordered:
+        key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if path.is_file():
+            return path
+    return None
+
+
+def _path_is_prekeyed(path: Path) -> bool:
+    try:
+        parts = {p.lower() for p in path.parts}
+        return path.suffix.lower() == ".png" and "cutout" in parts
+    except Exception:
+        return False
+
+
+# —— 立绘图组：普通（默认）/ 黑框（缺图回退普通）——
+SPRITE_PACK_NORMAL = "normal"
+SPRITE_PACK_BLACK = "black"
+SPRITE_PACK_LABELS: dict[str, str] = {
+    SPRITE_PACK_NORMAL: "普通",
+    SPRITE_PACK_BLACK: "黑框",
+}
+_ACTIVE_SPRITE_PACK = SPRITE_PACK_NORMAL
+
+
+def set_active_sprite_pack(pack: str) -> None:
+    global _ACTIVE_SPRITE_PACK
+    raw = str(pack or "").strip().lower()
+    want = SPRITE_PACK_BLACK if raw in (SPRITE_PACK_BLACK, "pngblack", "black_border") else SPRITE_PACK_NORMAL
+    if _ACTIVE_SPRITE_PACK == want:
+        return
+    _ACTIVE_SPRITE_PACK = want
+    _clear_sprite_image_caches()
+
+
+def get_active_sprite_pack() -> str:
+    return _ACTIVE_SPRITE_PACK if _ACTIVE_SPRITE_PACK in SPRITE_PACK_LABELS else SPRITE_PACK_NORMAL
+
+
 def _asset_path(filename: str) -> Path:
+    """普通优先 cutout；黑框优先 cutout/*_black 与 sprites_black，缺图回退普通。"""
+    pack_black = get_active_sprite_pack() == SPRITE_PACK_BLACK
+    if not pack_black:
+        cut = _cutout_path_for(filename, black=False)
+        if cut is not None:
+            return cut
+    else:
+        cut = _cutout_path_for(filename, black=True)
+        if cut is not None:
+            return cut
+        # 黑框未抠好的原图
+        if filename.startswith("pet"):
+            for base in (MINIPET_BLACK_DIR, SPRITES_BLACK_DIR):
+                for name in (filename, f"{Path(filename).stem}.png", f"{Path(filename).stem}.jpg"):
+                    path = base / name
+                    if path.is_file():
+                        return path
+        else:
+            stem = Path(filename).stem
+            for name in (filename, f"{stem}.png", f"{stem}.jpg"):
+                path = SPRITES_BLACK_DIR / name
+                if path.is_file():
+                    return path
+        # 黑框缺图 → 普通 cutout / 普通目录
+        cut = _cutout_path_for(filename, black=False)
+        if cut is not None:
+            return cut
+
     if filename.startswith("pet"):
-        for base in (MINIPET_DIR, SPRITES_DIR, BUNDLE_DIR):
+        for base in (MINIPET_DIR, SPRITES_DIR, BUNDLE_DIR, RAW_GREEN_DIR / "minipet"):
             path = base / filename
             if path.is_file():
                 return path
     if filename in {"box.jpg", "flag.jpg"}:
-        path = PROPS_DIR / filename
-        if path.is_file():
-            return path
+        for base in (PROPS_DIR, RAW_GREEN_DIR / "props"):
+            path = base / filename
+            if path.is_file():
+                return path
     for base in (SPRITES_DIR, PROPS_DIR, MINIPET_DIR, BUNDLE_DIR):
         path = base / filename
         if path.is_file():
             return path
+    for sub in ("sprites", "minipet", "props", "ui"):
+        raw = RAW_GREEN_DIR / sub / filename
+        if raw.is_file():
+            return raw
+    cut = _cutout_path_for(filename, black=False)
+    if cut is not None:
+        return cut
     return SPRITES_DIR / filename
 
 
@@ -1865,48 +1993,64 @@ def ensure_nc_outfit_sprites(*, force: bool = False) -> int:
     """
     以 ncstand 为语义色板（头发不变 / 眼黄 / 粉→灰 / 衣黑 / 袖橘白 / 裤灰），
     批量生成各动作 nc* 图。站姿直接使用作者 ncstand，不二次生成。
+    始终基于「普通」图组源图生成，得到无黑框金目套图。
     已齐全时立刻返回，避免每次启动重建卡死加载。
     """
     SPRITES_DIR.mkdir(parents=True, exist_ok=True)
-    ncstand_path = _seed_ncstand_source()
-    if ncstand_path is None:
-        return 0
-    stand_out = SPRITES_DIR / "ncstand.png"
-    needed: list[tuple[str, Path]] = []
-    if force or not stand_out.is_file():
-        needed.append(("__stand__", stand_out))
-    for fname in CORE_OUTFIT_SPRITE_FILES:
-        if Path(fname).stem == "stand":
-            continue
-        out_path = SPRITES_DIR / _nc_output_name(fname)
-        if force or not out_path.is_file():
-            needed.append((fname, out_path))
-    if not needed:
-        return 0
+    prev_pack = get_active_sprite_pack()
+    set_active_sprite_pack(SPRITE_PACK_NORMAL)
     try:
-        palette = _sample_nc_outfit_palette(Image.open(ncstand_path))
-    except Exception:
-        return 0
-    made = 0
-    for key, out_path in needed:
+        ncstand_path = _seed_ncstand_source()
+        if ncstand_path is None:
+            # 黑框备份里可能仍有 ncstand
+            for cand in (SPRITES_BLACK_DIR / "ncstand.png", SPRITES_BLACK_DIR / "ncstand.jpg"):
+                if cand.is_file():
+                    try:
+                        shutil.copy2(cand, SPRITES_DIR / cand.name)
+                        ncstand_path = SPRITES_DIR / cand.name
+                    except Exception:
+                        ncstand_path = cand
+                    break
+        if ncstand_path is None:
+            return 0
+        stand_out = SPRITES_DIR / "ncstand.png"
+        needed: list[tuple[str, Path]] = []
+        if force or not stand_out.is_file():
+            needed.append(("__stand__", stand_out))
+        for fname in CORE_OUTFIT_SPRITE_FILES:
+            if Path(fname).stem == "stand":
+                continue
+            out_path = SPRITES_DIR / _nc_output_name(fname)
+            if force or not out_path.is_file():
+                needed.append((fname, out_path))
+        if not needed:
+            return 0
         try:
-            if key == "__stand__":
-                if ncstand_path.resolve() != out_path.resolve():
-                    shutil.copy2(ncstand_path, out_path)
-                elif not out_path.is_file():
-                    shutil.copy2(ncstand_path, out_path)
-                made += 1
-                continue
-            src_path = _find_existing_asset(key)
-            if src_path is None:
-                continue
-            _apply_nc_outfit_recolor(Image.open(src_path), palette).save(out_path)
-            made += 1
+            palette = _sample_nc_outfit_palette(Image.open(ncstand_path))
         except Exception:
-            continue
-    if made:
-        _clear_sprite_image_caches()
-    return made
+            return 0
+        made = 0
+        for key, out_path in needed:
+            try:
+                if key == "__stand__":
+                    if ncstand_path.resolve() != out_path.resolve():
+                        shutil.copy2(ncstand_path, out_path)
+                    elif not out_path.is_file():
+                        shutil.copy2(ncstand_path, out_path)
+                    made += 1
+                    continue
+                src_path = _find_existing_asset(key)
+                if src_path is None:
+                    continue
+                _apply_nc_outfit_recolor(Image.open(src_path), palette).save(out_path)
+                made += 1
+            except Exception:
+                continue
+        if made:
+            _clear_sprite_image_caches()
+        return made
+    finally:
+        set_active_sprite_pack(prev_pack)
 
 
 DEFAULT_SIZE = 128
@@ -2326,6 +2470,7 @@ MINI_PET_WORK_FOLLOW_STEP = 16
 MINI_PET_BOUNCE_MS = 640
 MINI_PET_BOUNCE_PX = 4
 MINI_PET_MAX = 5
+MINI_PET_KIND_CYCLE = ("rei", "aster", "morvay")
 # 跟随转向防抖：最短保持 + 轴向优势比，避免斜向/贴身时抽风切面
 MINI_PET_TURN_HOLD_MS = 420
 MINI_PET_TURN_AXIS_RATIO = 1.4
@@ -3874,7 +4019,7 @@ GUIDE_TOPICS: dict[str, dict] = {
             "· 拖拽蓝色区域：移动桌宠\n"
             "· Esc：退出当前玩法或关闭子窗口\n"
             "· F1：本说明\n"
-            "· Ctrl+Shift+Q：强制退出（跳过结束动画）\n"
+            "· Ctrl+Shift+Q：强制退出（跳过结束动画；与伊得 Ctrl+Alt 不冲突）\n"
             "· 系统 → 设置 → 开机自启：登录后自动显示\n"
             "· 更多快捷键见「系统 · 我的 · 快捷键」"
         ),
@@ -3934,7 +4079,7 @@ GUIDE_TOPICS: dict[str, dict] = {
     "panel": {
         "title": "面板 · 家园 · 互动",
         "body": (
-            "· 面板：体力 / 心情 / 好感 / 背包、智能伴侣、人格、家园、莱姆等\n"
+            "· 面板：体力 / 心情 / 好感（尚未开发完全）/ 背包、智能伴侣、人格、家园、莱姆等\n"
             "· 互动：动作 / 表情 / 对话 / 工具\n"
             "· 设置里开「时间显示」时，睡眠 / 音乐 / 工作旁会显示秒表或定时；关则去掉秒表，音乐仍保留控歌键"
         ),
@@ -3945,9 +4090,10 @@ GUIDE_TOPICS: dict[str, dict] = {
             "· 系统：我的 / 设置 / 社区 / 重置 / 退出\n"
             "· 我的：所属人、日记、成就、回忆\n"
             "· 互动 → 工具：秒表、计时器、番茄钟、日程、天气、生日祝福\n\n"
-            "【全局】按住 Ctrl+Shift 再按字母：\n"
+            "【全局 · 苍叶】按住 Ctrl+Shift 再按字母：\n"
             "· H 打招呼　E 喂食　T 电话　J 下蹲\n"
-            "· N 睡眠　V 主菜单　Q 强制退出　A AI 对话（未开放）\n\n"
+            "· N 睡眠　V 主菜单　Q 强制退出　A AI 对话（未开放）\n"
+            "（伊得桌宠为 Ctrl+Alt，可同时开）\n\n"
             "【窗口内】F1 说明　Esc 退出当前玩法或关窗\n\n"
             "【玩法内】音游 D/F/J/K；经营用数字键选工具；\n"
             "　　RPG 编辑器 Ctrl+S 保存，Ctrl+E / Ctrl+Shift+S 导出"
@@ -4909,6 +5055,7 @@ FOOD_VANISH_MS = 400
 FOOD_FX_PAD = 32
 FOOD_FX_PIXEL_DIV = 16
 
+# 苍叶：Ctrl+Shift（与伊得 Ctrl+Alt 区分，双开不抢热键）
 HOTKEY_ACTIONS: list[tuple[int, int, str]] = [
     (1, ord("H"), "hi"),
     (2, ord("E"), "food_menu"),
@@ -4983,14 +5130,17 @@ SPI_GETSCREENSAVERRUNNING = 0x0072
 # 0=off 1=on 2=dimmed（GUID_CONSOLE_DISPLAY_STATE / SESSION_DISPLAY_STATUS）
 _GUID_CONSOLE_DISPLAY_STATE = "{6FE69556-704A-47A0-8F24-C28D936FDA47}"
 _GUID_SESSION_DISPLAY_STATUS = "{2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5}"
+MOD_ALT = 0x0001
 MOD_CONTROL = 0x0002
 MOD_SHIFT = 0x0004
+# 苍叶全局热键修饰键（伊得为 Ctrl+Alt）
+HOTKEY_MOD = MOD_CONTROL | MOD_SHIFT
 # 开场静置期就开始预热其它尺寸；完成一档再开下一档
 PRELOAD_IDLE_DELAY_MS = 14000
 PRELOAD_STEP_MS = 4500
 PRELOAD_CHAIN_MS = 180
 PRELOAD_EARLY_CHAIN_MS = 90
-_SOURCE_FILE_CACHE: dict[str, Image.Image] = {}
+_SOURCE_FILE_CACHE: dict[tuple, Image.Image] = {}
 _GALLERY_RGB_CACHE: dict[tuple, Image.Image] = {}
 _STRIP_OUTER_BLACK = False
 _REF_SCALE_CACHE: dict[tuple, float] = {}
@@ -5125,19 +5275,31 @@ def _gallery_photo(path: Path, max_side: int, *, bg_hex: str = MENU_BG) -> Image
 
 
 def _open_asset_image(filename: str) -> Image.Image:
-    if filename not in _SOURCE_FILE_CACHE:
-        _SOURCE_FILE_CACHE[filename] = Image.open(_asset_path(filename))
-    return _SOURCE_FILE_CACHE[filename]
+    pack = get_active_sprite_pack()
+    key = (filename, pack)
+    if key not in _SOURCE_FILE_CACHE:
+        path = _asset_path(filename)
+        img = Image.open(path)
+        if _path_is_prekeyed(path):
+            img = img.convert("RGBA")
+            img.info["vpet_prekeyed"] = True
+        _SOURCE_FILE_CACHE[key] = img
+    return _SOURCE_FILE_CACHE[key]
 
 
 def _cap_source_image(img: Image.Image, display_size: int) -> Image.Image:
     max_side = max(display_size * 5, 512)
     w, h = img.size
     longest = max(w, h)
+    prekeyed = bool(img.info.get("vpet_prekeyed"))
     if longest <= max_side:
-        return img.copy()
-    scale = max_side / longest
-    return img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+        out = img.copy()
+    else:
+        scale = max_side / longest
+        out = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+    if prekeyed:
+        out.info["vpet_prekeyed"] = True
+    return out
 
 
 def _get_processed_canvas(
@@ -5149,7 +5311,8 @@ def _get_processed_canvas(
 ) -> Image.Image:
     scale_key = None if reference_scale is None else round(reference_scale, 5)
     strip = strip_outer_black_enabled()
-    key = (filename, display_size, scale_key, flip, strip)
+    pack = get_active_sprite_pack()
+    key = (filename, display_size, scale_key, flip, strip, pack)
     cached = _PROCESSED_CANVAS_CACHE.get(key)
     if cached is not None:
         return cached
@@ -5157,8 +5320,9 @@ def _get_processed_canvas(
     if flip:
         img = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     name = filename.lower()
-    skip_green = name in SKIP_GREEN_KEY_FILENAMES
-    if name in OUTER_LIME_KEY_FILENAMES:
+    prekeyed = bool(img.info.get("vpet_prekeyed"))
+    skip_green = prekeyed or name in SKIP_GREEN_KEY_FILENAMES
+    if (not prekeyed) and name in OUTER_LIME_KEY_FILENAMES:
         img = _remove_outer_lime_green(img)
         skip_green = True
     canvas = _to_fixed_canvas(
@@ -5479,11 +5643,12 @@ def _to_fixed_canvas(
 
 def _reference_scale(display_size: int) -> float:
     strip = strip_outer_black_enabled()
-    cached = _REF_SCALE_CACHE.get((display_size, strip))
+    pack = get_active_sprite_pack()
+    cached = _REF_SCALE_CACHE.get((display_size, strip, pack))
     if cached is not None:
         return cached
     img = _cap_source_image(_open_asset_image("stand.jpg"), display_size)
-    rgba = _remove_green(img)
+    rgba = img.convert("RGBA") if img.info.get("vpet_prekeyed") else _remove_green(img)
     if strip:
         rgba = _remove_outer_black_frame(rgba)
     bbox = rgba.getbbox()
@@ -5493,15 +5658,16 @@ def _reference_scale(display_size: int) -> float:
         cropped = rgba.crop(bbox)
         crop_w, crop_h = cropped.size
         scale = min(display_size / crop_w, display_size / crop_h)
-    _REF_SCALE_CACHE[(display_size, strip)] = scale
+    _REF_SCALE_CACHE[(display_size, strip, pack)] = scale
     return scale
 
 
 def _load_keyed_content(filename: str, *, persona: str | None = None) -> Image.Image:
-    """抠外圈绿幕后裁到内容包围盒（不铺满画布）。"""
+    """抠外圈绿幕后裁到内容包围盒（不铺满画布）。预抠 cutout 则直接用。"""
     resolved = _resolve_sprite_filename(filename, persona) if persona else filename
     try:
-        rgba = _remove_green(_open_asset_image(resolved))
+        img = _open_asset_image(resolved)
+        rgba = img.convert("RGBA") if img.info.get("vpet_prekeyed") else _remove_green(img)
     except Exception:
         rgba = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
     bbox = rgba.getbbox()
@@ -7827,6 +7993,8 @@ def _load_app_config() -> dict:
         "difficulty_t": 0.5,
         # 去掉立绘/画廊最外围连通黑边（仅边缘泛洪，缓存后不卡）
         "strip_outer_black": False,
+        # 立绘图组：normal=普通（默认）/ black=黑框（缺图回退普通）
+        "sprite_pack": SPRITE_PACK_NORMAL,
         # top=置顶 / middle=应用之下、桌面之上 / bottom=最底层（HWND_BOTTOM）
         "display_layer": "top",
         # 人格：default=默认立绘 / nc=金目（nc* 立绘）
@@ -10356,6 +10524,13 @@ class DesktopPet:
         if persona not in PERSONA_LABELS:
             persona = PERSONA_DEFAULT
         set_active_persona(persona)
+        # 立绘图组：默认普通；兼容旧 strip_outer_black（True→普通，False 且未写 sprite_pack→黑框）
+        raw_pack = self.app_config.get("sprite_pack")
+        if raw_pack is None and bool(self.app_config.get("strip_outer_black")):
+            raw_pack = SPRITE_PACK_NORMAL
+        elif raw_pack is None:
+            raw_pack = SPRITE_PACK_NORMAL
+        set_active_sprite_pack(str(raw_pack or SPRITE_PACK_NORMAL))
         set_strip_outer_black(bool(self.app_config.get("strip_outer_black")))
         # 开机自启快捷方式：后台同步，且已存在则跳过（避免每次出宠卡 PowerShell）
         try:
@@ -10402,7 +10577,7 @@ class DesktopPet:
         self._settings_font_job: str | None = None
 
         self.root = tk.Tk()
-        self.root.title("Vpet")
+        self.root.title("Vpet Aoba")
         self.root.overrideredirect(True)
         try:
             setattr(self.root, "_vpet_no_glass", True)
@@ -11030,6 +11205,15 @@ class DesktopPet:
         self._home_farm_sig: tuple | None = None
         self._peer_meet_job: str | None = None
         self._peer_meet_last_ms: int = 0
+        self._crossover_meet_last_ms: int = 0
+        self._crossover_friendship_cache: dict | None = None
+        self._crossover_action_win: tk.Toplevel | None = None
+        self._crossover_action_peer_id: str = ""
+        self._crossover_stroll_active: bool = False
+        self._crossover_stroll_job: str | None = None
+        self._crossover_chat_job: str | None = None
+        self._crossover_stroll_peer_id: str = ""
+        self._crossover_walk_frame: int = 0
         self._last_user_activity_ms: int = int(time.time() * 1000)
         self._meta_idle_job: str | None = None
         self._meta_edge_during_drag = False
@@ -11037,7 +11221,7 @@ class DesktopPet:
         self._display_power_state: int = 1
         self._display_dark_since_ms: int = 0
         self._display_power_notify: list = []
-        self._peer_instance_id: str = f"{os.getpid()}_{int(time.time() * 1000)}"
+        self._peer_instance_id: str = f"{PEER_KIND}_{os.getpid()}_{int(time.time() * 1000)}"
         # 尽早占位，让随后新建的桌宠能检测到「已有同伴」从而走轻量启动
         try:
             self._publish_peer_presence()
@@ -13893,9 +14077,45 @@ class DesktopPet:
         self._sync_panel_settings_ui()
 
     def _set_strip_outer_black(self, enabled: bool) -> None:
-        """系统设置：去黑框入口。尚未完成，仅提示；不改配置、不重建人格立绘。"""
-        del enabled  # 保留签名，避免旧调用报错
-        self._open_strip_black_stub()
+        """兼容旧入口：去黑框=普通图组，不去黑框=黑框图组。"""
+        self._set_sprite_pack(SPRITE_PACK_NORMAL if enabled else SPRITE_PACK_BLACK)
+
+    def _set_sprite_pack(self, pack: str) -> None:
+        raw = str(pack or "").strip().lower()
+        want = SPRITE_PACK_BLACK if raw in (SPRITE_PACK_BLACK, "pngblack", "black_border") else SPRITE_PACK_NORMAL
+        if get_active_sprite_pack() == want and str(self.app_config.get("sprite_pack") or "") == want:
+            self._sync_panel_settings_ui()
+            return
+        if want == SPRITE_PACK_BLACK:
+            cut_black = CUTOUT_DIR / "sprites_black"
+            has_black = (
+                (SPRITES_BLACK_DIR.is_dir() and any(SPRITES_BLACK_DIR.glob("*.*")))
+                or (cut_black.is_dir() and any(cut_black.glob("*.png")))
+            )
+            if not has_black:
+                self._show_toast("未找到黑框图组（assets/sprites_black）", "#ff8866", duration_ms=3200)
+                self._sync_panel_settings_ui()
+                return
+        set_active_sprite_pack(want)
+        self.app_config["sprite_pack"] = want
+        self._defer_save_app_config()
+        try:
+            self._sprite_cache.clear()
+            self._persona_sprite_cache.clear()
+            self._drag_handle_cache.clear()
+            self._pet_click_zones_cache.clear()
+            self._sprite_building.clear()
+        except Exception:
+            pass
+        _clear_sprite_image_caches()
+        label = SPRITE_PACK_LABELS.get(want, want)
+        self._show_toast(f"立绘图组：{label}", PIXEL_COLOR)
+        self._sync_panel_settings_ui()
+        self._reload_persona_sprites()
+
+    def _open_strip_black_stub(self) -> None:
+        """兼容旧菜单：打开普通图组。"""
+        self._set_sprite_pack(SPRITE_PACK_NORMAL)
 
     def _set_display_layer(self, layer: str) -> None:
         raw = str(layer).strip().lower()
@@ -13976,51 +14196,16 @@ class DesktopPet:
         self.affinity_tick_job = None
 
     def _schedule_affinity_tick(self) -> None:
+        # 好感涨点已下线
         self._cancel_affinity_tick()
 
-        def tick() -> None:
-            self.affinity_tick_job = None
-            if not self.bg_music_playing:
-                return
-            tid = self._current_bg_music_track_id()
-            track = _music_track(tid)
-            char_id = str(track.get("char_id") or "")
-            if char_id:
-                cur = float(self.music_affinity.get(char_id, 0) or 0)
-                self.music_affinity[char_id] = cur + AFFINITY_POINTS_PER_TICK
-                self._affinity_dirty = True
-            stats = self.achievements.setdefault("stats", {})
-            stats["listen_seconds"] = float(stats.get("listen_seconds", 0) or 0) + (
-                AFFINITY_TICK_MS / 1000.0
-            )
-            # 5 分钟才涨一次，每次直接写盘并刷新
-            if self._affinity_dirty:
-                _save_music_affinity(self.music_affinity)
-                self._affinity_dirty = False
-            _save_achievements(self.achievements)
-            self._check_achievements(source="listen")
-            self._refresh_panel_affinity()
-            self.affinity_tick_job = self._safe_after(AFFINITY_TICK_MS, tick)
-
-        self.affinity_tick_job = self._safe_after(AFFINITY_TICK_MS, tick)
-
     def _add_music_affinity(self, char_id: str, points: float) -> None:
-        if not char_id or points <= 0:
-            return
-        cur = float(self.music_affinity.get(char_id, 0) or 0)
-        self.music_affinity[char_id] = cur + float(points)
-        self._affinity_dirty = True
-        self._refresh_panel_affinity()
-        self._check_achievements(source="affinity")
+        # 好感功能暂关
+        return
 
     def _flush_affinity_save(self) -> None:
-        if getattr(self, "_affinity_dirty", False):
-            _save_music_affinity(self.music_affinity)
-            self._affinity_dirty = False
-        try:
-            _save_achievements(self.achievements)
-        except Exception:
-            pass
+        self._affinity_dirty = False
+        return
 
     def _apply_playlist_folders(self, folders: list[str], *, mark_filter_used: bool = True) -> None:
         folders = [f for f in folders if (f or "").strip()]
@@ -14064,7 +14249,6 @@ class DesktopPet:
 
     def _check_achievements(self, *, source: str = "") -> None:
         del source  # 预留
-        points = self.music_affinity
         stats = self.achievements.setdefault("stats", {})
         modes = set(stats.get("modes_used") or [])
         mode_sec = stats.get("mode_seconds") if isinstance(stats.get("mode_seconds"), dict) else {}
@@ -14152,13 +14336,6 @@ class DesktopPet:
             self._unlock_achievement("rhyme_jinmu")
         if int(stats.get("expose_clears", 0) or 0) >= 1:
             self._unlock_achievement("expose_clear")
-
-        if any(float(v or 0) >= AFFINITY_BAR_SEGMENT for v in points.values()):
-            self._unlock_achievement("affinity_first_bar")
-        if any(_affinity_level(float(v or 0)) >= 10 for v in points.values()):
-            self._unlock_achievement("affinity_lv10")
-        if float(stats.get("listen_seconds", 0) or 0) >= 3600:
-            self._unlock_achievement("listen_hour")
 
     def _note_mode_for_achievement(self, mode: str) -> None:
         stats = self.achievements.setdefault("stats", {})
@@ -16453,7 +16630,7 @@ class DesktopPet:
         self.hotkey_ids.clear()
         for hotkey_id, key, _action in HOTKEY_ACTIONS:
             ok = ctypes.windll.user32.RegisterHotKey(
-                hwnd, hotkey_id, MOD_CONTROL | MOD_SHIFT, key
+                hwnd, hotkey_id, HOTKEY_MOD, key
             )
             if ok:
                 self.hotkey_ids.append(hotkey_id)
@@ -16982,11 +17159,13 @@ class DesktopPet:
             PEER_PRESENCE_DIR.mkdir(parents=True, exist_ok=True)
             payload = {
                 "id": self._peer_instance_id,
+                "kind": PEER_KIND,
                 "pid": os.getpid(),
                 "x": key[0],
                 "y": key[1],
                 "size": key[2],
                 "ts": now_ms,
+                "companions": self._peer_presence_companions(),
             }
             self._peer_presence_path().write_text(
                 json.dumps(payload, ensure_ascii=False),
@@ -17285,6 +17464,11 @@ class DesktopPet:
             except Exception:
                 pass
             self._peer_meet_job = None
+        try:
+            self._stop_crossover_stroll(clear_session=False)
+        except Exception:
+            pass
+        self._hide_crossover_action_bar()
         self._clear_peer_presence()
 
     def _start_peer_meet_poll(self) -> None:
@@ -17303,9 +17487,32 @@ class DesktopPet:
             return False
         if self.state == "action":
             return False
-        if self.speech_dialog and self.speech_dialog.winfo_exists():
+        if getattr(self, "_crossover_stroll_active", False):
             return False
+        # 相遇台词可顶掉普通闲聊框，不再被 speech_dialog 挡住
         return True
+
+    def _schedule_peer_meet_greet(self) -> None:
+        """相遇后互相打招呼：播 hi 挥手。"""
+        def _go() -> None:
+            if self._closing or not self._alive():
+                return
+            if self.dragging or self.mode in ("loading", "game"):
+                return
+            if self.state in ("work", "action"):
+                return
+            try:
+                self._play_action("hi")
+            except Exception:
+                try:
+                    self._play_happy()
+                except Exception:
+                    pass
+
+        try:
+            self.root.after(520, _go)
+        except Exception:
+            pass
 
     def _peer_meet_tick(self) -> None:
         self._peer_meet_job = None
@@ -17314,23 +17521,628 @@ class DesktopPet:
             return
         self._publish_peer_presence()
         try:
+            self._poll_crossover_session()
+        except Exception:
+            pass
+        try:
+            self._maybe_show_crossover_action_bar()
+        except Exception:
+            pass
+        try:
             self._maybe_trigger_peer_meet()
         except Exception:
             pass
         self._peer_meet_job = self._safe_after(PEER_MEET_POLL_MS, self._peer_meet_tick)
 
+    def _peer_presence_companions(self) -> list[str]:
+        if not (self.companion_bar_enabled and getattr(self, "mini_pets", None)):
+            return []
+        out: list[str] = []
+        for entry in self.mini_pets:
+            if not isinstance(entry, dict):
+                continue
+            kind = str(entry.get("kind") or "rei").strip().lower()
+            if kind not in out:
+                out.append(kind)
+        return out
+
+    def _load_crossover_friendship(self) -> dict:
+        data = peer_friendship.load(PEER_PRESENCE_DIR)
+        st = peer_friendship.stats(float(data.get("points") or 0))
+        merged = {**data, **st}
+        self._crossover_friendship_cache = merged
+        return merged
+
+    def _crossover_pose_stand(self) -> None:
+        if self.dragging or self.state == "work":
+            return
+        self._interrupt_current_interaction()
+        self.state = "stand"
+        self.action_name = ""
+        try:
+            stand = getattr(self.sprites, "stand", None)
+            if stand is not None:
+                self._set_image(stand)
+        except Exception:
+            pass
+
+    def _run_crossover_dialog_chain(
+        self,
+        lines: tuple[str, ...] | list[str],
+        *,
+        use_border5: bool = False,
+        line_ms: int = 3400,
+        gap_ms: int = 480,
+        pose_stand: bool = False,
+        on_complete=None,
+    ) -> None:
+        seq = [str(x).strip() for x in lines if str(x).strip()]
+        if not seq:
+            if on_complete:
+                try:
+                    on_complete()
+                except Exception:
+                    pass
+            return
+        if pose_stand:
+            self._crossover_pose_stand()
+
+        def _step(idx: int) -> None:
+            if self._closing or not self._alive():
+                return
+            if idx >= len(seq):
+                if on_complete:
+                    try:
+                        on_complete()
+                    except Exception:
+                        pass
+                return
+            self._show_speech_dialog(seq[idx], auto_hide_ms=line_ms, use_border5=use_border5)
+            if idx + 1 < len(seq):
+                try:
+                    self.root.after(line_ms + gap_ms, lambda i=idx + 1: _step(i))
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.root.after(line_ms + gap_ms, lambda: _step(len(seq)))
+                except Exception:
+                    pass
+
+        _step(0)
+
+    def _crossover_owner_name(self) -> str:
+        prof = getattr(self, "pet_profile", None)
+        if isinstance(prof, dict):
+            return str(prof.get("owner_name") or "").strip()
+        return ""
+
+    def _crossover_custom_dialogues(self) -> dict[str, list[str]]:
+        return peer_friendship.load_custom_dialogues(PEER_PRESENCE_DIR, DATA_DIR)
+
+    def _crossover_list_peers(self) -> list[dict]:
+        now = int(time.time() * 1000)
+        if not PEER_PRESENCE_DIR.is_dir():
+            return []
+        peers: list[dict] = []
+        for path in list(PEER_PRESENCE_DIR.glob("*.json")):
+            if path.name in (
+                f"{self._peer_instance_id}.json",
+                "crossover_friendship.json",
+                "crossover_action.json",
+                peer_friendship.SESSION_FILE,
+            ):
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            ts = int(data.get("ts") or 0)
+            if now - ts > PEER_STALE_MS:
+                continue
+            peers.append(data)
+        return peers
+
+    def _crossover_find_near(self) -> dict | None:
+        ax, ay = int(self.x), int(self.y + self.click_bounce_offset)
+        asz = int(self.display_size)
+        for data in self._crossover_list_peers():
+            kind = str(data.get("kind") or "").strip().lower()
+            if kind in ("", PEER_KIND):
+                continue
+            bx = int(data.get("x") or 0)
+            by = int(data.get("y") or 0)
+            bsz = max(16, int(data.get("size") or asz))
+            pad = max(12, min(asz, bsz) // 5)
+            if self._rects_overlap(
+                ax - pad, ay - pad, asz + pad * 2, asz + pad * 2,
+                bx - pad, by - pad, bsz + pad * 2, bsz + pad * 2,
+            ):
+                return data
+        return None
+
+    def _hide_crossover_action_bar(self) -> None:
+        self._crossover_action_peer_id = ""
+        win = getattr(self, "_crossover_action_win", None)
+        self._crossover_action_win = None
+        if win and win.winfo_exists():
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+    def _show_crossover_action_bar(self, peer: dict) -> None:
+        peer_id = str(peer.get("id") or "")
+        if not peer_id:
+            return
+        if self._crossover_stroll_active or self.dragging:
+            return
+        fri = self._load_crossover_friendship()
+        if int(fri.get("meet_count") or 0) < 4:
+            return
+        if (
+            self._crossover_action_win
+            and self._crossover_action_win.winfo_exists()
+            and self._crossover_action_peer_id == peer_id
+        ):
+            try:
+                self._place_pet_attached_popup(
+                    self._crossover_action_win,
+                    self.x + self.display_size // 2,
+                    self.y - 8,
+                )
+            except Exception:
+                pass
+            return
+        self._hide_crossover_action_bar()
+        peer_ref = dict(peer)
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        try:
+            setattr(win, "_vpet_no_glass", True)
+            setattr(win, "_vpet_panel_glass", False)
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        win.configure(bg=MENU_BG)
+        frame = tk.Frame(win, bg=MENU_BG, padx=4, pady=4)
+        frame.pack()
+        for label, cmd in (
+            ("对话", lambda p=peer_ref: self._crossover_action_talk(p)),
+            ("互动", lambda p=peer_ref: self._crossover_action_interact(p)),
+            ("邀请", lambda p=peer_ref: self._crossover_action_invite(p)),
+        ):
+            btn = tk.Button(
+                frame,
+                text=label,
+                font=PIXEL_FONT,
+                fg=MENU_FG,
+                bg=PANEL_ITEM_BG,
+                activebackground=THEME_BLUE_DEEP,
+                activeforeground=MENU_FG,
+                relief=tk.FLAT,
+                padx=6,
+                pady=2,
+                cursor="hand2",
+                command=lambda c=cmd: (self._hide_crossover_action_bar(), c()),
+            )
+            btn.pack(side=tk.LEFT, padx=2)
+        self._crossover_action_win = win
+        self._crossover_action_peer_id = peer_id
+        self._place_pet_attached_popup(win, self.x + self.display_size // 2, self.y - 8)
+        self._lift_menu_above_pet(win)
+
+    def _crossover_action_talk(self, peer: dict) -> None:
+        other_kind = str(peer.get("kind") or "").strip().lower()
+        custom = peer_friendship.build_custom_talk(
+            PEER_KIND,
+            other_kind,
+            self._crossover_custom_dialogues(),
+            owner_name=self._crossover_owner_name(),
+        )
+        if custom:
+            self._show_speech_dialog(custom, auto_hide_ms=3800, use_border5=False)
+            return
+        fri = self._load_crossover_friendship()
+        if int(fri.get("meet_count") or 0) == 4:
+            self._run_crossover_dialog_chain(
+                peer_friendship.intro_script(PEER_KIND, other_kind),
+                use_border5=False,
+                line_ms=3600,
+                gap_ms=520,
+                pose_stand=True,
+            )
+            return
+        line = peer_friendship.build_greeting(
+            PEER_KIND,
+            other_kind,
+            self_companions=self._peer_presence_companions(),
+            other_companions=peer_friendship.normalize_companions(peer.get("companions")),
+        )
+        self._show_speech_dialog(line, auto_hide_ms=3800, use_border5=False)
+
+    def _crossover_action_interact(self, peer: dict) -> None:
+        self._start_crossover_stroll_together(peer)
+
+    def _crossover_action_invite(self, peer: dict) -> None:
+        other = peer_friendship.PET_DISPLAY.get(
+            str(peer.get("kind") or "").strip().lower(),
+            "对方",
+        )
+        self._show_toast(f"已向{other}发出家园邀请（联通功能后续更新）", "#ff88aa", duration_ms=2800)
+
+    def _crossover_slot_target(self, session: dict) -> tuple[int, int]:
+        if self._peer_instance_id == str(session.get("left_id") or ""):
+            return int(session.get("left_x") or 0), int(session.get("slot_y") or 0)
+        return int(session.get("right_x") or 0), int(session.get("slot_y") or 0)
+
+    def _crossover_at_slot(self, tx: int, ty: int, *, tol: int = 8) -> bool:
+        return abs(int(self.x) - int(tx)) <= tol and abs(int(self.y) - int(ty)) <= tol
+
+    def _crossover_peer_at_slot(self, peer_id: str, tx: int, ty: int, *, tol: int = 10) -> bool:
+        if peer_id == self._peer_instance_id:
+            return self._crossover_at_slot(tx, ty, tol=tol)
+        path = PEER_PRESENCE_DIR / f"{peer_id}.json"
+        if not path.is_file():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            px = int(data.get("x") or 0)
+            py = int(data.get("y") or 0)
+            return abs(px - tx) <= tol and abs(py - ty) <= tol
+        except Exception:
+            return False
+
+    def _crossover_move_step_toward(self, tx: int, ty: int, *, tol: int = 6) -> bool:
+        dx = int(tx) - int(self.x)
+        dy = int(ty) - int(self.y)
+        if abs(dx) <= tol and abs(dy) <= tol:
+            self.x = int(tx)
+            self.y = int(ty)
+            face = "right" if dx >= 0 else "left"
+            if abs(dy) > abs(dx):
+                face = "front" if dy > 0 else "back"
+            self._apply_walk_direction(face)
+            self.state = "stand"
+            self._set_image(self._current_stand_sprite())
+            self._place_window(light=True)
+            return True
+        if abs(dx) >= abs(dy):
+            direction = "right" if dx > 0 else "left"
+        else:
+            direction = "front" if dy > 0 else "back"
+        self._apply_walk_direction(direction)
+        self.state = "walk"
+        step_x, step_y = self.DELTAS[direction]
+        self.x += step_x
+        self.y += step_y
+        frames = self._walk_sprites[direction]
+        wf = int(getattr(self, "_crossover_walk_frame", 0) or 0)
+        self._set_image(frames[wf % 2])
+        self._crossover_walk_frame = wf + 1
+        self._place_window(light=True)
+        return False
+
+    def _stop_crossover_stroll(self, *, clear_session: bool = False) -> None:
+        self._crossover_stroll_active = False
+        self._crossover_stroll_peer_id = ""
+        if self._crossover_stroll_job:
+            try:
+                self.root.after_cancel(self._crossover_stroll_job)
+            except Exception:
+                pass
+            self._crossover_stroll_job = None
+        if self._crossover_chat_job:
+            try:
+                self.root.after_cancel(self._crossover_chat_job)
+            except Exception:
+                pass
+            self._crossover_chat_job = None
+        if clear_session:
+            sess = peer_friendship.load_session(PEER_PRESENCE_DIR)
+            if sess and self._peer_instance_id == str(sess.get("leader_id") or ""):
+                peer_friendship.clear_session(PEER_PRESENCE_DIR)
+        self.state = "stand"
+        self.action_name = ""
+        try:
+            self._set_image(self._current_stand_sprite())
+            self._place_window(light=True)
+        except Exception:
+            pass
+        if self._supports_walk_idle() and not self.idle_job:
+            self._schedule_stand_idle(min_delay=600, max_delay=1400)
+
+    def _maybe_advance_crossover_session(self, session: dict, now_ms: int) -> dict:
+        if str(session.get("phase") or "") != "approach":
+            return session
+        left_id = str(session.get("left_id") or "")
+        right_id = str(session.get("right_id") or "")
+        left_ok = self._crossover_peer_at_slot(left_id, int(session.get("left_x") or 0), int(session.get("slot_y") or 0))
+        right_ok = self._crossover_peer_at_slot(right_id, int(session.get("right_x") or 0), int(session.get("slot_y") or 0))
+        elapsed = now_ms - int(session.get("started_ms") or now_ms)
+        if not ((left_ok and right_ok) or elapsed >= peer_friendship.STROLL_APPROACH_MAX_MS):
+            return session
+        updated = dict(session)
+        updated["phase"] = "stroll"
+        updated["stroll_until_ms"] = now_ms + peer_friendship.STROLL_DURATION_MS
+        peer_friendship.save_session(PEER_PRESENCE_DIR, updated)
+        if self._crossover_stroll_active and not self._crossover_chat_job:
+            self._crossover_stroll_chat_tick()
+        return updated
+
+    def _start_crossover_stroll_together(self, peer: dict) -> None:
+        if self._crossover_stroll_active or self.dragging:
+            return
+        fri = self._load_crossover_friendship()
+        lv = int(fri.get("level") or 1)
+        if peer_friendship.ACTION_STROLL_TOGETHER not in peer_friendship.unlocked_actions(lv):
+            self._show_toast("友情 Lv.1 解锁并肩散步", "#ff88aa", duration_ms=2600)
+            return
+        existing = peer_friendship.load_session(PEER_PRESENCE_DIR)
+        if existing and str(existing.get("phase") or "") not in ("", "done"):
+            self._crossover_stroll_active = True
+            self._crossover_stroll_peer_id = str(peer.get("id") or "")
+            self._crossover_stroll_tick()
+            return
+        self._hide_crossover_action_bar()
+        self._hide_speech_dialog()
+        ax, ay = int(self.x), int(self.y)
+        asz = int(self.display_size)
+        bx = int(peer.get("x") or 0)
+        by = int(peer.get("y") or 0)
+        bsz = max(16, int(peer.get("size") or asz))
+        layout = peer_friendship.compute_stroll_layout(ax, ay, asz, bx, by, bsz)
+        my_id = self._peer_instance_id
+        peer_id = str(peer.get("id") or "")
+        leader_id = min(my_id, peer_id) if peer_id else my_id
+        if layout["a_is_left"]:
+            left_id, right_id = my_id, peer_id
+        else:
+            left_id, right_id = peer_id, my_id
+        screen_w, _ = self._screen_wh()
+        stroll_dir = peer_friendship.pick_stroll_direction(
+            int(layout["left_x"]),
+            int(layout["right_x"]),
+            int(layout["slot_y"]),
+            screen_w,
+            int(layout["slot_size"]),
+        )
+        now_ms = int(time.time() * 1000)
+        session = {
+            "action": peer_friendship.ACTION_STROLL_TOGETHER,
+            "leader_id": leader_id,
+            "left_id": left_id,
+            "right_id": right_id,
+            "left_x": int(layout["left_x"]),
+            "right_x": int(layout["right_x"]),
+            "slot_y": int(layout["slot_y"]),
+            "slot_size": int(layout["slot_size"]),
+            "stroll_dir": stroll_dir,
+            "phase": "approach",
+            "started_ms": now_ms,
+            "stroll_until_ms": 0,
+        }
+        if not peer_friendship.load_session(PEER_PRESENCE_DIR):
+            peer_friendship.save_session(PEER_PRESENCE_DIR, session)
+        self._crossover_stroll_active = True
+        self._crossover_stroll_peer_id = peer_id
+        self._crossover_walk_frame = 0
+        self._cancel_idle_chain()
+        self._crossover_stroll_tick()
+
+    def _crossover_stroll_chat_tick(self) -> None:
+        self._crossover_chat_job = None
+        if not self._crossover_stroll_active or self._closing or not self._alive():
+            return
+        session = peer_friendship.load_session(PEER_PRESENCE_DIR)
+        if not session or str(session.get("phase") or "") != "stroll":
+            return
+        now_ms = int(time.time() * 1000)
+        until = int(session.get("stroll_until_ms") or 0)
+        if until and now_ms >= until:
+            return
+        self._show_speech_dialog(
+            peer_friendship.garbled_chat_line(),
+            auto_hide_ms=max(1800, peer_friendship.STROLL_CHAT_INTERVAL_MS - 400),
+            use_border5=False,
+        )
+        self._crossover_chat_job = self._safe_after(
+            peer_friendship.STROLL_CHAT_INTERVAL_MS,
+            self._crossover_stroll_chat_tick,
+        )
+
+    def _crossover_stroll_tick(self) -> None:
+        self._crossover_stroll_job = None
+        if self._closing or not self._alive() or not self._crossover_stroll_active:
+            return
+        if self.dragging:
+            self._stop_crossover_stroll(clear_session=True)
+            return
+        session = peer_friendship.load_session(PEER_PRESENCE_DIR)
+        if not session:
+            self._stop_crossover_stroll()
+            return
+        my_id = self._peer_instance_id
+        if my_id not in (str(session.get("left_id") or ""), str(session.get("right_id") or "")):
+            self._stop_crossover_stroll()
+            return
+        now_ms = int(time.time() * 1000)
+        if my_id == str(session.get("leader_id") or ""):
+            session = self._maybe_advance_crossover_session(session, now_ms)
+        phase = str(session.get("phase") or "")
+        until = int(session.get("stroll_until_ms") or 0)
+        if phase == "done" or (until and now_ms >= until):
+            session["phase"] = "done"
+            if my_id == str(session.get("leader_id") or ""):
+                peer_friendship.save_session(PEER_PRESENCE_DIR, session)
+            self._stop_crossover_stroll(clear_session=True)
+            return
+        tx, ty = self._crossover_slot_target(session)
+        if phase == "approach":
+            if not self._crossover_at_slot(tx, ty):
+                self._crossover_move_step_toward(tx, ty)
+            else:
+                face = "right" if my_id == str(session.get("left_id") or "") else "left"
+                self._apply_walk_direction(face)
+                self.state = "stand"
+                self._set_image(self._current_stand_sprite())
+                self._place_window(light=True)
+        elif phase == "stroll":
+            direction = str(session.get("stroll_dir") or "right")
+            self._apply_walk_direction(direction)
+            self.state = "walk"
+            dx, dy = self.DELTAS[direction]
+            nx, ny = self.x + dx, self.y + dy
+            screen_w, screen_h = self._screen_wh()
+            size = int(self.display_size)
+            if (
+                nx >= 0
+                and ny >= 0
+                and nx + size <= screen_w
+                and ny + size <= screen_h
+            ):
+                self.x, self.y = nx, ny
+            wf = int(getattr(self, "_crossover_walk_frame", 0) or 0)
+            frames = self._walk_sprites[direction]
+            self._set_image(frames[wf % 2])
+            self._crossover_walk_frame = wf + 1
+            self._place_window(light=True)
+        self._crossover_stroll_job = self._safe_after(
+            peer_friendship.STROLL_STEP_MS,
+            self._crossover_stroll_tick,
+        )
+
+    def _poll_crossover_session(self) -> None:
+        if self._crossover_stroll_active:
+            return
+        session = peer_friendship.load_session(PEER_PRESENCE_DIR)
+        if not session:
+            return
+        phase = str(session.get("phase") or "")
+        if phase in ("", "done"):
+            return
+        my_id = self._peer_instance_id
+        if my_id not in (str(session.get("left_id") or ""), str(session.get("right_id") or "")):
+            return
+        if self.dragging or self.mode in ("loading", "game") or self.state == "work":
+            return
+        self._crossover_stroll_active = True
+        left_id = str(session.get("left_id") or "")
+        self._crossover_stroll_peer_id = str(session.get("right_id") if my_id == left_id else left_id)
+        self._crossover_walk_frame = 0
+        self._cancel_idle_chain()
+        if phase == "stroll" and not self._crossover_chat_job:
+            self._crossover_stroll_chat_tick()
+        self._crossover_stroll_tick()
+
+    def _maybe_show_crossover_action_bar(self) -> None:
+        if self._crossover_stroll_active or self.dragging or not self._peer_meet_allowed():
+            self._hide_crossover_action_bar()
+            return
+        fri = self._load_crossover_friendship()
+        if int(fri.get("meet_count") or 0) < 4:
+            self._hide_crossover_action_bar()
+            return
+        peer = self._crossover_find_near()
+        if peer:
+            self._show_crossover_action_bar(peer)
+        else:
+            self._hide_crossover_action_bar()
+
+    def _handle_crossover_meet(self, peer: dict, *, now_ms: int) -> None:
+        self._crossover_meet_last_ms = int(now_ms)
+        other_kind = str(peer.get("kind") or "").strip().lower()
+        peer_id = str(peer.get("id") or "")
+        prev = self._load_crossover_friendship()
+        old_lv = int(prev.get("level") or 1)
+        fri = peer_friendship.record_meet(
+            PEER_PRESENCE_DIR,
+            writer_id=self._peer_instance_id,
+            peer_id=peer_id,
+            now_ms=now_ms,
+        )
+        self._crossover_friendship_cache = fri
+        new_lv = int(fri.get("level") or 1)
+        if new_lv > old_lv:
+            unlocks = peer_friendship.unlocked_actions(new_lv)
+            label = peer_friendship.action_label(unlocks[-1]) if unlocks else ""
+            msg = f"友情升到 Lv.{new_lv}！"
+            if label:
+                msg += f" 解锁「{label}」"
+            self._show_toast(msg, "#ff88aa", duration_ms=3000)
+            try:
+                self._refresh_panel_affinity()
+            except Exception:
+                pass
+        phase = str(fri.get("phase") or peer_friendship.meet_phase(int(fri.get("meet_count") or 0)))
+        if phase == peer_friendship.PHASE_SILENT:
+            try:
+                self._refresh_panel_affinity()
+            except Exception:
+                pass
+            return
+        if phase == peer_friendship.PHASE_FAMILIAR:
+            self._show_speech_dialog(
+                peer_friendship.build_familiar(PEER_KIND, other_kind),
+                auto_hide_ms=3200,
+                use_border5=False,
+            )
+            return
+        if phase == peer_friendship.PHASE_INTRO:
+            peer_ref = dict(peer)
+            self._run_crossover_dialog_chain(
+                peer_friendship.intro_script(PEER_KIND, other_kind),
+                use_border5=False,
+                line_ms=3600,
+                gap_ms=520,
+                pose_stand=True,
+                on_complete=lambda: self._show_crossover_action_bar(peer_ref),
+            )
+            return
+        if random.random() < 0.18 and self._maybe_meta_banter("crossover_meet", chance=1.0):
+            self._schedule_peer_meet_greet()
+            return
+        line = peer_friendship.build_greeting(
+            PEER_KIND,
+            other_kind,
+            self_companions=self._peer_presence_companions(),
+            other_companions=peer_friendship.normalize_companions(peer.get("companions")),
+        )
+        self._show_speech_dialog(line, auto_hide_ms=3800, use_border5=False)
+        self._schedule_peer_meet_greet()
+        if random.random() < 0.45:
+            hold = 2200 + random.randint(0, 900)
+
+            def _exchange() -> None:
+                if self._closing or not self._alive():
+                    return
+                self._show_speech_dialog(
+                    peer_friendship.build_exchange(PEER_KIND, other_kind),
+                    auto_hide_ms=3200,
+                    use_border5=False,
+                )
+
+            try:
+                self.root.after(hold, _exchange)
+            except Exception:
+                pass
+
     def _maybe_trigger_peer_meet(self) -> None:
         if not self._peer_meet_allowed():
             return
         now = int(time.time() * 1000)
-        if now - int(self._peer_meet_last_ms or 0) < PEER_MEET_COOLDOWN_MS:
-            return
         if not PEER_PRESENCE_DIR.is_dir():
             return
-        ax, ay = int(self.x), int(self.y + self.click_bounce_offset)
-        asz = int(self.display_size)
+        peers: list[dict] = []
         for path in list(PEER_PRESENCE_DIR.glob("*.json")):
-            if path.name == f"{self._peer_instance_id}.json":
+            if path.name in (
+                f"{self._peer_instance_id}.json",
+                "crossover_friendship.json",
+                "crossover_action.json",
+                peer_friendship.SESSION_FILE,
+            ):
                 continue
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
@@ -17345,21 +18157,54 @@ class DesktopPet:
                 except Exception:
                     pass
                 continue
+            peers.append(data)
+        if not peers:
+            return
+
+        ax, ay = int(self.x), int(self.y + self.click_bounce_offset)
+        asz = int(self.display_size)
+
+        def _near(data: dict, *, crossover: bool = False) -> bool:
             bx = int(data.get("x") or 0)
             by = int(data.get("y") or 0)
             bsz = max(16, int(data.get("size") or asz))
-            # 略放宽容差：靠近也算相遇
-            pad = max(8, min(asz, bsz) // 6)
-            if not self._rects_overlap(
+            if crossover:
+                # 需再靠近一点才触发（比同角色多开略紧）
+                pad = max(8, min(asz, bsz) // 7)
+            else:
+                pad = max(16, min(asz, bsz) // 4)
+            return self._rects_overlap(
                 ax - pad, ay - pad, asz + pad * 2, asz + pad * 2,
                 bx - pad, by - pad, bsz + pad * 2, bsz + pad * 2,
-            ):
+            )
+
+        # 异作品靠近：苍叶 ↔ 伊得 打招呼 + 友情进度
+        if now - int(self._crossover_meet_last_ms or 0) >= CROSSOVER_MEET_COOLDOWN_MS:
+            cross_near = [
+                d for d in peers
+                if str(d.get("kind") or "").strip().lower() not in ("", PEER_KIND)
+                and _near(d, crossover=True)
+            ]
+            if cross_near:
+                self._handle_crossover_meet(cross_near[0], now_ms=now)
+                return
+
+        # 同作品多开：靠近重叠才触发「另一个我」
+        if now - int(self._peer_meet_last_ms or 0) < PEER_MEET_COOLDOWN_MS:
+            return
+        for data in peers:
+            kind = str(data.get("kind") or "").strip().lower()
+            if kind and kind != PEER_KIND:
+                continue
+            if not _near(data, crossover=False):
                 continue
             self._peer_meet_last_ms = now
-            if self._maybe_meta_banter("peer_meet"):
+            if random.random() < 0.22 and self._maybe_meta_banter("peer_meet", chance=1.0):
+                self._schedule_peer_meet_greet()
                 return
             line = random.choice(PEER_MEET_LINES)
-            self._show_speech_dialog(line, auto_hide_ms=2800, use_border5=False)
+            self._show_speech_dialog(line, auto_hide_ms=3000, use_border5=False)
+            self._schedule_peer_meet_greet()
             return
 
     def _screen_wh(self) -> tuple[int, int]:
@@ -17475,6 +18320,7 @@ class DesktopPet:
             "companion_loading_win",
             "sleep_zzz_win",
             "bixin_fx_win",
+            "_companion_heart_win",
             # 头顶花须在立绘之上，不进背景特效层
             # 工作道具不走桌宠特效层，见 _stack_work_props_under_pet
         )
@@ -21777,10 +22623,6 @@ class DesktopPet:
         self._hide_main_menu()
         self._show_toast("尚未开发完全", "#ffcc66", duration_ms=2800)
 
-    def _open_strip_black_stub(self) -> None:
-        """立绘去黑框：功能未完成；不是人格切换。"""
-        self._show_toast("尚未开发完全", "#ffcc66", duration_ms=2800)
-
     def _toggle_jinmu_persona(self) -> None:
         """单按钮切换：默认 ↔ 金目（nc 立绘）。"""
         self._hide_main_menu()
@@ -25278,8 +26120,8 @@ class DesktopPet:
         self._home_redraw()
         self._schedule_home_tick()
         self._show_toast(
-            "家园已重置（石板地·天蓝家具；钱包保留）",
-            "#88ccff",
+            "家园已重置（粉床·棕柜·紫凳；钱包保留）",
+            "#e89ab0",
             at=self._home_tip_anchor(),
             allow_center=False,
         )
@@ -29145,26 +29987,32 @@ class DesktopPet:
         ui["voice_iv_after"] = border_row
         if voice_on:
             voice_iv_wrap.pack(fill=tk.X, before=border_row)
-        tk.Label(border_row, text="立绘黑框", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
-        tk.Button(
+        tk.Label(border_row, text="立绘图组", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        pack_btns: dict[str, tk.Button] = {}
+        btn_normal = tk.Button(
             border_row,
-            text="去黑框",
-            command=self._open_strip_black_stub,
+            text="普通",
+            command=lambda: self._set_sprite_pack(SPRITE_PACK_NORMAL),
             font=PIXEL_FONT,
             bg=MENU_BG,
             fg=MENU_FG,
-        ).pack(side=tk.LEFT, padx=2)
-        tk.Button(
+        )
+        btn_normal.pack(side=tk.LEFT, padx=2)
+        pack_btns[SPRITE_PACK_NORMAL] = btn_normal
+        btn_black = tk.Button(
             border_row,
-            text="不去黑框",
-            command=self._open_strip_black_stub,
+            text="黑框",
+            command=lambda: self._set_sprite_pack(SPRITE_PACK_BLACK),
             font=PIXEL_FONT,
             bg=MENU_BG,
             fg=MENU_FG,
-        ).pack(side=tk.LEFT, padx=2)
+        )
+        btn_black.pack(side=tk.LEFT, padx=2)
+        pack_btns[SPRITE_PACK_BLACK] = btn_black
+        ui["sprite_pack_btns"] = pack_btns
         tk.Label(
             frame,
-            text="尚未开发完全（与人格切换无关）",
+            text="黑框缺图时自动用普通立绘；默认为普通（预抠透明图）",
             font=("Courier New", 8),
             fg="#8899aa",
             bg=MENU_BG,
@@ -32112,47 +32960,50 @@ class DesktopPet:
         self.mood_label = tk.Label(mood_col, text="", font=PIXEL_FONT, fg=MENU_FG, bg=panel_bg)
         self.mood_label.pack(anchor=tk.W, pady=(2, 0))
 
-        # 音乐人物好感：彩色像素小心心 + 无上限进度条
-        self.panel_affinity_open = True
+        # 友情（苍叶 ↔ 伊得）：靠近相遇累计等级与进度；进度条常显（与体力/心情同级）
+        self.panel_affinity_open = False
         self.panel_affinity_section = tk.Frame(frame, bg=panel_bg)
         self.panel_affinity_section.pack(anchor=tk.W, pady=(6, 0), fill=tk.X)
         aff_head = tk.Frame(self.panel_affinity_section, bg=PANEL_ITEM_BG, padx=6, pady=3, cursor="hand2")
         aff_head.pack(anchor=tk.W, fill=tk.X)
         self.panel_affinity_header = aff_head
-        tk.Label(aff_head, text="好感", font=PIXEL_FONT, fg=THEME_PINK, bg=PANEL_ITEM_BG, cursor="hand2").pack(
+        tk.Label(aff_head, text="友情", font=PIXEL_FONT, fg=THEME_PINK, bg=PANEL_ITEM_BG, cursor="hand2").pack(
             side=tk.LEFT
         )
-        peak0 = max(_load_affinity_peak_lv(), max((_affinity_level(float(v or 0)) for v in self.music_affinity.values()), default=0))
         self.panel_affinity_peak = tk.Label(
             aff_head,
-            text=f"历史最高 Lv.{peak0}",
-            font=("Courier New", 9),
-            fg="#aabbcc",
+            text="Lv.1",
+            font=PIXEL_FONT,
+            fg=THEME_PINK,
             bg=PANEL_ITEM_BG,
             cursor="hand2",
         )
         self.panel_affinity_peak.pack(side=tk.LEFT, padx=(8, 0))
         self.panel_affinity_hint = tk.Label(
-            aff_head, text="▼", font=PIXEL_FONT, fg="#888888", bg=PANEL_ITEM_BG, cursor="hand2"
+            aff_head,
+            text="▶",
+            font=PIXEL_FONT,
+            fg="#888888",
+            bg=PANEL_ITEM_BG,
+            cursor="hand2",
         )
         self.panel_affinity_hint.pack(side=tk.RIGHT)
+        self.panel_affinity_bar = tk.Canvas(
+            self.panel_affinity_section, width=PANEL_BAR_W, height=PANEL_BAR_H, bg=panel_bg, highlightthickness=0
+        )
+        self.panel_affinity_bar.pack(anchor=tk.W, pady=(4, 0))
         self.panel_affinity_content = tk.Frame(self.panel_affinity_section, bg=panel_bg)
-        self.panel_affinity_content.pack(anchor=tk.W, fill=tk.X, pady=(3, 0))
+        self.panel_affinity_detail = tk.Label(
+            self.panel_affinity_content,
+            text="",
+            font=("Microsoft YaHei UI", 9),
+            fg="#aabbcc",
+            bg=panel_bg,
+            justify=tk.LEFT,
+            wraplength=PANEL_VIEW_W - 12,
+        )
+        self.panel_affinity_detail.pack(anchor=tk.W, pady=(4, 0))
         self.panel_affinity_rows = {}
-        for ch in _music_char_defs_runtime():
-            color = _music_char_color(ch)
-            row = tk.Frame(self.panel_affinity_content, bg=panel_bg)
-            row.pack(fill=tk.X, pady=1)
-            heart = tk.Canvas(row, width=16, height=16, bg=panel_bg, highlightthickness=0)
-            heart.pack(side=tk.LEFT, padx=(0, 4))
-            _draw_pixel_heart(heart, 2, 2, px=2, color=color)
-            col = tk.Frame(row, bg=panel_bg)
-            col.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            bar = tk.Canvas(col, width=PANEL_BAR_W, height=PANEL_BAR_H - 2, bg=panel_bg, highlightthickness=0)
-            bar.pack(anchor=tk.W)
-            lbl = tk.Label(col, text="", font=("Courier New", 9), fg=color, bg=panel_bg)
-            lbl.pack(anchor=tk.W)
-            self.panel_affinity_rows[ch["id"]] = {"heart": heart, "bar": bar, "label": lbl, "color": color, "name": ch["label"]}
         for widget in (aff_head, *aff_head.winfo_children()):
             widget.bind("<Button-1>", self._toggle_panel_affinity, add="+")
             widget.configure(cursor="hand2")
@@ -32393,42 +33244,58 @@ class DesktopPet:
     def _toggle_panel_affinity(self, _event=None) -> None:
         if not (self.panel_win and self.panel_win.winfo_exists()):
             return
-        self.panel_affinity_open = not bool(getattr(self, "panel_affinity_open", True))
+        header = getattr(self, "panel_affinity_header", None)
+        if header is not None and header.winfo_exists():
+            play_pixel_click_burst(self.root, header)
+        self.panel_affinity_open = not bool(getattr(self, "panel_affinity_open", False))
         content = getattr(self, "panel_affinity_content", None)
         hint = getattr(self, "panel_affinity_hint", None)
-        if content and content.winfo_exists():
+        if content is not None and content.winfo_exists():
             if self.panel_affinity_open:
-                content.pack(anchor=tk.W, fill=tk.X, pady=(3, 0))
+                content.pack(anchor=tk.W, fill=tk.X, pady=(2, 0))
             else:
                 content.pack_forget()
-        if hint and hint.winfo_exists():
+        if hint is not None and hint.winfo_exists():
             hint.config(text="▼" if self.panel_affinity_open else "▶")
-        self._schedule_panel_border_layout()
+        self._refresh_panel_affinity()
         self._bump_panel_auto_hide()
 
     def _refresh_panel_affinity(self) -> None:
-        rows = getattr(self, "panel_affinity_rows", None) or {}
-        if not rows:
-            return
-        peak = _update_affinity_peak_lv(self.music_affinity)
-        peak_lbl = getattr(self, "panel_affinity_peak", None)
-        if peak_lbl is not None and peak_lbl.winfo_exists():
-            peak_lbl.config(text=f"历史最高 Lv.{peak}")
-        for ch in _music_char_defs_runtime():
-            row = rows.get(ch["id"])
-            if not row:
-                continue
-            bar = row.get("bar")
-            lbl = row.get("label")
-            if not bar or not bar.winfo_exists():
-                continue
-            pts = float(self.music_affinity.get(ch["id"], 0) or 0)
-            color = row.get("color") or _music_char_color(ch)
-            _draw_affinity_panel_bar(bar, pts, color, width=PANEL_BAR_W, height=PANEL_BAR_H - 2)
-            if lbl and lbl.winfo_exists():
-                lv = _affinity_level(pts)
-                pct = _affinity_bar_pct(pts)
-                lbl.config(text=f"{ch['label']}  Lv.{lv}  {pct}%  ({int(pts)})", fg=color)
+        fri = self._load_crossover_friendship()
+        lv = int(fri.get("level") or 1)
+        pct = int(fri.get("bar_pct") or 0)
+        cur = int(fri.get("bar_cur") or 0)
+        need = int(fri.get("bar_need") or 1)
+        meets = int(fri.get("meet_count") or 0)
+        peak = getattr(self, "panel_affinity_peak", None)
+        if peak is not None and peak.winfo_exists():
+            other = peer_friendship.PET_DISPLAY.get(
+                peer_friendship.KIND_EIDEN if PEER_KIND == peer_friendship.KIND_AOBA else peer_friendship.KIND_AOBA,
+                "联动",
+            )
+            peak.config(text=f"Lv.{lv} · {other}")
+        bar = getattr(self, "panel_affinity_bar", None)
+        if bar is not None and bar.winfo_exists():
+            self._draw_bar(bar, pct, "#ff88aa")
+        detail = getattr(self, "panel_affinity_detail", None)
+        if detail is not None and detail.winfo_exists():
+            unlocks = peer_friendship.unlocked_actions(lv)
+            unlock_txt = "、".join(peer_friendship.action_label(a) for a in unlocks) or "暂无（亲密动作后续更新）"
+            nxt = peer_friendship.next_unlock_hint(lv)
+            nxt_line = f"下一级解锁：{nxt}" if nxt else "继续相遇可累积更高友情等级。"
+            phase_txt = peer_friendship.meet_phase_label(meets)
+            dlg_path = peer_friendship.dialogues_path(PEER_PRESENCE_DIR, DATA_DIR)
+            dlg_hint = f"\n自定义对话：{dlg_path.name}" if dlg_path else ""
+            detail.config(
+                text=(
+                    f"靠近相遇 {meets} 次 · {phase_txt} · 本级 {cur}/{need}（{pct}%）\n"
+                    f"已解锁：{unlock_txt}\n"
+                    f"{nxt_line}\n"
+                    "第 4 次相遇后可点「对话/互动/邀请」；"
+                    "互动 Lv.1 并肩散步 15 秒。"
+                    f"{dlg_hint}"
+                )
+            )
 
     def _refresh_panel_stats(self) -> None:
         if self.stamina_icon_canvas and self.stamina_icon_canvas.winfo_exists():
@@ -33446,6 +34313,7 @@ class DesktopPet:
         self._companion_heart_win = None
         self._companion_heart_canvas = None
         self._companion_heart_on_done = None
+        self._notify_bg_fx_change()
 
     def _play_companion_heart_transfer(self, *, heart_count: int = 4, on_done=None) -> None:
         """爱心从桌宠飞向智能伴侣（每次开启伴侣都会送）。"""
@@ -33455,8 +34323,11 @@ class DesktopPet:
         if anchor is None:
             return
         ax, ay, asz, abounce = anchor
-        sx = int(self.x + self.display_size // 2)
-        sy = int(self.y + self.click_bounce_offset + self.display_size // 3)
+        ds = int(self.display_size)
+        bounce = int(self.click_bounce_offset)
+        # 胸口偏右下出发，弧线抬高，避免挡住脸（对齐比心 bixin_fx）
+        sx = int(self.x + ds * 0.58)
+        sy = int(self.y + bounce + ds * 0.55)
         ex = int(ax + asz // 2)
         ey = int(ay + abounce + asz // 3)
 
@@ -33492,6 +34363,11 @@ class DesktopPet:
         canvas.pack()
         self._companion_heart_canvas = canvas
         win.geometry(f"{width}x{height}+{left}+{top}")
+        try:
+            self._win32_set_click_through(win, True)
+        except Exception:
+            pass
+        self._lift_pet_above_bg_fx()
 
         colors = ("#ff4d7a", "#ff6688", "#ff88aa", "#ff3366", "#ff99bb", "#ffccdd")
         glow_colors = ("#ff99bb", "#ffc0d0", "#ffe0ea")
@@ -33502,8 +34378,8 @@ class DesktopPet:
             particles.append(
                 {
                     "t": -i * 0.07,
-                    "ox": random.uniform(-18, 18),
-                    "oy": random.uniform(-22, 12),
+                    "ox": random.uniform(-14, 22),
+                    "oy": random.uniform(-8, 16),
                     "arc": random.uniform(-48, 48),
                     "px": px,
                     "color": random.choice(colors),
@@ -33525,9 +34401,15 @@ class DesktopPet:
             progress = state["i"] / max(1, steps - 1)
             for p in particles:
                 t = min(1.0, max(0.0, progress + p["t"]))
-                # 更明显的弧线：从桌宠到莲
+                # 更明显的弧线：从胸口飞向伴侣，中段再抬高越过头顶
                 x = sx + (ex - sx) * t + p["ox"] + p["arc"] * (4 * t * (1 - t))
-                y = sy + (ey - sy) * t + p["oy"] - abs(p["arc"]) * 0.55 * math.sin(math.pi * t)
+                y = (
+                    sy
+                    + (ey - sy) * t
+                    + p["oy"]
+                    - abs(p["arc"]) * 0.55 * math.sin(math.pi * t)
+                    - int(ds * 0.14 * math.sin(math.pi * t))
+                )
                 px = int(p["px"])
                 # 轻微放大又缩小：中段最大
                 scale = 0.85 + 0.45 * math.sin(math.pi * t)
@@ -33618,6 +34500,8 @@ class DesktopPet:
         lbl.pack()
         idx = len(self.mini_pets)
         side = "left" if idx % 2 == 0 else "right"
+        kind = MINI_PET_KIND_CYCLE[idx % len(MINI_PET_KIND_CYCLE)]
+        mini_name = peer_friendship.MINIPET_DISPLAY.get(kind, "莲")
         gap = MINI_PET_SIDE_GAP
         if side == "left":
             start_x = self.x - size - gap
@@ -33642,6 +34526,7 @@ class DesktopPet:
             "label": lbl,
             "photo": photo,
             "sprites": sprites,
+            "kind": kind,
             "x": float(start_x),
             "y": float(start_y),
             "size": size,
@@ -33666,7 +34551,7 @@ class DesktopPet:
             self._sync_mini_pet_music_waves()
             self._notify_bg_fx_change()
             if not silent:
-                self._show_toast("噗~ 莲来陪你啦！", "#88ccff", duration_ms=1500)
+                self._show_toast(f"噗~ {mini_name}来陪你啦！", "#88ccff", duration_ms=1500)
             return
         # 无前置加载时：像素聚拢入场后再显示精灵
         lbl.pack_forget()
@@ -33690,7 +34575,7 @@ class DesktopPet:
             self._sync_mini_pet_music_waves()
             self._notify_bg_fx_change()
             if not silent:
-                self._show_toast("噗~ 莲来陪你啦！", "#88ccff", duration_ms=1500)
+                self._show_toast(f"噗~ {mini_name}来陪你啦！", "#88ccff", duration_ms=1500)
 
         _run_pixel_block_dissolve_animation(
             self.root,
@@ -36969,6 +37854,13 @@ class DesktopPet:
                 self._style_settings_choice_btn(
                     btn, selected=VOICE_INTERVAL_PRESETS.get(name) == cur_iv, label=name
                 )
+
+        # 立绘图组
+        cur_pack = get_active_sprite_pack()
+        for key, btn in (ui.get("sprite_pack_btns") or {}).items():
+            self._style_settings_choice_btn(
+                btn, selected=cur_pack == key, label=SPRITE_PACK_LABELS.get(key, key)
+            )
 
         # 显示层级
         cur_layer = self._display_layer()

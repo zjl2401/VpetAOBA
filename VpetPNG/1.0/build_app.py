@@ -334,18 +334,44 @@ def _prune_old_builds(*, keep: int = 2) -> None:
 def _create_shortcut(exe_path: Path, icon_path: Path | None = None) -> None:
     if sys.platform != "win32":
         return
-    lnk = DESKTOP / "Vpet.lnk"
-    icon = icon_path if icon_path and icon_path.exists() else (ROOT / "app_icon.ico")
-    icon_line = f"$Shortcut.IconLocation = '{icon},0'\n" if icon.exists() else ""
+    lnk = DESKTOP / "Vpet Aoba.lnk"
+    # 优先 exe 同目录 app_icon.ico（随安装包），勿指向桌面散落文件
+    beside = exe_path.parent / "app_icon.ico"
+    if icon_path and icon_path.exists():
+        try:
+            shutil.copy2(icon_path, beside)
+        except OSError:
+            pass
+    elif (ROOT / "app_icon.ico").exists():
+        try:
+            shutil.copy2(ROOT / "app_icon.ico", beside)
+        except OSError:
+            pass
+    if beside.exists():
+        icon = beside
+        icon_line = f"$Shortcut.IconLocation = '{icon},0'\n"
+    elif exe_path.exists():
+        icon_line = f"$Shortcut.IconLocation = '{exe_path},0'\n"
+    else:
+        icon_line = ""
     ps = f"""
 $WshShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut('{lnk}')
 $Shortcut.TargetPath = '{exe_path}'
 $Shortcut.WorkingDirectory = '{exe_path.parent}'
-$Shortcut.Description = 'Vpet 桌宠 - 点击托盘图标生成桌宠'
+$Shortcut.Description = 'Vpet Aoba'
 {icon_line}$Shortcut.Save()
 """
     subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True)
+
+    # 去掉旧名快捷方式，避免桌面残留两个
+    for legacy_name in ("Vpet.lnk", "VpetAoba.lnk"):
+        legacy = DESKTOP / legacy_name
+        if legacy.exists() and legacy.resolve() != lnk.resolve():
+            try:
+                legacy.unlink()
+            except OSError:
+                pass
 
     release_bat = exe_path.parent.parent / "启动桌宠.bat"
     release_bat.write_text(
@@ -509,8 +535,8 @@ def main() -> None:
         except Exception as exc:
             print(f"警告：打 zip 失败（{exc}）")
     print(f"构建版本：{stamp}")
-    print(f"桌面快捷方式：{DESKTOP / 'Vpet.lnk'}")
-    print("请打开桌面「Vpet」文件夹，双击 启动.bat 或 Vpet.exe")
+    print(f"桌面快捷方式：{DESKTOP / 'Vpet Aoba.lnk'}")
+    print("请打开桌面「Vpet Aoba」或发布目录，双击 启动.bat 或 Vpet.exe")
     print("若更新后改动未生效：请先托盘右键「退出启动器」，再重新打开。")
 
 

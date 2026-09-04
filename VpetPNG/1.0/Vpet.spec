@@ -43,6 +43,7 @@ a = Analysis(
         "app_scene_desktop",
         "rhythm_chart_editor",
         "pet_outfit",
+        "peer_friendship",
     ],
     hookspath=[],
     hooksconfig={},

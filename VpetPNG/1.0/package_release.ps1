@@ -13,7 +13,7 @@ Set-Location $Root
 $ReleaseRoot = Join-Path $Root "release"
 $OutDir = Join-Path $ReleaseRoot "Vpet"
 $DistDir = Join-Path $Root "dist\Vpet"
-$DesktopLnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Vpet.lnk"
+$DesktopLnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Vpet Aoba.lnk"
 $Stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 
 Write-Host "== app icons from stand ==" -ForegroundColor Cyan
@@ -133,14 +133,34 @@ $utf8Bom = New-Object System.Text.UTF8Encoding $true
 Write-Host "== desktop shortcut ==" -ForegroundColor Cyan
 if ($Shortcut) {
     $exe = Join-Path $OutDir "Vpet.exe"
+    $icoSrc = Join-Path $Root "app_icon.ico"
+    $icoDst = Join-Path $OutDir "app_icon.ico"
+    if (Test-Path $icoSrc) {
+        Copy-Item -Force $icoSrc $icoDst
+    }
+    # 图标只放在 release\Vpet 内，禁止指向桌面散落 ico（删了桌面图就会丢图标）
+    if (Test-Path $icoDst) {
+        $iconLoc = "$icoDst,0"
+    } else {
+        $iconLoc = "$exe,0"
+    }
     $wsh = New-Object -ComObject WScript.Shell
     $sc = $wsh.CreateShortcut($DesktopLnk)
     $sc.TargetPath = $exe
     $sc.WorkingDirectory = $OutDir
-    $sc.IconLocation = ($exe + ",0")
-    $sc.Description = "Vpet"
+    $sc.IconLocation = $iconLoc
+    $sc.Description = "Vpet Aoba"
     $sc.Save()
+    # 去掉旧名快捷方式
+    foreach ($legacyName in @("Vpet.lnk", "VpetAoba.lnk")) {
+        $legacyLnk = Join-Path ([Environment]::GetFolderPath("Desktop")) $legacyName
+        if ((Test-Path $legacyLnk) -and ($legacyLnk -ne $DesktopLnk)) {
+            Remove-Item -Force $legacyLnk -ErrorAction SilentlyContinue
+            Write-Host ("Removed legacy: " + $legacyLnk) -ForegroundColor Yellow
+        }
+    }
     Write-Host ("Shortcut: " + $DesktopLnk) -ForegroundColor Green
+    Write-Host ("Icon: " + $iconLoc) -ForegroundColor Green
 } else {
     Write-Host "skip desktop shortcut (pass -Shortcut to create)" -ForegroundColor Yellow
 }

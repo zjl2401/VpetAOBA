@@ -11,8 +11,8 @@ android {
         applicationId = "com.vpet.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 63
-        versionName = "0.2.61-squat-scale"
+        versionCode = 65
+        versionName = "0.2.63-vpet-aoba"
     }
 
     buildTypes {

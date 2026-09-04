@@ -51,41 +51,38 @@ def prepare_stand(im: Image.Image) -> Image.Image:
 
 
 def load_source() -> Image.Image:
+    # 与电脑版快捷方式同一套：优先现成 app_icon，再 normal cutout stand
     for rel in (
-        "assets/sprites/stand.jpg",
+        "app_icon.png",
+        "assets/cutout/sprites/stand.png",
         "assets/sprites/stand.png",
+        "assets/sprites/stand.jpg",
+        "assets/raw_green/sprites/stand.jpg",
         "gallery/stand.png",
         "gallery/stand.jpg",
     ):
         p = DESKTOP / rel
         if p.is_file():
             print("source:", p)
+            if p.name.lower().startswith("app_icon"):
+                return Image.open(p).convert("RGBA")
             return prepare_stand(Image.open(p))
-    raise SystemExit("desktop stand sprite not found")
+    raise SystemExit("desktop stand / app_icon not found")
 
 
-def fit_square_cover(im: Image.Image, size: int) -> Image.Image:
-    w, h = im.size
-    side = min(w, h)
-    left = (w - side) // 2
-    top = (h - side) // 2
-    cropped = im.crop((left, top, left + side, top + side))
-    return cropped.resize((size, size), Image.Resampling.LANCZOS)
-
-
-def fit_square_contain(
+def fit_square_contain_nearest(
     im: Image.Image,
     size: int,
     *,
     bg: tuple[int, int, int, int] = (0, 0, 0, 0),
-    pad_ratio: float = 0.0,
+    pad_ratio: float = 0.04,
 ) -> Image.Image:
     inner = max(1, int(size * (1.0 - pad_ratio)))
     w, h = im.size
     scale = min(inner / max(w, 1), inner / max(h, 1))
     nw = max(1, int(round(w * scale)))
     nh = max(1, int(round(h * scale)))
-    scaled = im.resize((nw, nh), Image.Resampling.LANCZOS)
+    scaled = im.resize((nw, nh), Image.Resampling.NEAREST)
     canvas = Image.new("RGBA", (size, size), bg)
     canvas.paste(scaled, ((size - nw) // 2, (size - nh) // 2), scaled)
     return canvas
@@ -101,8 +98,7 @@ def main() -> None:
         "mipmap-xxxhdpi": 192,
     }
     for folder, size in sizes.items():
-        # 透明底抠图，不要黑底
-        out = fit_square_contain(src, size, bg=(0, 0, 0, 0), pad_ratio=0.06)
+        out = fit_square_contain_nearest(src, size, bg=(0, 0, 0, 0), pad_ratio=0.04)
         d = RES / folder
         d.mkdir(parents=True, exist_ok=True)
         out.save(d / "ic_launcher.png")
@@ -111,15 +107,13 @@ def main() -> None:
 
     drawable = RES / "drawable"
     drawable.mkdir(parents=True, exist_ok=True)
-    # 自适应图标前景：透明底 + 等比安全区
-    fit_square_contain(src, 432, bg=(0, 0, 0, 0), pad_ratio=0.18).save(
+    fit_square_contain_nearest(src, 432, bg=(0, 0, 0, 0), pad_ratio=0.18).save(
         drawable / "ic_launcher_foreground.png"
     )
-    fit_square_contain(src, 256, bg=(0, 0, 0, 0), pad_ratio=0.06).save(
+    fit_square_contain_nearest(src, 256, bg=(0, 0, 0, 0), pad_ratio=0.04).save(
         drawable / "app_cover.png"
     )
-    # 通知小图标：多数机型要求不透明，用浅底避免纯黑块
-    fit_square_contain(src, 96, bg=(0, 0, 0, 0), pad_ratio=0.06).save(
+    fit_square_contain_nearest(src, 96, bg=(0, 0, 0, 0), pad_ratio=0.04).save(
         drawable / "ic_pet_notify.png"
     )
     print("foreground + app_cover + notify ok")

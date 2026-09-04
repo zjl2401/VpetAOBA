@@ -13,7 +13,7 @@ from pathlib import Path
 
 LAUNCHER_PORT = 52847
 APP_ROOT = Path(__file__).resolve().parent
-STARTUP_LNK_NAME = "Vpet.lnk"
+STARTUP_LNK_NAME = "Vpet Aoba.lnk"
 
 
 def _resource_root() -> Path:
@@ -152,7 +152,7 @@ def sync_windows_startup(enabled: bool, *, force: bool = False) -> bool:
             f"$s.WorkingDirectory = '{workdir.replace(chr(39), chr(39)+chr(39))}'; "
             f"$s.Arguments = '{args.replace(chr(39), chr(39)+chr(39))}'; "
             "$s.WindowStyle = 7; "
-            "$s.Description = 'Vpet 桌宠开机自启'; "
+            "$s.Description = 'Vpet Aoba 开机自启'; "
             "$s.Save()"
         )
         subprocess.run(
@@ -449,13 +449,13 @@ def run_tray(*, spawn_on_start: bool = True) -> None:
         pystray.MenuItem("新建桌宠", on_spawn, default=True),
         pystray.MenuItem("退出启动器", on_quit),
     )
-    tip = "Vpet 桌宠"
+    tip = "Vpet Aoba"
     if spawn_on_start:
         tip += "\n已自动显示桌宠；托盘可再新建"
     else:
         tip += "\n点击「新建桌宠」生成一只"
     tray_icon = pystray.Icon(
-        "Vpet",
+        "Vpet Aoba",
         _load_tray_icon(),
         tip,
         menu,

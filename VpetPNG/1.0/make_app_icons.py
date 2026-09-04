@@ -12,9 +12,12 @@ ROOT = Path(__file__).resolve().parent
 
 
 def stand_sources() -> list[Path]:
+    # 优先普通（normal）预抠 stand；勿用 sprites_black / 黑框立绘
     return [
-        ROOT / "assets" / "sprites" / "stand.jpg",
+        ROOT / "assets" / "cutout" / "sprites" / "stand.png",
         ROOT / "assets" / "sprites" / "stand.png",
+        ROOT / "assets" / "sprites" / "stand.jpg",
+        ROOT / "assets" / "raw_green" / "sprites" / "stand.jpg",
         ROOT / "gallery" / "stand.png",
         ROOT / "gallery" / "stand.jpg",
     ]
@@ -113,10 +116,29 @@ def _save_replace(img: Image.Image, path: Path, **kwargs) -> None:
         tmp.replace(path)
 
 
+def fit_square_contain_nearest(
+    im: Image.Image,
+    size: int,
+    *,
+    bg: tuple[int, int, int, int] = (0, 0, 0, 0),
+    pad_ratio: float = 0.04,
+) -> Image.Image:
+    """像素立绘用最近邻缩放，避免 LANCZOS 发糊。"""
+    inner = max(1, int(size * (1.0 - pad_ratio)))
+    w, h = im.size
+    scale = min(inner / max(w, 1), inner / max(h, 1))
+    nw = max(1, int(round(w * scale)))
+    nh = max(1, int(round(h * scale)))
+    scaled = im.resize((nw, nh), Image.Resampling.NEAREST)
+    canvas = Image.new("RGBA", (size, size), bg)
+    canvas.paste(scaled, ((size - nw) // 2, (size - nh) // 2), scaled)
+    return canvas
+
+
 def main() -> None:
     src = load_stand()
-    # 快捷方式 / 托盘：抠绿后透明底，不要黑底
-    icon256 = fit_square_contain(src, 256, bg=(0, 0, 0, 0), pad_ratio=0.06)
+    # 快捷方式 / 托盘：normal stand、透明底、最近邻保像素
+    icon256 = fit_square_contain_nearest(src, 256, bg=(0, 0, 0, 0), pad_ratio=0.04)
     png = ROOT / "app_icon.png"
     ico = ROOT / "app_icon.ico"
     _save_replace(icon256, png, format="PNG")
@@ -124,7 +146,7 @@ def main() -> None:
         icon256,
         ico,
         format="ICO",
-        sizes=[(256, 256), (128, 128), (64, 64), (32, 32), (16, 16)],
+        sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)],
     )
     _save_replace(icon256, ROOT / "app_icon1.png", format="PNG")
     print("wrote", png)
