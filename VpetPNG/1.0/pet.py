@@ -175,10 +175,14 @@ HOME_MATERIALS_INDEX = DATA_DIR / "home_materials.json"
 HOME_PRESETS_DIR = DATA_DIR / "homes"
 HOME_EXPORTS_DIR = DATA_DIR / "exports"
 WALLET_FILE = DATA_DIR / "wallet.json"
-PEER_PRESENCE_DIR = DATA_DIR / "presence"
-PEER_MEET_POLL_MS = 750
-PEER_STALE_MS = 3200
-PEER_MEET_COOLDOWN_MS = 52_000
+# 与苍叶桌宠共用本机总线，才能互相发现（跨安装目录）
+PEER_PRESENCE_DIR = _user_persistent_root() / "presence_bus"
+PEER_MEET_POLL_MS = 600
+PEER_STALE_MS = 4000
+PEER_MEET_COOLDOWN_MS = 36_000
+# 跨宠相遇：更短冷却、更大靠近半径，方便涨友情
+CROSSOVER_MEET_COOLDOWN_MS = 18_000
+CROSSOVER_NEAR_PAD_MIN = 48
 PEER_MEET_LINES: tuple[str, ...] = (
     "咦，怎么还有一个我？",
     "……你也是伊得？",
@@ -8659,11 +8663,13 @@ class DesktopPet:
         self._home_desktop_title: tk.Label | None = None
         self._peer_meet_job: str | None = None
         self._peer_meet_last_ms: int = 0
+        self._crossover_meet_last_ms: int = 0
         self._last_user_activity_ms: int = int(time.time() * 1000)
         self._meta_idle_job: str | None = None
         self._meta_edge_during_drag = False
-        self._peer_instance_id: str = f"{os.getpid()}_{int(time.time() * 1000)}"
+        self._peer_instance_id: str = f"eiden_{os.getpid()}_{int(time.time() * 1000)}"
         self._click_sfx_last_ms: int = 0
+        self._crossover_friendship_cache: dict | None = None
         # 并排漫步状态
         self._stroll_phase: str = ""          # "gather" | "walk" | ""
         self._stroll_until_ms: int = 0
@@ -12745,6 +12751,7 @@ class DesktopPet:
                 "y": key[1],
                 "size": key[2],
                 "ts": now_ms,
+                "companions": self._peer_presence_companions(),
             }
             self._peer_presence_path().write_text(
                 json.dumps(payload, ensure_ascii=False),
@@ -12921,7 +12928,7 @@ class DesktopPet:
             return
         self._peer_meet_tick()
 
-    def _peer_meet_allowed(self) -> bool:
+    def _peer_meet_allowed(self, *, for_crossover: bool = False) -> bool:
         if self._closing or not getattr(self, "_startup_ready", False):
             return False
         if self.dragging:
@@ -12930,7 +12937,8 @@ class DesktopPet:
             return False
         if self.state == "action":
             return False
-        if self.speech_dialog and self.speech_dialog.winfo_exists():
+        # 跨宠相遇可顶掉普通闲聊框，避免「拖近了却不触发」
+        if not for_crossover and self.speech_dialog and self.speech_dialog.winfo_exists():
             return False
         return True
 
@@ -12950,18 +12958,31 @@ class DesktopPet:
             pass
         self._peer_meet_job = self._safe_after(PEER_MEET_POLL_MS, self._peer_meet_tick)
 
+    def _load_crossover_friendship(self) -> dict:
+        data = peer_friendship.load(PEER_PRESENCE_DIR)
+        st = peer_friendship.stats(float(data.get("points") or 0))
+        merged = {**data, **st}
+        self._crossover_friendship_cache = merged
+        return merged
+
     def _maybe_trigger_peer_meet(self) -> None:
-        if not self._peer_meet_allowed():
+        if self._stroll_active():
             return
         now = int(time.time() * 1000)
-        if now - int(self._peer_meet_last_ms or 0) < PEER_MEET_COOLDOWN_MS:
-            return
-        if not PEER_PRESENCE_DIR.is_dir():
+        try:
+            PEER_PRESENCE_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
             return
         ax, ay = int(self.x), int(self.y + self.click_bounce_offset)
         asz = int(self.display_size)
+        peers: list[dict] = []
+        skip_names = {
+            f"{self._peer_instance_id}.json",
+            "crossover_friendship.json",
+            peer_friendship.ACTION_FILE,
+        }
         for path in list(PEER_PRESENCE_DIR.glob("*.json")):
-            if path.name == f"{self._peer_instance_id}.json":
+            if path.name in skip_names:
                 continue
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
@@ -12976,32 +12997,129 @@ class DesktopPet:
                 except Exception:
                     pass
                 continue
+            peers.append(data)
+        if not peers:
+            return
+
+        def _near(data: dict, *, crossover: bool = False) -> bool:
             bx = int(data.get("x") or 0)
             by = int(data.get("y") or 0)
             bsz = max(16, int(data.get("size") or asz))
-            # 略放宽容差：靠近也算相遇
-            pad = max(8, min(asz, bsz) // 6)
-            if not self._rects_overlap(
+            if crossover:
+                # 再大一点：大约半个身位内就能触发，更好操作
+                pad = max(CROSSOVER_NEAR_PAD_MIN, min(asz, bsz) // 2)
+            else:
+                pad = max(16, min(asz, bsz) // 4)
+            return self._rects_overlap(
                 ax - pad, ay - pad, asz + pad * 2, asz + pad * 2,
                 bx - pad, by - pad, bsz + pad * 2, bsz + pad * 2,
-            ):
+            )
+
+        # 异 kind（伊得 ↔ 苍叶）：打招呼 + 计友情 + 并排漫步
+        if (
+            self._peer_meet_allowed(for_crossover=True)
+            and now - int(self._crossover_meet_last_ms or 0) >= CROSSOVER_MEET_COOLDOWN_MS
+        ):
+            cross_near = [
+                d for d in peers
+                if str(d.get("kind") or "").strip().lower() not in ("", "eiden")
+                and _near(d, crossover=True)
+            ]
+            if cross_near:
+                self._handle_crossover_meet(cross_near[0], now_ms=now)
+                return
+
+        # 同 kind 多开
+        if not self._peer_meet_allowed(for_crossover=False):
+            return
+        if now - int(self._peer_meet_last_ms or 0) < PEER_MEET_COOLDOWN_MS:
+            return
+        for data in peers:
+            kind = str(data.get("kind") or "eiden").strip().lower()
+            if kind and kind != "eiden":
                 continue
-            peer_kind = str(data.get("kind") or "eiden").strip().lower()
-            # 异 kind（伊得 ↔ 苍叶）：触发并排漫步
-            if peer_kind != "eiden" and not self._stroll_active():
-                self._peer_meet_last_ms = now
-                line = peer_friendship.build_greeting("eiden", peer_kind)
-                self._show_speech_dialog(line, auto_hide_ms=3000, use_border5=False)
-                self.root.after(600, lambda d=data: self._start_crossover_stroll(d))
+            if not _near(data, crossover=False):
+                continue
+            self._peer_meet_last_ms = now
+            if self._maybe_meta_banter("peer_meet"):
                 return
-            # 同 kind 多开：普通台词
-            if peer_kind == "eiden":
-                self._peer_meet_last_ms = now
-                if self._maybe_meta_banter("peer_meet"):
+            line = random.choice(PEER_MEET_LINES)
+            self._show_speech_dialog(line, auto_hide_ms=2800, use_border5=False)
+            return
+
+    def _handle_crossover_meet(self, peer: dict, *, now_ms: int) -> None:
+        self._crossover_meet_last_ms = int(now_ms)
+        other_kind = str(peer.get("kind") or "").strip().lower() or "aoba"
+        peer_id = str(peer.get("id") or "")
+        prev = self._load_crossover_friendship()
+        old_lv = int(prev.get("level") or 1)
+        fri = peer_friendship.record_meet(
+            PEER_PRESENCE_DIR,
+            writer_id=self._peer_instance_id,
+            peer_id=peer_id,
+            now_ms=now_ms,
+        )
+        self._crossover_friendship_cache = fri
+        new_lv = int(fri.get("level") or 1)
+        meets = int(fri.get("meet_count") or 0)
+        cur = int(fri.get("bar_cur") or 0)
+        need = int(fri.get("bar_need") or 1)
+        pct = int(fri.get("bar_pct") or 0)
+        other_name = peer_friendship.PET_DISPLAY.get(other_kind, other_kind)
+        if new_lv > old_lv:
+            self._show_toast(
+                f"与{other_name}友情升到 Lv.{new_lv}！",
+                "#ff88aa",
+                duration_ms=2800,
+            )
+        else:
+            self._show_toast(
+                f"相遇！友情 +1 · Lv.{new_lv}  {cur}/{need}（{pct}%）· 第 {meets} 次",
+                "#88ccff",
+                duration_ms=2600,
+            )
+        try:
+            self._refresh_panel_friendship()
+        except Exception:
+            pass
+        line = peer_friendship.build_greeting(
+            "eiden",
+            other_kind,
+            self_companions=self._peer_presence_companions() if hasattr(self, "_peer_presence_companions") else [],
+            other_companions=peer_friendship.normalize_companions(peer.get("companions")),
+        )
+        self._show_speech_dialog(line, auto_hide_ms=3200, use_border5=False)
+        if random.random() < 0.55:
+            hold = 2000 + random.randint(0, 800)
+
+            def _exchange() -> None:
+                if self._closing or not self._alive():
                     return
-                line = random.choice(PEER_MEET_LINES)
-                self._show_speech_dialog(line, auto_hide_ms=2800, use_border5=False)
-                return
+                self._show_speech_dialog(
+                    peer_friendship.build_exchange("eiden", other_kind),
+                    auto_hide_ms=3000,
+                    use_border5=False,
+                )
+
+            try:
+                self.root.after(hold, _exchange)
+            except Exception:
+                pass
+        # 并排漫步：有概率触发，不挡计分
+        if not self._stroll_active() and random.random() < 0.72:
+            self.root.after(700, lambda p=peer: self._start_crossover_stroll(p))
+
+    def _peer_presence_companions(self) -> list[str]:
+        if not (getattr(self, "companion_bar_enabled", False) and getattr(self, "mini_pets", None)):
+            return []
+        out: list[str] = []
+        for entry in self.mini_pets:
+            if not isinstance(entry, dict):
+                continue
+            kind = str(entry.get("kind") or "aster").strip().lower()
+            if kind and kind not in out:
+                out.append(kind)
+        return out
 
     # ------------------------------------------------------------------ #
     #  跨宠并排漫步（伊得 ↔ 苍叶）                                        #
@@ -25211,6 +25329,51 @@ class DesktopPet:
         self.mood_label = tk.Label(mood_col, text="", font=PIXEL_FONT, fg=MENU_FG, bg=panel_bg)
         self.mood_label.pack(anchor=tk.W, pady=(2, 0))
 
+        # 跨宠友情（伊得 ↔ 苍叶）：靠近相遇涨好感
+        self.panel_friendship_open = True
+        self.panel_friendship_section = tk.Frame(frame, bg=panel_bg)
+        self.panel_friendship_section.pack(anchor=tk.W, pady=(6, 0), fill=tk.X)
+        fri_head = tk.Frame(self.panel_friendship_section, bg=PANEL_ITEM_BG, padx=6, pady=3, cursor="hand2")
+        fri_head.pack(anchor=tk.W, fill=tk.X)
+        self.panel_friendship_header = fri_head
+        tk.Label(fri_head, text="友情", font=PIXEL_FONT, fg=THEME_PINK, bg=PANEL_ITEM_BG, cursor="hand2").pack(
+            side=tk.LEFT
+        )
+        self.panel_friendship_peak = tk.Label(
+            fri_head,
+            text="Lv.1 · 苍叶",
+            font=PIXEL_FONT,
+            fg=THEME_PINK,
+            bg=PANEL_ITEM_BG,
+            cursor="hand2",
+        )
+        self.panel_friendship_peak.pack(side=tk.LEFT, padx=(8, 0))
+        self.panel_friendship_hint = tk.Label(
+            fri_head, text="▼", font=PIXEL_FONT, fg="#888888", bg=PANEL_ITEM_BG, cursor="hand2"
+        )
+        self.panel_friendship_hint.pack(side=tk.RIGHT)
+        self.panel_friendship_content = tk.Frame(self.panel_friendship_section, bg=panel_bg)
+        self.panel_friendship_content.pack(anchor=tk.W, fill=tk.X, pady=(3, 0))
+        self.panel_friendship_bar = tk.Canvas(
+            self.panel_friendship_content, width=PANEL_BAR_W, height=PANEL_BAR_H, bg=panel_bg, highlightthickness=0
+        )
+        self.panel_friendship_bar.pack(anchor=tk.W, pady=(2, 0))
+        self.panel_friendship_detail = tk.Label(
+            self.panel_friendship_content,
+            text="",
+            font=("Microsoft YaHei UI", 9),
+            fg="#aabbcc",
+            bg=panel_bg,
+            justify=tk.LEFT,
+            wraplength=PANEL_VIEW_W - 12,
+        )
+        self.panel_friendship_detail.pack(anchor=tk.W, pady=(4, 0))
+        for widget in (fri_head, *fri_head.winfo_children()):
+            widget.bind("<Button-1>", self._toggle_panel_friendship, add="+")
+            widget.configure(cursor="hand2")
+        self._wire_panel_auto_hide(fri_head)
+        self._refresh_panel_friendship()
+
         # 音乐人物好感：彩色像素小心心 + 无上限进度条
         self.panel_affinity_open = True
         self.panel_affinity_section = tk.Frame(frame, bg=panel_bg)
@@ -25492,6 +25655,45 @@ class DesktopPet:
         self._set_panel_backpack_open(not self.panel_backpack_open)
         self._bump_panel_auto_hide()
 
+    def _toggle_panel_friendship(self, _event=None) -> None:
+        if not (self.panel_win and self.panel_win.winfo_exists()):
+            return
+        self.panel_friendship_open = not bool(getattr(self, "panel_friendship_open", True))
+        content = getattr(self, "panel_friendship_content", None)
+        hint = getattr(self, "panel_friendship_hint", None)
+        if content is not None and content.winfo_exists():
+            if self.panel_friendship_open:
+                content.pack(anchor=tk.W, fill=tk.X, pady=(3, 0))
+            else:
+                content.pack_forget()
+        if hint is not None and hint.winfo_exists():
+            hint.config(text="▼" if self.panel_friendship_open else "▶")
+        self._refresh_panel_friendship()
+        self._bump_panel_auto_hide()
+
+    def _refresh_panel_friendship(self) -> None:
+        fri = self._load_crossover_friendship()
+        lv = int(fri.get("level") or 1)
+        pct = int(fri.get("bar_pct") or 0)
+        cur = int(fri.get("bar_cur") or 0)
+        need = int(fri.get("bar_need") or 1)
+        meets = int(fri.get("meet_count") or 0)
+        peak = getattr(self, "panel_friendship_peak", None)
+        if peak is not None and peak.winfo_exists():
+            peak.config(text=f"Lv.{lv} · 苍叶")
+        bar = getattr(self, "panel_friendship_bar", None)
+        if bar is not None and bar.winfo_exists():
+            self._draw_bar(bar, pct, "#ff88aa")
+        detail = getattr(self, "panel_friendship_detail", None)
+        if detail is not None and detail.winfo_exists():
+            detail.config(
+                text=(
+                    f"靠近相遇 {meets} 次 · 本级 {cur}/{need}（{pct}%）\n"
+                    "怎么玩：同时开着苍叶与伊得，把两只拖到互相靠近\n"
+                    "（大约半个身位内）就会打招呼并涨友情；约十几秒可再遇。"
+                )
+            )
+
     def _toggle_panel_affinity(self, _event=None) -> None:
         if not (self.panel_win and self.panel_win.winfo_exists()):
             return
@@ -25678,6 +25880,7 @@ class DesktopPet:
         if not self.panel_win or not self.panel_win.winfo_exists():
             return
         self._refresh_panel_stats()
+        self._refresh_panel_friendship()
         self._refresh_panel_affinity()
         self._update_panel_backpack_header()
         if self.panel_backpack_open and self.backpack_grid and self.backpack_grid.winfo_exists():

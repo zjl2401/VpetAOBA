@@ -26,9 +26,13 @@ PAIR_KEY = "aoba_eiden"
 # 手拉手散步（hand_hold_walk）已暂时移除，稳定后再启用。
 ACTION_BY_LEVEL: dict[int, str] = {}
 
-# 每级进度条所需点数（逐级变难）
+# 每级进度条所需点数（逐级变难；前两级略降，方便上手）
 def points_for_bar(level: int) -> int:
     lv = max(1, int(level))
+    if lv == 1:
+        return 3
+    if lv == 2:
+        return 5
     return 4 + (lv - 1) * 3 + max(0, lv - 2) * (lv - 2)
 
 def cumulative_before(level: int) -> float:
