@@ -302,6 +302,12 @@ PEER_PRESENCE_DIR = _user_persistent_root() / "presence_bus"
 PEER_MEET_POLL_MS = 600
 PEER_STALE_MS = 4000
 PEER_MEET_COOLDOWN_MS = 55_000
+# 相遇先弹一下再对话/动作
+PEER_MEET_POP_PX = 12
+PEER_MEET_POP_UP_MS = 140
+PEER_MEET_POP_HOLD_MS = 80
+PEER_MEET_POP_DOWN_MS = 120
+PEER_MEET_AFTER_POP_MS = 220
 # 跨宠相遇：更短冷却、更大靠近半径，方便涨友情
 CROSSOVER_MEET_COOLDOWN_MS = 18_000
 CROSSOVER_NEAR_PAD_MIN = 48
@@ -13275,7 +13281,9 @@ class DesktopPet:
                 and _near(d, crossover=True)
             ]
             if cross_near:
-                self._handle_crossover_meet(cross_near[0], now_ms=now)
+                self._crossover_meet_last_ms = now
+                peer0 = cross_near[0]
+                self._peer_meet_pop_then(lambda p=peer0, t=now: self._handle_crossover_meet(p, now_ms=t))
                 return
 
         # 同 kind 多开
@@ -13290,12 +13298,69 @@ class DesktopPet:
             if not _near(data, crossover=False):
                 continue
             self._peer_meet_last_ms = now
-            if self._maybe_meta_banter("peer_meet"):
-                return
-            lines = PEER_MEET_LINES_BY_KIND.get(self.pet_kind) or PEER_MEET_LINES
-            line = random.choice(lines)
-            self._show_speech_dialog(line, auto_hide_ms=2800, use_border5=False)
+            self._peer_meet_pop_then(self._handle_same_kind_meet)
             return
+
+    def _peer_meet_pop_then(self, after) -> None:
+        """自相遇 / 跨宠相遇：先弹一下，再触发对话与后续动作。"""
+        gen = int(getattr(self, "_peer_meet_pop_gen", 0)) + 1
+        self._peer_meet_pop_gen = gen
+
+        def _run(expected: int = gen) -> None:
+            if expected != getattr(self, "_peer_meet_pop_gen", 0):
+                return
+            if self._closing or not self._alive():
+                return
+            try:
+                after()
+            except Exception:
+                pass
+
+        def _down(expected: int = gen) -> None:
+            if expected != getattr(self, "_peer_meet_pop_gen", 0):
+                return
+            self.click_bounce_offset = 0
+            self.click_bouncing = False
+            try:
+                self._place_window(light=True)
+                self._bounce_mini_pets(up=False)
+            except Exception:
+                pass
+            try:
+                self.root.after(PEER_MEET_AFTER_POP_MS, lambda: _run(expected))
+            except Exception:
+                _run(expected)
+
+        def _up(expected: int = gen) -> None:
+            if expected != getattr(self, "_peer_meet_pop_gen", 0):
+                return
+            self.click_bouncing = True
+            self.click_bounce_offset = -PEER_MEET_POP_PX
+            try:
+                self._place_window(light=True)
+                self._bounce_mini_pets(up=True)
+            except Exception:
+                pass
+            try:
+                self.root.after(PEER_MEET_POP_UP_MS + PEER_MEET_POP_HOLD_MS, lambda: _down(expected))
+            except Exception:
+                _down(expected)
+
+        # 若正在弹，稍等再弹，避免叠掉当前点击弹跳
+        delay = PEER_MEET_POP_DOWN_MS if getattr(self, "click_bouncing", False) else 0
+        try:
+            self.root.after(delay, lambda: _up(gen))
+        except Exception:
+            _up(gen)
+
+    def _handle_same_kind_meet(self) -> None:
+        """同角色多开相遇：弹跳后的台词/破墙。"""
+        if self._closing or not self._alive():
+            return
+        if self._maybe_meta_banter("peer_meet"):
+            return
+        lines = PEER_MEET_LINES_BY_KIND.get(self.pet_kind) or PEER_MEET_LINES
+        self._show_speech_dialog(random.choice(lines), auto_hide_ms=2800, use_border5=False)
 
     def _is_crossover_peer_kind(self, kind: str) -> bool:
         """对方是否为可配对的异角色（苍叶↔伊得）。"""
@@ -13316,7 +13381,7 @@ class DesktopPet:
         return "rei" if self.pet_kind == PET_KIND_AOBA else "aster"
 
     def _handle_crossover_meet(self, peer: dict, *, now_ms: int) -> None:
-        self._crossover_meet_last_ms = int(now_ms)
+        # 冷却已在触发弹跳前写入；此处只做计分与对话动作
         other_kind = str(peer.get("kind") or "").strip().lower() or self._crossover_partner_kind()
         peer_id = str(peer.get("id") or "")
         prev = self._load_crossover_friendship()
@@ -13357,7 +13422,7 @@ class DesktopPet:
             other_companions=peer_friendship.normalize_companions(peer.get("companions")),
         )
         self._show_speech_dialog(line, auto_hide_ms=3200, use_border5=False)
-        # 跨宠相遇：交流句 + 并排漫步均必触发
+        # 跨宠相遇：交流句 + 并排漫步均必触发（弹跳之后）
         hold = 2000 + random.randint(0, 800)
 
         def _exchange() -> None:
