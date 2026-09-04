@@ -4872,6 +4872,30 @@ def _ui_sfx_search_dirs() -> list[Path]:
     return out
 
 
+def _trim_pcm16_leading_silence(
+    buf: array.array,
+    *,
+    sample_rate: int = 22050,
+    thresh: int = 180,
+    keep_ms: float = 2.0,
+) -> array.array:
+    """去掉 PCM16 开头静音，只留极短起音，避免点击/开窗听起来「慢半拍」。"""
+    if not buf:
+        return buf
+    n = len(buf)
+    i = 0
+    while i < n and abs(int(buf[i])) < thresh:
+        i += 1
+    if i <= 0:
+        return buf
+    # 保留极短起音，完全顶格容易爆音
+    keep = max(0, int(sample_rate * keep_ms / 1000.0))
+    start = max(0, i - keep)
+    if start <= 0:
+        return buf
+    return array.array("h", buf[start:])
+
+
 def _load_ui_sfx_file(kind: str):
     names = UI_SFX_FILE_ALIASES.get(kind, (kind,))
     try:
@@ -4889,7 +4913,17 @@ def _load_ui_sfx_file(kind: str):
                 if not path.is_file():
                     continue
                 try:
-                    return pygame.mixer.Sound(str(path))
+                    raw = pygame.mixer.Sound(str(path))
+                    try:
+                        samples = raw.get_raw()
+                        arr = array.array("h")
+                        arr.frombytes(samples)
+                        trimmed = _trim_pcm16_leading_silence(arr)
+                        if len(trimmed) < len(arr):
+                            return pygame.mixer.Sound(buffer=bytes(trimmed))
+                    except Exception:
+                        pass
+                    return raw
                 except Exception:
                     continue
     return None
@@ -4902,12 +4936,20 @@ def _synth_sfx_from_notes(
     noise: float = 0.0,
     volume: int = 9000,
 ):
-    """notes: (freq_hz, start_sec, dur_sec)。返回 pygame Sound 或 None。"""
+    """notes: (freq_hz, start_sec, dur_sec)。返回 pygame Sound 或 None。
+
+    使用急起音 + 指数衰减，避免开头一段听感静音。
+    """
     try:
         import pygame
 
         if not _init_pygame_mixer():
             return None
+        # 把最早音符对齐到 0，去掉谱面自带的前导空白
+        if notes:
+            t0 = min(float(s) for _f, s, _d in notes)
+            if t0 > 0:
+                notes = [(f, max(0.0, s - t0), d) for f, s, d in notes]
         total = 0.0
         for _f, start, dur in notes:
             total = max(total, start + dur)
@@ -4915,20 +4957,24 @@ def _synth_sfx_from_notes(
         buf = array.array("h", [0] * n)
         for freq, start, dur in notes:
             s0 = int(start * sample_rate)
-            samples = int(dur * sample_rate)
+            samples = max(1, int(dur * sample_rate))
+            attack = min(0.004, max(0.0015, dur * 0.12))
             for i in range(samples):
                 idx = s0 + i
                 if idx >= n:
                     break
                 t = i / sample_rate
-                env = math.sin(math.pi * min(1.0, t / max(1e-6, dur))) ** 0.45
-                env *= math.exp(-t * (4.5 + freq / 800.0))
+                if t < attack:
+                    env = t / attack
+                else:
+                    env = math.exp(-(t - attack) * (6.2 + freq / 650.0))
                 tone = math.sin(2 * math.pi * freq * t)
                 if noise > 0:
                     tone = (1.0 - noise) * tone + noise * random.uniform(-1.0, 1.0)
                 val = int(volume * env * tone)
                 mixed = buf[idx] + val
                 buf[idx] = max(-32767, min(32767, mixed))
+        buf = _trim_pcm16_leading_silence(buf, sample_rate=sample_rate, thresh=120, keep_ms=1.5)
         snd = pygame.mixer.Sound(buffer=bytes(buf))
         return snd
     except Exception:
@@ -4959,22 +5005,29 @@ def _make_ui_sfx(kind: str):
         "open_shop": [(784.0, 0.0, 0.08), (988.0, 0.09, 0.10), (1175.0, 0.18, 0.12)],
         # 合成台：金属叮
         "craft": [(392.0, 0.0, 0.05), (523.0, 0.06, 0.07), (311.0, 0.12, 0.09)],
-        # 点击：短促一拍
-        "click": [(1320.0, 0.0, 0.035)],
+        # 点击：短促一拍（急起音）
+        "click": [(1480.0, 0.0, 0.028)],
         # 打开窗口：轻柔两声
-        "open_window": [(660.0, 0.0, 0.06), (880.0, 0.07, 0.08)],
+        "open_window": [(660.0, 0.0, 0.05), (880.0, 0.05, 0.07)],
         # 游戏开始：上行三音
-        "game_start": [(523.25, 0.0, 0.08), (659.25, 0.09, 0.08), (783.99, 0.18, 0.12)],
+        "game_start": [(523.25, 0.0, 0.07), (659.25, 0.07, 0.07), (783.99, 0.14, 0.10)],
         # 游戏成功：明亮琶音
-        "game_success": [(523.25, 0.0, 0.08), (659.25, 0.08, 0.08), (783.99, 0.16, 0.10), (1046.5, 0.26, 0.14)],
+        "game_success": [(523.25, 0.0, 0.07), (659.25, 0.06, 0.07), (783.99, 0.12, 0.09), (1046.5, 0.20, 0.12)],
         # 游戏失败：下行低音
-        "game_fail": [(392.0, 0.0, 0.10), (329.63, 0.10, 0.12), (261.63, 0.22, 0.16)],
+        "game_fail": [(392.0, 0.0, 0.08), (329.63, 0.08, 0.10), (261.63, 0.18, 0.14)],
     }
     notes = specs.get(kind)
     if not notes:
         return None
     noise = 0.35 if kind in ("till", "water", "chop", "fish") else (0.12 if kind == "plant" else 0.0)
-    vol = 11000 if kind == "money" else (10000 if kind in ("shop", "craft", "open_shop", "game_success") else 8500)
+    if kind == "click":
+        vol = 12000
+    elif kind == "money":
+        vol = 11000
+    elif kind in ("shop", "craft", "open_shop", "game_success", "open_window", "game_start"):
+        vol = 10000
+    else:
+        vol = 9000
     return _synth_sfx_from_notes(notes, noise=noise, volume=vol)
 
 
