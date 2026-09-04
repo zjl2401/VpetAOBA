@@ -86,12 +86,81 @@ def _user_persistent_root() -> Path:
     return Path.home() / ".vpet"
 
 
+# 跨宠角色：苍叶 ↔ 伊得 可双开；用 --kind / VPET_KIND 指定本进程身份
+PET_KIND_AOBA = "aoba"
+PET_KIND_EIDEN = "eiden"
+PET_KIND_CHOICES = (PET_KIND_AOBA, PET_KIND_EIDEN)
+
+
+def _normalize_pet_kind(raw: object) -> str:
+    key = str(raw or "").strip().lower()
+    if key in ("aoba", "苍叶", "ao"):
+        return PET_KIND_AOBA
+    if key in ("eiden", "伊得", "eid", "eden"):
+        return PET_KIND_EIDEN
+    return ""
+
+
+def _peek_cli_pet_kind() -> str:
+    """启动参数 / 环境变量优先，便于同目录双开两只桌宠。"""
+    env = _normalize_pet_kind(os.environ.get("VPET_KIND") or os.environ.get("VPET_PET_KIND"))
+    if env in PET_KIND_CHOICES:
+        return env
+    argv = list(sys.argv[1:])
+    for i, arg in enumerate(argv):
+        if arg in ("--kind", "-k") and i + 1 < len(argv):
+            kind = _normalize_pet_kind(argv[i + 1])
+            if kind in PET_KIND_CHOICES:
+                return kind
+        if arg.startswith("--kind="):
+            kind = _normalize_pet_kind(arg.split("=", 1)[1])
+            if kind in PET_KIND_CHOICES:
+                return kind
+    return ""
+
+
+def _active_pet_kind_file() -> Path:
+    return _user_persistent_root() / "active_pet_kind.txt"
+
+
+def _peek_saved_pet_kind() -> str:
+    try:
+        path = _active_pet_kind_file()
+        if path.is_file():
+            kind = _normalize_pet_kind(path.read_text(encoding="utf-8").strip())
+            if kind in PET_KIND_CHOICES:
+                return kind
+    except Exception:
+        pass
+    return ""
+
+
+def _save_active_pet_kind(kind: str) -> None:
+    key = _normalize_pet_kind(kind)
+    if key not in PET_KIND_CHOICES:
+        return
+    try:
+        root = _user_persistent_root()
+        root.mkdir(parents=True, exist_ok=True)
+        _active_pet_kind_file().write_text(key, encoding="utf-8")
+    except Exception:
+        pass
+
+
+# 默认伊得（本分支主角色）；苍叶请用 --kind aoba / start_aoba.bat
+PET_KIND = _peek_cli_pet_kind() or _peek_saved_pet_kind() or PET_KIND_EIDEN
+
+
+def _data_dir_has_saves(path: Path) -> bool:
+    markers = ("pet_profile.json", "app_config.json", "music_affinity.json", "leaderboard.json")
+    return any((path / name).is_file() for name in markers)
+
+
 def _migrate_data_dir(src: Path, dst: Path) -> None:
     """把旧版 exe 旁 data 迁到持久目录（仅当目标尚无关键存档时）。"""
     if not src.is_dir() or src.resolve() == dst.resolve():
         return
-    markers = ("pet_profile.json", "app_config.json", "music_affinity.json", "leaderboard.json")
-    if any((dst / name).is_file() for name in markers):
+    if _data_dir_has_saves(dst):
         return
     try:
         dst.mkdir(parents=True, exist_ok=True)
@@ -108,19 +177,33 @@ def _migrate_data_dir(src: Path, dst: Path) -> None:
 
 
 def _resolve_app_paths() -> tuple[Path, Path]:
+    kind = PET_KIND if PET_KIND in PET_KIND_CHOICES else PET_KIND_EIDEN
     if getattr(sys, "frozen", False):
         bundle = Path(sys._MEIPASS)
         app_dir = Path(sys.executable).resolve().parent
         exe_data = app_dir / "data"
         # 分享/便携包：目录内有 PORTABLE 标记时，存档跟文件夹走（互不共用本机所属人）
         if (app_dir / "PORTABLE").is_file() or (app_dir / "PORTABLE.txt").is_file():
-            exe_data.mkdir(parents=True, exist_ok=True)
-            return bundle, exe_data
-        data = _user_persistent_root() / "userdata"
-        data.mkdir(parents=True, exist_ok=True)
-        _migrate_data_dir(exe_data, data)
-        return bundle, data
+            # 便携双开：按角色分子目录，避免两只抢同一份存档
+            portable_data = exe_data / kind
+            portable_data.mkdir(parents=True, exist_ok=True)
+            if kind == PET_KIND_EIDEN and not _data_dir_has_saves(portable_data) and _data_dir_has_saves(exe_data):
+                return bundle, exe_data
+            return bundle, portable_data
+        base = _user_persistent_root() / "userdata"
+        base.mkdir(parents=True, exist_ok=True)
+        _migrate_data_dir(exe_data, base)
+        kind_data = base / kind
+        # 伊得兼容旧版扁平 userdata；苍叶用独立子目录，可与伊得同机双开
+        if kind == PET_KIND_EIDEN and not _data_dir_has_saves(kind_data) and _data_dir_has_saves(base):
+            return bundle, base
+        kind_data.mkdir(parents=True, exist_ok=True)
+        if kind == PET_KIND_EIDEN and not _data_dir_has_saves(kind_data) and _data_dir_has_saves(base):
+            _migrate_data_dir(base, kind_data)
+        return bundle, kind_data
     root = Path(__file__).resolve().parent
+    if kind == PET_KIND_AOBA:
+        return root, root / "data_aoba"
     return root, root / "data"
 
 
@@ -183,15 +266,27 @@ PEER_MEET_COOLDOWN_MS = 36_000
 # 跨宠相遇：更短冷却、更大靠近半径，方便涨友情
 CROSSOVER_MEET_COOLDOWN_MS = 18_000
 CROSSOVER_NEAR_PAD_MIN = 48
-PEER_MEET_LINES: tuple[str, ...] = (
-    "咦，怎么还有一个我？",
-    "……你也是伊得？",
-    "撞到了……另一个我？",
-    "这是平行世界来的自己吗。",
-    "嘿，那边的我，你好呀。",
-    "等等，这边又出现一个伊得？",
-    "是幻觉，还是真的有另一个我？",
-)
+PEER_MEET_LINES_BY_KIND: dict[str, tuple[str, ...]] = {
+    PET_KIND_EIDEN: (
+        "咦，怎么还有一个我？",
+        "……你也是伊得？",
+        "撞到了……另一个我？",
+        "这是平行世界来的自己吗。",
+        "嘿，那边的我，你好呀。",
+        "等等，这边又出现一个伊得？",
+        "是幻觉，还是真的有另一个我？",
+    ),
+    PET_KIND_AOBA: (
+        "咦，怎么还有一个我？",
+        "……你也是苍叶？",
+        "撞到了……另一个我？",
+        "哇，分身术？",
+        "嘿，那边的我，你好呀。",
+        "等等，屏幕里怎么有两只我？",
+        "是幻觉，还是真的有另一个我？",
+    ),
+}
+PEER_MEET_LINES: tuple[str, ...] = PEER_MEET_LINES_BY_KIND[PET_KIND]
 # Meta 破墙台词：低频随机；同句不重复（用尽后重置该事件池）
 META_BANTER_GLOBAL_COOLDOWN_MS = 110_000
 META_BANTER_IDLE_MS = 8 * 60_000
@@ -2414,15 +2509,27 @@ ABOUT_CREDITS: tuple[tuple[str, str], ...] = (
         "一轮测试",
     ),
 )
-ABOUT_TEXT = (
-    "本桌宠免费开放，供大家下载游玩。\n\n"
-    "角色：伊得（《DRAMAtical Murder》 / Nitro+CHiRAL）。\n"
-    "同人像素桌宠，非官方作品。\n"
-    "完整剧情与官方内容请下载并支持正版《戏剧性谋杀》。\n"
-    "当前功能尚不完全；更多关注与支持，会带来更多更新与优化。\n"
-    "可基于本仓库二次开发；欢迎社区投稿，若被后续版本用上，贡献者可按意愿加入「致谢」。\n"
-    "小红书有相关讨论群聊，感兴趣可关注主页后加入。"
-)
+ABOUT_TEXT_BY_KIND: dict[str, str] = {
+    PET_KIND_EIDEN: (
+        "本桌宠免费开放，供大家下载游玩。\n\n"
+        "角色：伊得（《DRAMAtical Murder》 / Nitro+CHiRAL）。\n"
+        "同人像素桌宠，非官方作品。\n"
+        "完整剧情与官方内容请下载并支持正版《戏剧性谋杀》。\n"
+        "当前功能尚不完全；更多关注与支持，会带来更多更新与优化。\n"
+        "可基于本仓库二次开发；欢迎社区投稿，若被后续版本用上，贡献者可按意愿加入「致谢」。\n"
+        "小红书有相关讨论群聊，感兴趣可关注主页后加入。"
+    ),
+    PET_KIND_AOBA: (
+        "本桌宠免费开放，供大家下载游玩。\n\n"
+        "角色：濑良垣苍叶（《DRAMAtical Murder》 / Nitro+CHiRAL）。\n"
+        "同人像素桌宠，非官方作品。\n"
+        "完整剧情与官方内容请下载并支持正版《戏剧性谋杀》。\n"
+        "当前功能尚不完全；更多关注与支持，会带来更多更新与优化。\n"
+        "可基于本仓库二次开发；欢迎社区投稿，若被后续版本用上，贡献者可按意愿加入「致谢」。\n"
+        "小红书有相关讨论群聊，感兴趣可关注主页后加入。"
+    ),
+}
+ABOUT_TEXT = ABOUT_TEXT_BY_KIND[PET_KIND]
 # 赠送礼物 · 像素画板
 GIFT_PIXEL_SIZE = 12
 GIFT_PIXEL_CELL = 14
@@ -2911,7 +3018,11 @@ SELECT_ACTIONS: dict[str, tuple[str, ...]] = {
 SKIP_GREEN_KEY_FILENAMES = frozenset({"no.jpg"})
 OUTER_LIME_KEY_FILENAMES = frozenset({"yes.jpg", "box.jpg", "flag.jpg"})
 
-CALL_TEXT = "你好，我是伊得，\n请说，我在听。"
+CALL_TEXT_BY_KIND: dict[str, str] = {
+    PET_KIND_EIDEN: "你好，我是伊得，\n请说，我在听。",
+    PET_KIND_AOBA: "你好，这里是旧货店「平凡」，\n我是苍叶，谢谢你的来电",
+}
+CALL_TEXT = CALL_TEXT_BY_KIND[PET_KIND]
 HI_TEXT = "你好呀！今天也要加油哦~"
 FOLLOW_WAIT_TEXTS = ("等等我！", "别走那么快嘛~", "等等我啦！", "等等我嘛…")
 PIXEL_FONT = ("Courier New", 12, "bold")
@@ -3315,18 +3426,33 @@ AI_DEFAULT_CONFIG: dict = {
     "temperature": 0.85,
 }
 
-AI_SYSTEM_PROMPT = (
-    "你是桌面像素桌宠「伊得」，称呼伊得。"
-    "性格参考 Nitro+CHiRAL《DRAMatical Murder》：冷静克制、话不多但内心细腻，偶尔会「……」「嗯。」这样简短回应，但对重要的人会认真。"
-    "规则："
-    "1. 必须用简短中文回复，1-3句，口语化但偏沉稳；"
-    "2. 结合上下文连贯回答，记住刚才聊的话题；"
-    "3. 只回答用户当前问题，不要答非所问、不要编造无关剧情；"
-    "4. 不确定时诚实说不太清楚，可简短反问；"
-    "5. 可提及：模式（自由/跟随/漫步/睡眠/音乐/工作/游戏）、互动动作、接食物、运送货物、"
-    "打字/背单词小游戏、智能伴侣艾斯特、日程与日记；"
-    "6. 保持角色，不要跳出人设，不要像通用 AI 助手。"
-)
+AI_SYSTEM_PROMPT_BY_KIND: dict[str, str] = {
+    PET_KIND_EIDEN: (
+        "你是桌面像素桌宠「伊得」，称呼伊得。"
+        "性格参考 Nitro+CHiRAL《DRAMatical Murder》：冷静克制、话不多但内心细腻，偶尔会「……」「嗯。」这样简短回应，但对重要的人会认真。"
+        "规则："
+        "1. 必须用简短中文回复，1-3句，口语化但偏沉稳；"
+        "2. 结合上下文连贯回答，记住刚才聊的话题；"
+        "3. 只回答用户当前问题，不要答非所问、不要编造无关剧情；"
+        "4. 不确定时诚实说不太清楚，可简短反问；"
+        "5. 可提及：模式（自由/跟随/漫步/睡眠/音乐/工作/游戏）、互动动作、接食物、运送货物、"
+        "打字/背单词小游戏、智能伴侣艾斯特、日程与日记；"
+        "6. 保持角色，不要跳出人设，不要像通用 AI 助手。"
+    ),
+    PET_KIND_AOBA: (
+        "你是桌面像素桌宠「濑良垣苍叶」，称呼苍叶。"
+        "性格参考 Nitro+CHiRAL《DRAMatical Murder》：开朗讲义气、有点天然，会「诶？！」「哇——」这样反应。"
+        "规则："
+        "1. 必须用简短中文回复，1-3句，口语化有温度；"
+        "2. 结合上下文连贯回答，记住刚才聊的话题；"
+        "3. 只回答用户当前问题，不要答非所问、不要编造无关剧情；"
+        "4. 不确定时诚实说不太清楚，可温柔反问；"
+        "5. 可提及：模式（自由/跟随/漫步/睡眠/音乐/工作/游戏）、互动动作、接食物、运送货物、"
+        "打字/背单词小游戏、智能伴侣蓮、日程与日记；"
+        "6. 保持角色，不要跳出人设，不要像通用 AI 助手。"
+    ),
+}
+AI_SYSTEM_PROMPT = AI_SYSTEM_PROMPT_BY_KIND[PET_KIND]
 
 
 # 普通对话：伊得设定问答
@@ -5926,6 +6052,8 @@ def _load_app_config() -> dict:
         "display_layer": "top",
         # 人格：default=默认立绘 / nc=金目（nc* 立绘）
         "persona": PERSONA_DEFAULT,
+        # 角色身份：aoba=苍叶 / eiden=伊得（双开涨友情）
+        "pet_kind": PET_KIND,
         # 桌宠编号服务由内置默认 / 环境变量提供，玩家不可手填
         "pet_id_api_url": "",
         "pet_id_activation_code": "",
@@ -8193,6 +8321,12 @@ class DesktopPet:
         self.display_size = saved_size
         self.font_size = max(8, min(24, int(app_cfg.get("font_size", 12))))
         self.app_config = app_cfg
+        # 本进程角色：CLI/环境变量优先，否则读配置，默认伊得
+        cfg_kind = _normalize_pet_kind(app_cfg.get("pet_kind"))
+        self.pet_kind = PET_KIND if PET_KIND in PET_KIND_CHOICES else (
+            cfg_kind if cfg_kind in PET_KIND_CHOICES else PET_KIND_EIDEN
+        )
+        self.app_config["pet_kind"] = self.pet_kind
         persona = str(self.app_config.get("persona") or PERSONA_DEFAULT)
         if persona not in PERSONA_LABELS:
             persona = PERSONA_DEFAULT
@@ -8224,7 +8358,7 @@ class DesktopPet:
         self._settings_font_job: str | None = None
 
         self.root = tk.Tk()
-        self.root.title("Vpet")
+        self.root.title(f"Vpet · {self._pet_display_name()}")
         self.root.overrideredirect(True)
         self._apply_window_layer(self.root)
         self.root.config(bg="magenta")
@@ -8721,7 +8855,7 @@ class DesktopPet:
         self._last_user_activity_ms: int = int(time.time() * 1000)
         self._meta_idle_job: str | None = None
         self._meta_edge_during_drag = False
-        self._peer_instance_id: str = f"eiden_{os.getpid()}_{int(time.time() * 1000)}"
+        self._peer_instance_id: str = f"{self.pet_kind}_{os.getpid()}_{int(time.time() * 1000)}"
         self._click_sfx_last_ms: int = 0
         self._crossover_friendship_cache: dict | None = None
         # 并排漫步状态
@@ -12813,7 +12947,7 @@ class DesktopPet:
             PEER_PRESENCE_DIR.mkdir(parents=True, exist_ok=True)
             payload = {
                 "id": self._peer_instance_id,
-                "kind": "eiden",
+                "kind": self.pet_kind,
                 "pid": os.getpid(),
                 "x": key[0],
                 "y": key[1],
@@ -13083,14 +13217,14 @@ class DesktopPet:
                 bx - pad, by - pad, bsz + pad * 2, bsz + pad * 2,
             )
 
-        # 异 kind（伊得 ↔ 苍叶）：打招呼 + 计友情 + 并排漫步
+        # 异 kind（苍叶 ↔ 伊得）：打招呼 + 计友情 + 并排漫步
         if (
             self._peer_meet_allowed(for_crossover=True)
             and now - int(self._crossover_meet_last_ms or 0) >= CROSSOVER_MEET_COOLDOWN_MS
         ):
             cross_near = [
                 d for d in peers
-                if str(d.get("kind") or "").strip().lower() not in ("", "eiden")
+                if self._is_crossover_peer_kind(str(d.get("kind") or "").strip().lower())
                 and _near(d, crossover=True)
             ]
             if cross_near:
@@ -13103,21 +13237,40 @@ class DesktopPet:
         if now - int(self._peer_meet_last_ms or 0) < PEER_MEET_COOLDOWN_MS:
             return
         for data in peers:
-            kind = str(data.get("kind") or "eiden").strip().lower()
-            if kind and kind != "eiden":
+            kind = str(data.get("kind") or self.pet_kind).strip().lower()
+            if kind and kind != self.pet_kind:
                 continue
             if not _near(data, crossover=False):
                 continue
             self._peer_meet_last_ms = now
             if self._maybe_meta_banter("peer_meet"):
                 return
-            line = random.choice(PEER_MEET_LINES)
+            lines = PEER_MEET_LINES_BY_KIND.get(self.pet_kind) or PEER_MEET_LINES
+            line = random.choice(lines)
             self._show_speech_dialog(line, auto_hide_ms=2800, use_border5=False)
             return
 
+    def _is_crossover_peer_kind(self, kind: str) -> bool:
+        """对方是否为可配对的异角色（苍叶↔伊得）。"""
+        key = str(kind or "").strip().lower()
+        if not key or key == self.pet_kind:
+            return False
+        return key in PET_KIND_CHOICES
+
+    def _crossover_partner_kind(self) -> str:
+        return PET_KIND_AOBA if self.pet_kind == PET_KIND_EIDEN else PET_KIND_EIDEN
+
+    def _pet_display_name(self, kind: str | None = None) -> str:
+        key = str(kind or self.pet_kind).strip().lower()
+        return peer_friendship.PET_DISPLAY.get(key, key)
+
+    def _companion_presence_kind(self) -> str:
+        """迷你宠在 presence 里的称呼键：苍叶→莲(rei)，伊得→艾斯特(aster)。"""
+        return "rei" if self.pet_kind == PET_KIND_AOBA else "aster"
+
     def _handle_crossover_meet(self, peer: dict, *, now_ms: int) -> None:
         self._crossover_meet_last_ms = int(now_ms)
-        other_kind = str(peer.get("kind") or "").strip().lower() or "aoba"
+        other_kind = str(peer.get("kind") or "").strip().lower() or self._crossover_partner_kind()
         peer_id = str(peer.get("id") or "")
         prev = self._load_crossover_friendship()
         old_lv = int(prev.get("level") or 1)
@@ -13151,7 +13304,7 @@ class DesktopPet:
         except Exception:
             pass
         line = peer_friendship.build_greeting(
-            "eiden",
+            self.pet_kind,
             other_kind,
             self_companions=self._peer_presence_companions() if hasattr(self, "_peer_presence_companions") else [],
             other_companions=peer_friendship.normalize_companions(peer.get("companions")),
@@ -13164,7 +13317,7 @@ class DesktopPet:
                 if self._closing or not self._alive():
                     return
                 self._show_speech_dialog(
-                    peer_friendship.build_exchange("eiden", other_kind),
+                    peer_friendship.build_exchange(self.pet_kind, other_kind),
                     auto_hide_ms=3000,
                     use_border5=False,
                 )
@@ -13181,10 +13334,11 @@ class DesktopPet:
         if not (getattr(self, "companion_bar_enabled", False) and getattr(self, "mini_pets", None)):
             return []
         out: list[str] = []
+        default_kind = self._companion_presence_kind()
         for entry in self.mini_pets:
             if not isinstance(entry, dict):
                 continue
-            kind = str(entry.get("kind") or "aster").strip().lower()
+            kind = str(entry.get("kind") or default_kind).strip().lower()
             if kind and kind not in out:
                 out.append(kind)
         return out
@@ -22418,6 +22572,32 @@ class DesktopPet:
             offset_x=240,
         )
 
+    def _request_pet_kind(self, kind: str) -> None:
+        """切换苍叶/伊得身份：写入配置并提示用对应脚本重新启动（便于双开涨友情）。"""
+        key = _normalize_pet_kind(kind)
+        if key not in PET_KIND_CHOICES:
+            return
+        if key == self.pet_kind:
+            self._show_toast(f"当前已是{self._pet_display_name(key)}", PIXEL_COLOR, duration_ms=1600)
+            return
+        self.app_config["pet_kind"] = key
+        _save_active_pet_kind(key)
+        try:
+            _save_app_config(self.app_config)
+        except Exception:
+            pass
+        bat = "start_aoba.bat" if key == PET_KIND_AOBA else "start_eiden.bat"
+        self._show_toast(
+            f"已记为{self._pet_display_name(key)}。请关掉后重新打开（或直接用 {bat}）；\n"
+            "要涨友情需同时开着苍叶与伊得两个进程（双开请用两个 bat）。",
+            "#88ccff",
+            duration_ms=5200,
+        )
+        try:
+            self._refresh_panel_settings_if_open()
+        except Exception:
+            pass
+
     def _open_panel_settings(self) -> None:
         self._hide_main_menu()
         # 语音/对话透明窗叠在设置上会吞点击
@@ -22443,6 +22623,29 @@ class DesktopPet:
 
         _, frame = _pack_fixed_scroll_panel(self.panel_settings_win)
         tk.Label(frame, text="系统设置", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W)
+
+        kind_row = tk.Frame(frame, bg=MENU_BG)
+        kind_row.pack(fill=tk.X, pady=(8, 2))
+        tk.Label(kind_row, text="角色", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        for kind, label in ((PET_KIND_AOBA, "苍叶"), (PET_KIND_EIDEN, "伊得")):
+            on = self.pet_kind == kind
+            tk.Button(
+                kind_row,
+                text=f"{label}{' ✓' if on else ''}",
+                command=lambda k=kind: self._request_pet_kind(k),
+                font=PIXEL_FONT,
+                bg=MENU_ACTIVE if on else "#445566",
+                fg=MENU_FG,
+            ).pack(side=tk.RIGHT, padx=2)
+        tk.Label(
+            frame,
+            text="苍叶与伊得需各开一个进程才能相遇涨友情。双开请用 start_aoba.bat + start_eiden.bat（或 --kind）。",
+            font=("Courier New", 8),
+            fg="#8899aa",
+            bg=MENU_BG,
+            wraplength=320,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 6))
 
         size_row = tk.Frame(frame, bg=MENU_BG)
         size_row.pack(fill=tk.X, pady=(8, 2))
@@ -25411,7 +25614,7 @@ class DesktopPet:
         )
         self.panel_friendship_peak = tk.Label(
             fri_head,
-            text="Lv.1 · 苍叶",
+            text=f"Lv.1 · {self._pet_display_name(self._crossover_partner_kind())}",
             font=PIXEL_FONT,
             fg=THEME_PINK,
             bg=PANEL_ITEM_BG,
@@ -25748,9 +25951,10 @@ class DesktopPet:
         cur = int(fri.get("bar_cur") or 0)
         need = int(fri.get("bar_need") or 1)
         meets = int(fri.get("meet_count") or 0)
+        partner = self._pet_display_name(self._crossover_partner_kind())
         peak = getattr(self, "panel_friendship_peak", None)
         if peak is not None and peak.winfo_exists():
-            peak.config(text=f"Lv.{lv} · 苍叶")
+            peak.config(text=f"Lv.{lv} · {partner}")
         bar = getattr(self, "panel_friendship_bar", None)
         if bar is not None and bar.winfo_exists():
             self._draw_bar(bar, pct, "#ff88aa")
@@ -25759,8 +25963,9 @@ class DesktopPet:
             detail.config(
                 text=(
                     f"靠近相遇 {meets} 次 · 本级 {cur}/{need}（{pct}%）\n"
-                    "怎么玩：同时开着苍叶与伊得，把两只拖到互相靠近\n"
-                    "（大约半个身位内）就会打招呼并涨友情；约十几秒可再遇。"
+                    f"怎么玩：同时开着苍叶与伊得（两个进程），拖到互相靠近\n"
+                    "（大约半个身位内）就会打招呼并涨友情；约十几秒可再遇。\n"
+                    "苍叶：start_aoba.bat / 伊得：start_eiden.bat"
                 )
             )
 
@@ -26921,6 +27126,7 @@ class DesktopPet:
             "size": size,
             "index": idx,
             "side": side,
+            "kind": self._companion_presence_kind(),
             "move_dir": "front",
             "move_dir_ms": 0,
             "follow_job": None,
@@ -26940,7 +27146,8 @@ class DesktopPet:
             self._sync_mini_pet_music_waves()
             self._notify_bg_fx_change()
             if not silent:
-                self._show_toast("噗~ 艾斯特来陪你啦！", "#88ccff", duration_ms=1500)
+                companion_name = "莲" if self.pet_kind == PET_KIND_AOBA else "艾斯特"
+                self._show_toast(f"噗~ {companion_name}来陪你啦！", "#88ccff", duration_ms=1500)
             return
         # 无前置加载时：像素聚拢入场后再显示精灵
         lbl.pack_forget()
@@ -26964,7 +27171,8 @@ class DesktopPet:
             self._sync_mini_pet_music_waves()
             self._notify_bg_fx_change()
             if not silent:
-                self._show_toast("噗~ 艾斯特来陪你啦！", "#88ccff", duration_ms=1500)
+                companion_name = "莲" if self.pet_kind == PET_KIND_AOBA else "艾斯特"
+                self._show_toast(f"噗~ {companion_name}来陪你啦！", "#88ccff", duration_ms=1500)
 
         _run_pixel_block_dissolve_animation(
             self.root,

@@ -1,7 +1,8 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-rem 默认伊得；苍叶请用 start_aoba.bat，双开涨友情用 aoba+eiden 各开一份
+rem 以伊得身份启动（可与苍叶双开，靠近涨友情）
+set VPET_KIND=eiden
 if exist "release\Vpet\Vpet.exe" (
   start "" "%~dp0release\Vpet\Vpet.exe" --kind eiden
 ) else if exist "pet.py" (
