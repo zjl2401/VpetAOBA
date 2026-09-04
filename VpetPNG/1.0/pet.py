@@ -119,6 +119,40 @@ def _peek_cli_pet_kind() -> str:
     return ""
 
 
+def _app_install_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def _peek_install_pet_kind() -> str:
+    """安装目录 KIND.txt / 文件夹名：VpetAOBA→苍叶，VpetEidenPet→伊得。"""
+    root = _app_install_dir()
+    for name in ("KIND.txt", "PET_KIND.txt", "pet_kind.txt"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            first = path.read_text(encoding="utf-8").strip().splitlines()[0].strip()
+            kind = _normalize_pet_kind(first)
+            if kind in PET_KIND_CHOICES:
+                return kind
+        except Exception:
+            pass
+    # 向上看几级目录名（兼容 Desktop\VpetAOBA\VpetPNG\1.0）
+    try:
+        chain = [root, *list(root.parents)[:6]]
+    except Exception:
+        chain = [root]
+    for path in chain:
+        name = str(path.name or "").lower()
+        if "eiden" in name:
+            return PET_KIND_EIDEN
+        if "aoba" in name:
+            return PET_KIND_AOBA
+    return ""
+
+
 def _active_pet_kind_file() -> Path:
     return _user_persistent_root() / "active_pet_kind.txt"
 
@@ -147,8 +181,13 @@ def _save_active_pet_kind(kind: str) -> None:
         pass
 
 
-# 默认伊得（本分支主角色）；苍叶请用 --kind aoba / start_aoba.bat
-PET_KIND = _peek_cli_pet_kind() or _peek_saved_pet_kind() or PET_KIND_EIDEN
+# 优先级：命令行/环境变量 > 安装目录 KIND/文件夹名 > 本机偏好 > 默认伊得
+PET_KIND = (
+    _peek_cli_pet_kind()
+    or _peek_install_pet_kind()
+    or _peek_saved_pet_kind()
+    or PET_KIND_EIDEN
+)
 
 
 def _data_dir_has_saves(path: Path) -> bool:
