@@ -301,7 +301,7 @@ WALLET_FILE = DATA_DIR / "wallet.json"
 PEER_PRESENCE_DIR = _user_persistent_root() / "presence_bus"
 PEER_MEET_POLL_MS = 600
 PEER_STALE_MS = 4000
-PEER_MEET_COOLDOWN_MS = 36_000
+PEER_MEET_COOLDOWN_MS = 55_000
 # 跨宠相遇：更短冷却、更大靠近半径，方便涨友情
 CROSSOVER_MEET_COOLDOWN_MS = 18_000
 CROSSOVER_NEAR_PAD_MIN = 48
@@ -327,9 +327,9 @@ PEER_MEET_LINES_BY_KIND: dict[str, tuple[str, ...]] = {
 }
 PEER_MEET_LINES: tuple[str, ...] = PEER_MEET_LINES_BY_KIND[PET_KIND]
 # Meta 破墙台词：低频随机；同句不重复（用尽后重置该事件池）
-META_BANTER_GLOBAL_COOLDOWN_MS = 110_000
-META_BANTER_IDLE_MS = 8 * 60_000
-META_BANTER_IDLE_CHECK_MS = 25_000
+META_BANTER_GLOBAL_COOLDOWN_MS = 160_000
+META_BANTER_IDLE_MS = 12 * 60_000
+META_BANTER_IDLE_CHECK_MS = 30_000
 META_BANTER_LINES: dict[str, tuple[str, ...]] = {
     "drag_long": (
         "你在挪窗口，不是在遛我……",
@@ -368,13 +368,13 @@ META_BANTER_LINES: dict[str, tuple[str, ...]] = {
     ),
 }
 META_BANTER_CHANCE: dict[str, float] = {
-    "drag_long": 0.20,
-    "sleep_end": 0.38,
-    "work_flag": 0.32,
-    "bixin_end": 0.48,
-    "idle_long": 0.40,
-    "peer_meet": 0.28,
-    "screen_edge": 0.22,
+    "drag_long": 0.12,
+    "sleep_end": 0.22,
+    "work_flag": 0.18,
+    "bixin_end": 0.28,
+    "idle_long": 0.22,
+    "peer_meet": 0.16,
+    "screen_edge": 0.12,
 }
 META_BANTER_EVENT_COOLDOWN_MS: dict[str, int] = {
     "drag_long": 240_000,
@@ -2084,7 +2084,7 @@ PET_MENU_GAP_Y = 4
 PET_SUBMENU_GAP_Y = 6
 PET_SPEECH_GAP = 6
 PET_MENU_FOLLOW_MS = 320
-PET_SPEECH_FOLLOW_MS = 180
+PET_SPEECH_FOLLOW_MS = 90
 TYPE_SOUND_CHANNEL_ID = 2
 PANEL_BAR_W = 140
 PANEL_BAR_H = 16
@@ -2370,13 +2370,13 @@ MOOD_EXPRESSION_TIERS: list[tuple[int, list[str]]] = [
     (0, ["sad", "angry"]),
 ]
 FREE_RANDOM_ACTION_CHANCE = 0.06
-# 自由/漫步随机语音：略降抽中率，配合更长全局冷却，避免说太密
-VOICE_FREE_RANDOM_CHANCE = 0.02
-VOICE_WALK_RANDOM_CHANCE = 0.03
+# 自由/漫步随机语音与文本：再降一档，避免说太密
+VOICE_FREE_RANDOM_CHANCE = 0.012
+VOICE_WALK_RANDOM_CHANCE = 0.015
 # 工作语音抽中率与自由一致（模式/动作运送共用，不再更密）
 VOICE_WORK_RANDOM_CHANCE = VOICE_FREE_RANDOM_CHANCE
-VOICE_ERROR_COOLDOWN_MS = 180_000
-VOICE_ERROR_CHANCE = 0.12
+VOICE_ERROR_COOLDOWN_MS = 240_000
+VOICE_ERROR_CHANCE = 0.08
 VOICE_DRAG_MOVE_CHANCE = 0.9
 EXPOSE_QTE_TICK_MS = 16
 EXPOSE_GLITCH_HITS_REQUIRED = 5
@@ -2404,10 +2404,9 @@ EXIT_DISSOLVE_MS = 28
 EXIT_DISSOLVE_FRAMES = 32
 PIXEL_BLOCK_DISSOLVE_MS = EXIT_DISSOLVE_MS
 PIXEL_BLOCK_DISSOLVE_FRAMES = EXIT_DISSOLVE_FRAMES
-# 像素聚散主题色：Vpet 粉蓝；智能伴侣 深蓝→浅蓝
+# 像素聚散主题色：与苍叶同款粉蓝径向聚拢（不要水晶高光闪点）
 VPET_ANIM_PALETTE = ("#ff3d9a", "#ff7ec8", "#66a8ff", "#88ccff", "#d6f0ff", "#ffffff")
-# 伊得入场/出场：与苍叶同款径向像素聚拢；色调略偏冷蓝，观感差不多
-PET_ANIM_PALETTE = ("#4a6bff", "#7e9cff", "#66a8ff", "#88ccff", "#d6e8ff", "#ffffff")
+PET_ANIM_PALETTE = VPET_ANIM_PALETTE
 COMPANION_ANIM_PALETTE = ("#071433", "#0d2a5c", "#1a4a9a", "#2f74d6", "#6eb6ff", "#cfe8ff")
 PIXEL_REASSEMBLY_CYCLE = 36
 STARTUP_WATCHDOG_MS = 8000
@@ -4477,7 +4476,8 @@ def _run_pixel_block_dissolve_animation(
                 frames,
                 reverse=reverse,
                 style=style,
-                sparkle_palette=palette,
+                # 入场/出场不要水晶高光闪点，观感对齐苍叶纯像素聚散
+                sparkle_palette=None,
             )
             frame["n"] += 1
             if frame["n"] < frames:
@@ -9786,8 +9786,8 @@ class DesktopPet:
         )
         try:
             ms = int(self.app_config.get("voice_interval_ms", VOICE_GLOBAL_COOLDOWN_MS) or VOICE_GLOBAL_COOLDOWN_MS)
-            # 旧默认偏密（10s / 曾短暂默认 22s）：自动升到当前默认间隔
-            if ms in (10_000, 22_000):
+            # 旧默认偏密（10s / 22s / 28s）：自动升到当前默认间隔
+            if ms in (10_000, 22_000, 28_000):
                 ms = VOICE_GLOBAL_COOLDOWN_MS
                 self.app_config["voice_interval_ms"] = ms
                 try:
@@ -12409,8 +12409,16 @@ class DesktopPet:
             if placed:
                 self._pet_speech_follow_ms = now_ms
 
-        if (self.menu_bar and self.menu_bar.winfo_exists()) or (
-            self.sub_menu and self.sub_menu.winfo_exists()
+        # 菜单或文本框/语音字幕任一在，就持续跟随桌宠移动
+        if (
+            (self.menu_bar and self.menu_bar.winfo_exists())
+            or (self.sub_menu and self.sub_menu.winfo_exists())
+            or (self.speech_dialog and self.speech_dialog.winfo_exists())
+            or (
+                getattr(self, "_voice_subtitle_active", False)
+                and self.voice_subtitle_win
+                and self.voice_subtitle_win.winfo_exists()
+            )
         ):
             self._schedule_pet_menu_follow()
 
@@ -29417,7 +29425,8 @@ class DesktopPet:
             reverse=False,
             on_done=after_cycle,
             palette=palette,
-            lively=True,
+            # 入场=出场反面：同样径向轨迹、更稳的块运动（勿过活像水晶碎屑）
+            lively=False,
         )
 
     def _hide_companion_loading(self) -> None:
@@ -30274,7 +30283,7 @@ class DesktopPet:
             reverse=True,
             on_done=finish,
             palette=use_palette,
-            lively=True,
+            lively=False,
             total_ms=total_ms,
         )
 
