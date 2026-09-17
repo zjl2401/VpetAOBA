@@ -1,0 +1,127 @@
+[
+  {
+    "id": "47a2721c-5309-4be7-85ee-e0a22a832428",
+    "text": "cd $HOME\\Downloads\n$env:HTTPS_PROXY=\"http://127.0.0.1:10809\"\n$env:HTTP_PROXY=\"http://127.0.0.1:10809\"\ncurl.exe -L --retry 10 -o SC-GS.zip https://github.com/yihua7/SC-GS/archive/refs/heads/master.zip\nGet-Item SC-GS.zip | Select-Object Length",
+    "ts_ms": 1789563904377
+  },
+  {
+    "id": "7ed3324e-b8a8-4567-bf9e-5ebd56f897b1",
+    "text": "Windows PowerShell\nCopyright (C) Microsoft Corporation. All rights reserved.\n\nno change     C:\\Users\\36255\\miniconda3\\Scripts\\conda.exe\nno change     C:\\Users\\36255\\miniconda3\\Scripts\\conda-env.exe\nno change     C:\\Users\\36255\\miniconda3\\Scripts\\conda-script.py\nno change     C:\\Users\\36255\\miniconda3\\Scripts\\conda-env-script.py\nno change     C:\\Users\\36255\\miniconda3\\condabin\\conda.bat\nno change     C:\\Users\\36255\\miniconda3\\Library\\bin\\conda.bat\nno change     C:\\Users\\36255\\miniconda3\\condabin\\_conda_activate.bat\nno change     C:\\Users\\36255\\miniconda3\\condabin\\rename_tmp.bat\nno change     C:\\Users\\36255\\miniconda3\\condabin\\conda_auto_activate.bat\nno change     C:\\Users\\36255\\miniconda3\\condabin\\conda_hook.bat\nno change     C:\\Users\\36255\\miniconda3\\Scripts\\activate.bat\nno change     C:\\Users\\36255\\miniconda3\\condabin\\activate.bat\nno change     C:\\Users\\36255\\miniconda3\\condabin\\deactivate.bat\nno change     C:\\Users\\36255\\miniconda3\\Scripts\\activate\nno change     C:\\Users\\36255\\miniconda3\\Scripts\\deactivate\nno change     C:\\Users\\36255\\miniconda3\\etc\\profile.d\\conda.sh\nno change     C:\\Users\\36255\\miniconda3\\etc\\fish\\conf.d\\conda.fish\nno change     C:\\Users\\36255\\miniconda3\\shell\\condabin\\Conda.psm1\nno change     C:\\Users\\36255\\miniconda3\\shell\\condabin\\conda-hook.ps1\nno change     C:\\Users\\36255\\miniconda3\\Lib\\site-packages\\xontrib\\conda.xsh\nno change     C:\\Users\\36255\\miniconda3\\etc\\profile.d\\conda.csh\nno change     C:\\Users\\36255\\Documents\\WindowsPowerShell\\profile.ps1\nNo action taken.\n加载个人及系统配置文件用了 4820 毫秒。\n(base) PS C:\\Users\\36255> cd $HOME\\Downloads\n(base) PS C:\\Users\\36255\\Downloads> curl.exe -L --retry 10 --retry-all-errors -o SC-GS.zip https://github.com/yihua7/SC-GS/archive/refs/heads/master.zip\ncurl: (28) Failed to connect to github.com:443 after 21071 ms: Could not connect to server\nWarning: Problem : timeout. Retrying in 1 second. 10 retries left.\ncurl: (28) Failed to connect to github.com:443 after 21033 ms: Could not connect to server\nWarning: Probl",
+    "ts_ms": 1789563850357
+  },
+  {
+    "id": "45b89219-caf4-4e4b-bfeb-f418e34efb63",
+    "text": "cd $HOME\\Downloads\ncurl.exe -L --retry 10 --retry-all-errors -o SC-GS.zip https://github.com/yihua7/SC-GS/archive/refs/heads/master.zip\nGet-Item SC-GS.zip | Select-Object Length\nExpand-Archive -Path SC-GS.zip -DestinationPath .\\SC-GS-test -Force\ndir .\\SC-GS-test",
+    "ts_ms": 1789563700319
+  },
+  {
+    "id": "b5da726b-3638-4d5d-a59d-79e724accd00",
+    "text": "Length: unspecified [application/zip]\nSaving to: ‘SC-GS.zip’\n\nSC-GS.zip                         [   <=>                                            ]   9.44M  16.5KB/s               ^SC-GS.zip                         [                              <=>                 ]  12.97M  11.7KB/s    in 16m 15s\n\n2026-09-16 20:49:22 (13.6 KB/s) - ‘SC-GS.zip’ saved [13603919]\n\nArchive:  SC-GS.zip\n  End-of-central-directory signature not found.  Either this file is not\n  a zipfile, or it constitutes one disk of a multi-part archive.  In the\n  latter case the central directory and zipfile comment will be found on\n  the last disk(s) of this archive.\nunzip:  cannot find zipfile directory in one of SC-GS.zip or\n        SC-GS.zip.zip, and cannot find SC-GS.zip.ZIP, period.\n(sc_gs) jianle@lab3:~/projects$ cd $HOME\\Downloads\ncurl.exe -L --retry 10 --retry-all-errors -o SC-GS.zip https://github.com/yihua7/SC-GS/archive/refs/heads/master.zip\n\n# 检查大小（完整包大约几十 MB，且能打开）\nGet-Item SC-GS.zip | Select-Object Length\nExpand-Archive -Path SC-GS.zip -DestinationPath .\\SC-GS-test -Force\ndir .\\SC-GS-test\n-bash: cd: /home/jianleDownloads: No such file or directory\ncurl.exe: command not found\nGet-Item: command not found\nSelect-Object: command not found\nExpand-Archive: command not found\ndir: cannot access '.SC-GS-test': No such file or directory\n(sc_gs) jianle@lab3:~/projects$",
+    "ts_ms": 1789563637295
+  },
+  {
+    "id": "d453ae90-abce-462e-8f05-b89108e8cf52",
+    "text": "cd $HOME\\Downloads\ncurl.exe -L --retry 10 --retry-all-errors -o SC-GS.zip https://github.com/yihua7/SC-GS/archive/refs/heads/master.zip\n\n# 检查大小（完整包大约几十 MB，且能打开）\nGet-Item SC-GS.zip | Select-Object Length\nExpand-Archive -Path SC-GS.zip -DestinationPath .\\SC-GS-test -Force\ndir .\\SC-GS-test",
+    "ts_ms": 1789563476749
+  },
+  {
+    "id": "1dc5a5c5-1a12-4467-aef3-add55c1d3c42",
+    "text": "rm -rf SC-GS SC-GS-master SC-GS-main\n\n# 断点续传 + 失败重试\nwget -c --tries=0 --timeout=30 --read-timeout=60 \\\n  -O SC-GS.zip \\\n  https://codeload.github.com/yihua7/SC-GS/zip/refs/heads/master\n\n# 下完先检查是不是完整 zip\nunzip -t SC-GS.zip\n--2026-09-16 20:33:05--  https://codeload.github.com/yihua7/SC-GS/zip/refs/heads/master\nResolving codeload.github.com (codeload.github.com)... 20.205.243.165\nConnecting to codeload.github.com (codeload.github.com)|20.205.243.165|:443... connected.\nHTTP request sent, awaiting response... 200 OK\nLength: unspecified [application/zip]\nSaving to: ‘SC-GS.zip’\n\nSC-GS.zip                         [   <=>                                            ]   9.44M  16.5KB/s               ^SC-GS.zip                         [                              <=>                 ]  12.97M  11.7KB/s    in 16m 15s\n\n2026-09-16 20:49:22 (13.6 KB/s) - ‘SC-GS.zip’ saved [13603919]\n\nArchive:  SC-GS.zip\n  End-of-central-directory signature not found.  Either this file is not\n  a zipfile, or it constitutes one disk of a multi-part archive.  In the\n  latter case the central directory and zipfile comment will be found on\n  the last disk(s) of this archive.\nunzip:  cannot find zipfile directory in one of SC-GS.zip or\n        SC-GS.zip.zip, and cannot find SC-GS.zip.ZIP, period.\n(sc_gs) jianle@lab3:~/projects$",
+    "ts_ms": 1789563365704
+  },
+  {
+    "id": "ca6d3052-91e1-4883-9297-91090b591975",
+    "text": "cd ~/projects\nrm -f SC-GS.zip\nrm -rf SC-GS SC-GS-master SC-GS-main\n\n# 断点续传 + 失败重试\nwget -c --tries=0 --timeout=30 --read-timeout=60 \\\n  -O SC-GS.zip \\\n  https://codeload.github.com/yihua7/SC-GS/zip/refs/heads/master\n\n# 下完先检查是不是完整 zip\nunzip -t SC-GS.zip",
+    "ts_ms": 1789562831426
+  },
+  {
+    "id": "2517347e-d75b-44a5-963f-dd441ec07653",
+    "text": "写代码 / 学习 / 办公 / 聊天",
+    "ts_ms": 1789560443576
+  },
+  {
+    "id": "d27bf38d-cb2e-4ff3-a527-1d1cb80eb9b1",
+    "text": "cd ~/projects\nrm -rf SC-GS\n\n# 1) 下主仓库 zip\nwget -O SC-GS.zip https://codeload.github.com/yihua7/SC-GS/zip/refs/heads/master\n# 若 404，再试：\n# wget -O SC-GS.zip https://codeload.github.com/yihua7/SC-GS/zip/refs/heads/main\n# 或镜像：\n# wget -O SC-GS.zip https://ghproxy.net/https://github.com/yihua7/SC-GS/archive/refs/heads/master.zip\n\nunzip -o SC-GS.zip\nmv SC-GS-master SC-GS 2>/dev/null || mv SC-GS-main SC-GS\ncd SC-GS\nls train.py",
+    "ts_ms": 1789559516284
+  },
+  {
+    "id": "8b27efcc-4b10-474e-a5bc-f16e20cc741a",
+    "text": "Cloning into 'SC-GS'...\nremote: Enumerating objects: 432, done.\nremote: Counting objects: 100% (198/198), done.\nremote: Compressing objects: 100% (51/51), done.\nerror: RPC failed; curl 92 HTTP/2 stream 0 was not closed cleanly: CANCEL (err 8)\nerror: 5290 bytes of body are still expected\nfetch-pack: unexpected disconnect while reading sideband packet\nfatal: early EOF\nfatal: fetch-pack: invalid index-pack output\n-bash: cd: SC-GS: No such file or directory\n(sc_gs) jianle@lab3:~/projects$ cd ~/projects\nrm -rf SC-GS\n\n# 方式 A：强制 HTTP/1.1 + 加大缓冲后重试\ngit config --global http.version HTTP/1.1\ngit config --global http.postBuffer 524288000\ngit clone --recursive --depth 1 https://github.com/yihua7/SC-GS.git\ncd SC-GS\nCloning into 'SC-GS'...\nremote: Enumerating objects: 87, done.\nremote: Counting objects: 100% (87/87), done.\nremote: Compressing objects: 100% (85/85), done.\nerror: RPC failed; curl 18 transfer closed with outstanding read data remaining\nerror: 8101 bytes of body are still expected\nfetch-pack: unexpected disconnect while reading sideband packet\nfatal: early EOF\nfatal: fetch-pack: invalid index-pack output\n-bash: cd: SC-GS: No such file or directory\n(sc_gs) jianle@lab3:~/projects$",
+    "ts_ms": 1789559483274
+  },
+  {
+    "id": "c1515ffe-bc7d-43ac-8816-15c8fa5c57c6",
+    "text": "cd ~/projects\nrm -rf SC-GS\n\n# 方式 A：强制 HTTP/1.1 + 加大缓冲后重试\ngit config --global http.version HTTP/1.1\ngit config --global http.postBuffer 524288000\ngit clone --recursive --depth 1 https://github.com/yihua7/SC-GS.git\ncd SC-GS",
+    "ts_ms": 1789558779515
+  },
+  {
+    "id": "b737a162-292a-4868-9fdb-a337e1211789",
+    "text": "Using cached numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (16.8 MB)\nInstalling collected packages: mpmath, typing-extensions, sympy, pillow, nvidia-nvtx-cu12, nvidia-nvjitlink-cu12, nvidia-nccl-cu12, nvidia-curand-cu12, nvidia-cufft-cu12, nvidia-cuda-runtime-cu12, nvidia-cuda-nvrtc-cu12, nvidia-cuda-cupti-cu12, nvidia-cublas-cu12, numpy, networkx, MarkupSafe, fsspec, filelock, triton, nvidia-cusparse-cu12, nvidia-cudnn-cu12, jinja2, nvidia-cusolver-cu12, torch, torchvision\nSuccessfully installed MarkupSafe-3.0.3 filelock-3.32.3 fsspec-2026.7.0 jinja2-3.1.6 mpmath-1.3.0 networkx-3.4.2 numpy-2.2.6 nvidia-cublas-cu12-12.1.3.1 nvidia-cuda-cupti-cu12-12.1.105 nvidia-cuda-nvrtc-cu12-12.1.105 nvidia-cuda-runtime-cu12-12.1.105 nvidia-cudnn-cu12-9.1.0.70 nvidia-cufft-cu12-11.0.2.54 nvidia-curand-cu12-10.3.2.106 nvidia-cusolver-cu12-11.4.5.107 nvidia-cusparse-cu12-12.1.0.106 nvidia-nccl-cu12-2.21.5 nvidia-nvjitlink-cu12-12.9.86 nvidia-nvtx-cu12-12.1.105 pillow-12.3.0 sympy-1.13.1 torch-2.5.1+cu121 torchvision-0.20.1+cu121 triton-3.1.0 typing-extensions-4.16.0\n2.5.1+cu121 True NVIDIA GeForce RTX 4060 Ti\n(sc_gs) jianle@lab3:~/projects/Deformable-3D-Gaussians$ export CUDA_VISIBLE_DEVICES=2\nexport CUDA_HOME=/usr/local/cuda-12.2\nexport PATH=$CUDA_HOME/bin:$PATH\n\ncd ~/projects\ngit clone https://github.com/yihua7/SC-GS --recursive\ncd SC-GS\nCloning into 'SC-GS'...\nremote: Enumerating objects: 432, done.\nremote: Counting objects: 100% (198/198), done.\nremote: Compressing objects: 100% (51/51), done.\nerror: RPC failed; curl 92 HTTP/2 stream 0 was not closed cleanly: CANCEL (err 8)\nerror: 5290 bytes of body are still expected\nfetch-pack: unexpected disconnect while reading sideband packet\nfatal: early EOF\nfatal: fetch-pack: invalid index-pack output\n-bash: cd: SC-GS: No such file or directory\n(sc_gs) jianle@lab3:~/projects$",
+    "ts_ms": 1789558662124
+  },
+  {
+    "id": "d7c58e73-f1e8-453d-8c1d-d9d037fa12da",
+    "text": "export CUDA_VISIBLE_DEVICES=2\nexport CUDA_HOME=/usr/local/cuda-12.2\nexport PATH=$CUDA_HOME/bin:$PATH\n\ncd ~/projects\ngit clone https://github.com/yihua7/SC-GS --recursive\ncd SC-GS",
+    "ts_ms": 1789558299338
+  },
+  {
+    "id": "ebfa37a4-b547-403a-9fe6-f2733615b802",
+    "text": "export CUDA_VISIBLE_DEVICES=2\npython train.py -s data/standup -m output/standup --eval --is_blender",
+    "ts_ms": 1789554880795
+  },
+  {
+    "id": "e0d015a6-87b8-4ea7-aca9-3a3b2a7f4ec3",
+    "text": "(deformable_gs) jianle@lab3:~/projects/Deformable-3D-Gaussians$ cd ~/projects/Deformable-3D-Gaussians\ngrep -n \"fromarray\\|np.byte\\|dtype=np\" scene/dataset_readers.py\n70:    pose = np.eye(4, dtype=np.float32)\n254:            image = Image.fromarray(\n255:                np.array(arr * 255.0, dtype=np.byte), \"RGB\")\n320:        image = Image.fromarray((image * mask).astype(np.uint8))\n453:        image = Image.fromarray((image).astype(np.uint8))\n(deformable_gs) jianle@lab3:~/projects/Deformable-3D-Gaussians$ sed -i 's/dtype=np\\.byte/dtype=np.uint8/g' scene/dataset_readers.py\n(deformable_gs) jianle@lab3:~/projects/Deformable-3D-Gaussians$",
+    "ts_ms": 1789554846279
+  },
+  {
+    "id": "2b1768dc-798a-434d-9c60-87d92a38b2f5",
+    "text": "sed -i 's/dtype=np\\.byte/dtype=np.uint8/g' scene/dataset_readers.py",
+    "ts_ms": 1789554831268
+  },
+  {
+    "id": "356a5c92-10cf-4d4a-9234-98b1f83c8bd7",
+    "text": "cd ~/projects/Deformable-3D-Gaussians\ngrep -n \"fromarray\\|np.byte\\|dtype=np\" scene/dataset_readers.py",
+    "ts_ms": 1789554813259
+  },
+  {
+    "id": "491c7239-564a-4a0f-a227-0002ef73f984",
+    "text": "python train.py -s data/standup -m output/standup --eval --is_blender\nOptimizing output/standup\nOutput folder: output/standup [16/09 18:32:57]\nTensorboard not available: not logging progress [16/09 18:32:57]\nFound transforms_train.json file, assuming Blender data set! [16/09 18:32:58]\nReading Training Transforms [16/09 18:32:58]\nTraceback (most recent call last):\n  File \"/home/jianle/miniconda3/envs/deformable_gs/lib/python3.10/site-packages/PIL/Image.py\", line 3431, in fromarray\n    typemode, rawmode, color_modes = _fromarray_typemap[typekey]\nKeyError: ((1, 1, 3), '|i1')\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/jianle/projects/Deformable-3D-Gaussians/train.py\", line 275, in <module>\n    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations)\n  File \"/home/jianle/projects/Deformable-3D-Gaussians/train.py\", line 40, in training\n    scene = Scene(dataset, gaussians)\n  File \"/home/jianle/projects/Deformable-3D-Gaussians/scene/__init__.py\", line 49, in __init__\n    scene_info = sceneLoadTypeCallbacks[\"Blender\"](args.source_path, args.white_background, args.eval)\n  File \"/home/jianle/projects/Deformable-3D-Gaussians/scene/dataset_readers.py\", line 271, in readNerfSyntheticInfo\n    train_cam_infos = readCamerasFromTransforms(\n  File \"/home/jianle/projects/Deformable-3D-Gaussians/scene/dataset_readers.py\", line 254, in readCamerasFromTransforms\n    image = Image.fromarray(\n  File \"/home/jianle/miniconda3/envs/deformable_gs/lib/python3.10/site-packages/PIL/Image.py\", line 3435, in fromarray\n    raise TypeError(msg) from e\nTypeError: Cannot handle this data type: (1, 1, 3), |i1\n(deformable_gs) jianle@lab3:~/projects/Deformable-3D-Gaussians$",
+    "ts_ms": 1789554790751
+  },
+  {
+    "id": "188c75b6-7aeb-4538-b41d-75ffebbd0c3d",
+    "text": "conda activate deformable_gs\nexport CUDA_VISIBLE_DEVICES=2\nexport CUDA_HOME=/usr/local/cuda-12.2\nexport PATH=$CUDA_HOME/bin:$PATH\n\npython train.py -s data/standup -m output/standup --eval --is_blender",
+    "ts_ms": 1789554769743
+  },
+  {
+    "id": "f0951a83-1ed7-49ee-86d5-f1a1a90f9976",
+    "text": "cd ~/projects/Deformable-3D-Gaussians\nconda activate deformable_gs\nexport CUDA_VISIBLE_DEVICES=2\nexport CUDA_HOME=/usr/local/cuda-12.2\nexport PATH=$CUDA_HOME/bin:$PATH\n\n# 建议放 tmux，防 SSH 断开\ntmux new -s deform\n# 若已在 tmux 里可跳过上一行\n\npython train.py -s data/standup -m output/standup --eval --is_blender",
+    "ts_ms": 1789554627189
+  },
+  {
+    "id": "30456e93-bf74-4b55-8994-3beb59297341",
+    "text": "(base) jianle@lab3:~$ # 1) 接受 conda 条款\nconda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main\nconda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r\n\n# 2) 再建环境\nconda create -n deformable_gs python=3.10 -y\nconda activate deformable_gs\n\n# 3) 确认已是 3.10，再装 torch\npython -V\nexport CUDA_VISIBLE_DEVICES=2\npip install torch torchvision --index-url https://download.pytorch.org/whl/cu121\n\npython -c \"import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)\"\naccepted Terms of Service for https://repo.anaconda.com/pkgs/main\naccepted Terms of Service for https://repo.anaconda.com/pkgs/r\n2 channel Terms of Service accepted\nRetrieving notices: done\nChannels:\n - defaults\nPlatform: linux-64\nCollecting package metadata (repodata.json): done\nSolving environment: done\n\n\n==> WARNING: A newer version of conda exists. <==\n    current version: 26.7.1\n    latest version: 26.7.2\n\nPlease update conda by running\n\n    $ conda self update\n\n\n\n## Package Plan ##\n\n  environment location: /home/jianle/miniconda3/envs/deformable_gs\n\n  added / updated specs:\n    - python=3.10\n\n\nThe following packages will be downloaded:\n\n    package                    |            build\n    ---------------------------|-----------------\n    libexpat-2.8.4             |       h7354ed3_0         128 KB\n    libnsl-2.0.0               |       h5eee18b_0          31 KB\n    openssl-3.5.8              |       h1b28b03_0         5.5 MB\n    packaging-26.3             |  py310h06a4308_0         329 KB\n    pip-26.2.1                 |     pyhc872135_0         1.1 MB\n    python-3.10.21             |       h17756b0_0        24.4 MB\n    setuptools-83.0.0          |  py310h06a4308_0         1.2 MB\n    sqlite-3.53.4              |       h795bf6d_0         1.2 MB\n    tk-8.6.15                  |       h54e0aa7_0         3.4 MB\n    wheel-0.47.0               |  py310h06a4308_0          56 KB\n    -------------",
+    "ts_ms": 1789554567115
+  },
+  {
+    "id": "6f6d3de5-7470-4363-a16e-d9310ec5e820",
+    "text": "cd ~/projects/Deformable-3D-Gaussians\nconda activate deformable_gs\nexport CUDA_VISIBLE_DEVICES=2\nexport CUDA_HOME=/usr/local/cuda-12.2\nexport PATH=$CUDA_HOME/bin:$PATH\n\n# 1) 下载 D-NeRF（作者调整版）\nmkdir -p data && cd data\nwget -O D-NeRF-Deformable-GS.zip \\\n  https://github.com/ingra14m/Deformable-3D-Gaussians/releases/download/v0.1-pre-released/D-NeRF-Deformable-GS.zip\nunzip -o D-NeRF-Deformable-GS.zip\nfind . -maxdepth 3 -type d | head -40\ncd ..",
+    "ts_ms": 1789551041582
+  },
+  {
+    "id": "85994129-024d-4614-80a1-db4419f1c50e",
+    "text": "市面上已有的智能一点的电脑办公助手",
+    "ts_ms": 1789550651007
+  },
+  {
+    "id": "f936f6ab-6350-493c-a75a-8ad0c5056700",
+    "text": "市面上已有的智能一点的办公助手",
+    "ts_ms": 1789550601488
+  },
+  {
+    "id": "8f949a53-2925-4efb-abc1-69e862505dfc",
+    "text": "【今日工作】\n1. \n2. \n【明日计划】\n1. \n",
+    "ts_ms": 1789550485663
+  }
+]

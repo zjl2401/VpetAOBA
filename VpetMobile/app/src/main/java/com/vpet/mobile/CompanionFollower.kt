@@ -2,9 +2,12 @@ package com.vpet.mobile
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.PixelFormat
 import android.graphics.Point
+import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -14,10 +17,12 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 /**
  * 智能伴侣「莲」：对照桌面 minipet / Allmate。
- * 侧向脚底跟随、定步长、四向切帧（非主宠 stand 缩小版）。
+ * 侧向脚底跟随；抠内容盒后高度约为主宠一半，整只缩进画布以免侧面被裁。
  */
 class CompanionFollower(
     private val context: Context,
@@ -36,9 +41,12 @@ class CompanionFollower(
         const val TURN_HOLD_MS = 380L
         const val TURN_AXIS_RATIO = 1.4f
         const val WALK_FRAME_MS = 210L
-        /** 桌面 MINI_PET_SIZE=120 / DEFAULT_SIZE=128；画布底对齐后角色占比接近抠图不放大 */
+        /** 相对主宠画布再略收一档，给侧面留边。 */
+        private const val FIT_PAD = 0.92f
+
+        /** 伴侣画布高度 ≈ 主宠高度的一半。 */
         fun companionSize(petPx: Int): Int =
-            (petPx * 120f / 128f).toInt().coerceIn(64, 168)
+            (petPx / 2).coerceIn(48, 220)
     }
 
     private var view: ImageView? = null
@@ -159,43 +167,77 @@ class CompanionFollower(
     }
 
     private fun loadMini(path: String, canvasSize: Int): Bitmap? {
-        return try {
-            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            context.assets.open(path).use {
-                android.graphics.BitmapFactory.decodeStream(it, null, bounds)
-            }
-            var sample = 1
-            val side = maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1)
-            // 解码略大于画布，再底对齐缩进，避免糊成一团又过大
-            val decodeSide = (canvasSize * 2).coerceAtLeast(128)
-            while (side / sample > decodeSide) sample *= 2
-            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
-            val raw = context.assets.open(path).use {
-                android.graphics.BitmapFactory.decodeStream(it, null, opts)
-            } ?: return null
-            packBottomCenter(raw, canvasSize).also { packed ->
-                if (packed !== raw) raw.recycle()
-            }
-        } catch (_: Exception) {
-            null
+        val raw = decodeAsset(path) ?: return null
+        return packHeightMatched(raw, canvasSize).also { packed ->
+            if (packed !== raw) raw.recycle()
         }
     }
 
-    /** 对齐桌宠 _to_fixed_canvas：底对齐放进正方形，保留透明边，避免裁切/撑满。 */
-    private fun packBottomCenter(src: Bitmap, canvasSize: Int): Bitmap {
-        val w = src.width.coerceAtLeast(1)
-        val h = src.height.coerceAtLeast(1)
-        val scale = minOf(canvasSize.toFloat() / w, canvasSize.toFloat() / h, 1f)
-        val nw = (w * scale).toInt().coerceAtLeast(1)
-        val nh = (h * scale).toInt().coerceAtLeast(1)
-        val scaled = if (nw == w && nh == h) src else Bitmap.createScaledBitmap(src, nw, nh, true)
+    private fun decodeAsset(path: String): Bitmap? = try {
+        context.assets.open(path).use { BitmapFactory.decodeStream(it) }
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * 抠不透明内容盒后，整图装入画布（高度目标约画布高，过宽则再缩小），
+     * 水平居中、底对齐，保证侧面帧不被裁切。
+     */
+    private fun packHeightMatched(src: Bitmap, canvasSize: Int): Bitmap {
+        val box = opaqueBounds(src) ?: Rect(0, 0, src.width, src.height)
+        val cropped = if (box.left == 0 && box.top == 0 &&
+            box.width() == src.width && box.height() == src.height
+        ) {
+            src
+        } else {
+            Bitmap.createBitmap(src, box.left, box.top, box.width(), box.height())
+        }
+        val cw = cropped.width.coerceAtLeast(1)
+        val ch = cropped.height.coerceAtLeast(1)
+        val maxSide = (canvasSize * FIT_PAD).coerceAtLeast(1f)
+        // 先按高度对准画布，若侧面过宽再整体缩小以完整显示
+        var scale = maxSide / ch
+        if (cw * scale > maxSide) {
+            scale = maxSide / cw
+        }
+        val newW = max(1, (cw * scale).roundToInt())
+        val newH = max(1, (ch * scale).roundToInt())
+        val scaled = if (newW == cropped.width && newH == cropped.height) {
+            cropped
+        } else {
+            Bitmap.createScaledBitmap(cropped, newW, newH, false).also {
+                if (it != cropped && cropped != src) cropped.recycle()
+            }
+        }
         val out = Bitmap.createBitmap(canvasSize, canvasSize, Bitmap.Config.ARGB_8888)
-        val c = android.graphics.Canvas(out)
-        val left = (canvasSize - nw) / 2f
-        val top = (canvasSize - nh).toFloat()
-        c.drawBitmap(scaled, left, top, null)
-        if (scaled !== src) scaled.recycle()
+        val left = (canvasSize - newW) / 2f
+        val top = (canvasSize - newH).toFloat() // 底对齐
+        Canvas(out).drawBitmap(scaled, left, top, null)
+        if (scaled != out && scaled != src) scaled.recycle()
         return out
+    }
+
+    private fun opaqueBounds(bmp: Bitmap): Rect? {
+        val w = bmp.width
+        val h = bmp.height
+        var minX = w
+        var minY = h
+        var maxX = -1
+        var maxY = -1
+        val row = IntArray(w)
+        for (y in 0 until h) {
+            bmp.getPixels(row, 0, w, 0, y, w, 1)
+            for (x in 0 until w) {
+                if ((row[x] ushr 24) > 16) {
+                    if (x < minX) minX = x
+                    if (x > maxX) maxX = x
+                    if (y < minY) minY = y
+                    if (y > maxY) maxY = y
+                }
+            }
+        }
+        if (maxX < minX) return null
+        return Rect(minX, minY, maxX + 1, maxY + 1)
     }
 
     private fun flipH(src: Bitmap): Bitmap {
@@ -206,7 +248,7 @@ class CompanionFollower(
     private fun ensureView(size: Int) {
         if (view != null) return
         val iv = ImageView(context).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
+            scaleType = ImageView.ScaleType.FIT_XY
             setImageBitmap(bmpStand)
         }
         view = iv
@@ -229,6 +271,7 @@ class CompanionFollower(
         val gap = SIDE_GAP
         val leftX = (petTl.x - mini - gap).toFloat()
         val rightX = (petTl.x + petPx + gap).toFloat()
+        // 伴侣更矮：底边对齐主宠脚底
         val targetY = (petTl.y + petPx - mini).toFloat()
         val sw = screenSize().x
         val leftOk = leftX >= 0 && leftX + mini <= sw
@@ -266,7 +309,6 @@ class CompanionFollower(
 
         val anchor = workAnchor?.invoke()
         val (tx, ty) = if (anchor != null) {
-            // 侧向跟旗：以旗脚为「宠」脚底附近
             sideTarget(Point(anchor.x - petPx / 2, anchor.y - petPx), petPx, mini)
         } else {
             sideTarget(petTl, petPx, mini)
@@ -289,7 +331,6 @@ class CompanionFollower(
             val proposed = moveDirFromDelta(dx, dy, moveDir)
             moveDir = applyMoveDir(proposed)
         } else if (mainIsMoving) {
-            // 贴身时跟主宠朝向
             moveDir = applyMoveDir(mainDir())
         }
 
@@ -337,7 +378,7 @@ class CompanionFollower(
         return moveDir
     }
 
-    private fun isWalkingVisual(): Boolean = false // only used at refresh; step decides
+    private fun isWalkingVisual(): Boolean = false
 
     private fun applySprite(standing: Boolean) {
         val bmp = if (standing) {

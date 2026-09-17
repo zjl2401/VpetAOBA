@@ -31,12 +31,12 @@ class WorkEngine(
     }
 
     companion object {
-        const val WORK_ARRIVE_DIST = 18
-        const val WORK_MIN_SPAN = 300
-        const val WORK_BOX_TOTAL_DEFAULT = 5
-        const val WORK_MOVE_INTERVAL_MS = 55L
-        const val WORK_PROP_SIZE = 72
-        const val MOVE_STEP = 2
+        const val WORK_ARRIVE_DIST = WorkMath.WORK_ARRIVE_DIST
+        const val WORK_MIN_SPAN = WorkMath.WORK_MIN_SPAN
+        const val WORK_BOX_TOTAL_DEFAULT = WorkMath.WORK_BOX_TOTAL_DEFAULT
+        const val WORK_MOVE_INTERVAL_MS = WorkMath.WORK_MOVE_INTERVAL_MS
+        const val WORK_PROP_SIZE = WorkMath.WORK_PROP_SIZE
+        const val MOVE_STEP = WorkMath.MOVE_STEP
     }
 
     enum class Phase { TO_START, TO_END, FINISH }

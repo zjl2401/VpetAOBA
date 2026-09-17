@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import array
+import contextlib
 import colorsys
 import ctypes
 import json
@@ -185,13 +186,58 @@ HOME_PRESETS_DIR = DATA_DIR / "homes"
 HOME_EXPORTS_DIR = DATA_DIR / "exports"
 DATA_CHARTS_DIR = DATA_DIR / "charts"
 WALLET_FILE = DATA_DIR / "wallet.json"
-# 与艾登桌宠共用本机总线，才能互相发现对方在线（源码/打包均可用）
-PEER_KIND = "aoba"
+
+
+def _resolve_peer_kind() -> str:
+    """本实例身份：--kind > VPET_KIND > KIND.txt > 默认苍叶。"""
+    args = [str(a).strip().lower() for a in sys.argv[1:]]
+    for i, a in enumerate(args):
+        if a == "--kind" and i + 1 < len(args):
+            k = args[i + 1].lstrip("-")
+            if k in ("aoba", "eiden"):
+                return k
+        if a.startswith("--kind="):
+            k = a.split("=", 1)[-1].strip().lower()
+            if k in ("aoba", "eiden"):
+                return k
+    env = str(os.environ.get("VPET_KIND") or "").strip().lower()
+    if env in ("aoba", "eiden"):
+        return env
+    bases: list[Path] = []
+    if getattr(sys, "frozen", False):
+        try:
+            bases.append(Path(sys.executable).resolve().parent)
+        except Exception:
+            pass
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            bases.append(Path(str(meipass)))
+    bases.append(Path(__file__).resolve().parent)
+    for base in bases:
+        try:
+            p = base / "KIND.txt"
+            if p.is_file():
+                k = p.read_text(encoding="utf-8").strip().lower()
+                if k in ("aoba", "eiden"):
+                    return k
+        except Exception:
+            continue
+    return "aoba"
+
+
+# 与伊得桌宠共用本机总线，才能互相发现对方在线（源码/打包均可用）
+PEER_KIND = _resolve_peer_kind()
 PEER_PRESENCE_DIR = _user_persistent_root() / "presence_bus"
-PEER_MEET_POLL_MS = 1400
+PEER_MEET_POLL_MS = 320
 PEER_STALE_MS = 3200
 PEER_MEET_COOLDOWN_MS = 52_000
 CROSSOVER_MEET_COOLDOWN_MS = 95_000
+# 相遇气泡：淡蓝（非伊得浅青）
+SPEECH_MEET_BUBBLE_FILL = "#E0F0FF"
+SPEECH_MEET_BUBBLE_STROKE = "#9EC8E8"
+SPEECH_MEET_BUBBLE_FG = "#1e3a5c"
+# aoba_launch 启动校验用修订号
+CODE_REV = "aoba-clean-restore-20260912"
 PEER_MEET_LINES: tuple[str, ...] = (
     "咦，怎么还有一个我？",
     "……你也是苍叶？",
@@ -1537,6 +1583,7 @@ SPRITE_PACK_LABELS: dict[str, str] = {
     SPRITE_PACK_BLACK: "黑框",
 }
 _ACTIVE_SPRITE_PACK = SPRITE_PACK_NORMAL
+_FORCE_SPRITE_PACK: str | None = None
 
 
 def set_active_sprite_pack(pack: str) -> None:
@@ -1550,7 +1597,38 @@ def set_active_sprite_pack(pack: str) -> None:
 
 
 def get_active_sprite_pack() -> str:
+    if _FORCE_SPRITE_PACK in SPRITE_PACK_LABELS:
+        return _FORCE_SPRITE_PACK
     return _ACTIVE_SPRITE_PACK if _ACTIVE_SPRITE_PACK in SPRITE_PACK_LABELS else SPRITE_PACK_NORMAL
+
+
+@contextlib.contextmanager
+def _sprite_pack_override(pack: str):
+    """with 块内按指定图组读立绘（不影响用户当前普通/黑框设置）。"""
+    global _FORCE_SPRITE_PACK
+    raw = str(pack or "").strip().lower()
+    want = SPRITE_PACK_BLACK if raw in (SPRITE_PACK_BLACK, "pngblack", "black_border") else SPRITE_PACK_NORMAL
+    prev = _FORCE_SPRITE_PACK
+    _FORCE_SPRITE_PACK = want
+    try:
+        yield
+    finally:
+        _FORCE_SPRITE_PACK = prev
+
+
+@contextlib.contextmanager
+def _persona_override(persona: str):
+    """with 块内强制人格（装扮预览用普通 stand，避免金目）。"""
+    global _ACTIVE_PERSONA
+    prev = _ACTIVE_PERSONA
+    key = str(persona or "").strip().lower()
+    if key in ("jinmu", "金目"):
+        key = PERSONA_NC
+    _ACTIVE_PERSONA = key if key in PERSONA_LABELS else PERSONA_DEFAULT
+    try:
+        yield
+    finally:
+        _ACTIVE_PERSONA = prev
 
 
 def _asset_path(filename: str) -> Path:
@@ -2681,6 +2759,18 @@ PET_ID_FEATURE = False
 PET_BIRTHDAY_MONTH = 4
 PET_BIRTHDAY_DAY = 22
 OWNER_NAME_MAX_LEN = 16
+OWNER_AVATAR_FILE = DATA_DIR / "owner_avatar.png"
+CHAT_AVATAR_PX = 40
+CHAT_BUBBLE_MAX_W = 220
+CHAT_BUBBLE_PAD_X = 10
+CHAT_BUBBLE_PAD_Y = 8
+CHAT_BUBBLE_RADIUS = 12
+CHAT_BUBBLE_GAP = 8
+CHAT_OWNER_BUBBLE_FILL = "#ffffff"
+CHAT_PET_BUBBLE_FILL = "#e8f4ff"
+CHAT_OWNER_BUBBLE_FG = "#1e3a5c"
+CHAT_PET_BUBBLE_FG = "#1e3a5c"
+CHAT_NAME_FG = "#5a7088"
 DEFAULT_OWNER_BLESS = "愿你今天也闪闪发光，吃好喝好睡好觉～"
 # 太久没打开：超过该秒数再启动时触发「好想你」类问候
 OWNER_MISS_AFTER_SEC = 3 * 24 * 3600
@@ -3707,6 +3797,31 @@ RHYTHM_GRADE_LABELS: dict[str, str] = {
 FONT_SIZE_PRESETS: dict[str, int] = {"小": 10, "中": 12, "大": 14, "特大": 16}
 FONT_SIZE_PRESET_ORDER: tuple[str, ...] = ("小", "中", "大", "特大")
 FONT_SIZE_MIN = 8
+UI_FONT_FAMILY_DEFAULT = "楷体"
+UI_FONT_FAMILY_ORDER: tuple[str, ...] = ("楷体", "像素", "仿宋")
+UI_FONT_FAMILY_LEGACY: dict[str, str] = {
+    "可爱": "楷体",
+    "雅黑": "楷体",
+    "黑体": "楷体",
+    "宋体": "楷体",
+}
+UI_FONT_FAMILY_PRESETS: dict[str, dict] = {
+    "楷体": {
+        "hint": "全局楷体",
+        "bundled": ("ui_cute.ttf",),
+        "candidates": ("KaiTi", "楷体", "STKaiti", "华文楷体"),
+    },
+    "像素": {
+        "hint": "全局像素",
+        "bundled": ("fusion-pixel-12px-proportional-zh_hans.ttf",),
+        "candidates": ("Fusion Pixel 12px Prop zh_hans",),
+    },
+    "仿宋": {
+        "hint": "全局仿宋",
+        "candidates": ("FangSong", "仿宋", "STFangsong", "华文仿宋"),
+        "bundled": (),
+    },
+}
 FONT_SIZE_MAX = 24
 ABOUT_DEVELOPER = "翛然而往"
 ABOUT_REPO_URL = "https://github.com/zjl2401/VpetAOBA"
@@ -4265,8 +4380,11 @@ FOLLOW_WAIT_TEXTS = ("等等我！", "别走那么快嘛~", "等等我啦！", "
 _BUNDLED_FONTS_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
 _FUSION_PIXEL_TTF = _BUNDLED_FONTS_DIR / "fusion-pixel-12px-proportional-zh_hans.ttf"
 _FUSION_PIXEL_FAMILY = "Fusion Pixel 12px Prop zh_hans"
+_UI_CUTE_TTF = _BUNDLED_FONTS_DIR / "ui_cute.ttf"
 _UI_PIXEL_FAMILY = "Courier New"
 _UI_CUTE_FAMILY = "YouYuan"
+_UI_FONT_FAMILY_KEY = UI_FONT_FAMILY_DEFAULT
+_BUNDLED_FONTS_READY = False
 _REGISTERED_PRIVATE_FONTS: set[str] = set()
 
 PIXEL_FONT = ("Courier New", 12)  # 菜单/说明：像素风（初始化后替换）
@@ -4277,13 +4395,13 @@ HINT_FONT = ("Courier New", 9)  # 次要提示
 SPEECH_FG_VPET = "#88ccff"
 SPEECH_FG_ALLMATE = "#1a4a99"
 PIXEL_COLOR = SPEECH_FG_VPET
-MENU_BG = "#141824"
-MENU_FG = "#eef2ff"
-MENU_ACTIVE = "#2a3558"
-MENU_BTN_EDGE = "#3a4a6a"
-MENU_BTN_HOVER = "#354468"
-# 面板/菜单深色底半透明（窗口级 alpha；色键立绘/特效窗勿用）
-PANEL_WINDOW_ALPHA = 0.86
+MENU_BG = THEME_PANEL_INNER  # 淡蓝面板底（触发蓝白渐变）
+MENU_FG = "#1e3a5c"
+MENU_ACTIVE = "#c8e4ff"  # 选择/按键淡蓝
+MENU_BTN_EDGE = "#9ec8e8"
+MENU_BTN_HOVER = "#d8ecff"
+# 浅蓝面板轻微透明（立绘/特效窗勿用）
+PANEL_WINDOW_ALPHA = 0.94
 # 秒表/计时器数字框：粉蓝渐变（见 desktop_clock.make_panel_gradient）
 DESK_CLOCK_GRAD_LEFT = "#ff9ec8"
 DESK_CLOCK_GRAD_RIGHT = "#7eb8ff"
@@ -4904,7 +5022,40 @@ AI_DEFAULT_CONFIG: dict = {
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "model": "qwen-plus",
     "temperature": 0.85,
+    "speech_quirk": "偶尔「诶？！」「哇——」；讲义气；天然但不傻；会照顾人",
+    "personality_note": "开朗讲义气、有点天然，体内藏着特殊能力但自己常没察觉",
+    "language_style": "短句口语、有温度；偶尔「诶」「嗯」；少用书面腔",
+    "tone_note": "开朗亲近，像并肩的朋友，不油腻不说教",
+    "allow_self_tune": True,
+    "style_setup_done": False,
 }
+
+AI_STYLE_PRESETS: tuple[tuple[str, dict[str, str]], ...] = (
+    ("温柔照顾", {
+        "personality_note": "温柔、会照顾人、共情强；对方难过时先接住情绪",
+        "tone_note": "轻声安慰，像递一杯热饮",
+        "speech_quirk": "多用「没事的」「我在呢」；偶尔「诶」；安抚时放慢语气",
+        "language_style": "短句、暖、不催促；少开玩笑直到对方缓过来",
+    }),
+    ("天然吐槽", {
+        "personality_note": "开朗天然，会轻轻吐槽但不伤人；边界清楚",
+        "tone_note": "轻松俏皮，像损友又靠谱",
+        "speech_quirk": "句尾常「诶」「啦」；吐槽后马上打圆场",
+        "language_style": "口语短句，节奏快一点",
+    }),
+    ("安静倾听", {
+        "personality_note": "安静、稳、愿意听；不急着给建议",
+        "tone_note": "平和、留白，像并肩坐着",
+        "speech_quirk": "多用「嗯」「我听着呢」；少感叹号",
+        "language_style": "句子更短；先复述对方感受再回应",
+    }),
+    ("讲义气", {
+        "personality_note": "讲义气、会认真打气；像并肩作战的伙伴",
+        "tone_note": "半吐槽半加油，像同事兼朋友",
+        "speech_quirk": "偶发「啊这」「先歇会儿」；夸人时真诚不浮夸",
+        "language_style": "口语、有烟火气；可提休息/工作模式",
+    }),
+)
 
 # 常用后端：千问云端 / 本地 Ollama 开源千问系（OpenAI 兼容）
 AI_PROVIDER_PRESETS: dict[str, dict] = {
@@ -5910,7 +6061,7 @@ def _add_sticker(canvas: Image.Image, kind: str) -> Image.Image:
     y = px * 2
     if kind == "speechless":
         x = px * 2
-        y = px * 2
+    y = px * 2
 
     if kind == "angry":
         color = "#ff3333"
@@ -7982,6 +8133,44 @@ def _load_ai_config() -> dict:
     return config
 
 
+def _save_ai_config(patch: dict) -> dict:
+    cfg = _load_ai_config()
+    if not isinstance(patch, dict):
+        return cfg
+    for k, v in patch.items():
+        if v is None:
+            continue
+        cfg[str(k)] = v
+    try:
+        AI_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        dump = {k: v for k, v in cfg.items() if not str(k).startswith("_")}
+        AI_CONFIG_FILE.write_text(json.dumps(dump, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+    return cfg
+
+
+def _compose_ai_system_prompt(config: dict | None = None, *, owner_name: str = "") -> str:
+    cfg = config if isinstance(config, dict) else _load_ai_config()
+    quirk = str(cfg.get("speech_quirk") or AI_DEFAULT_CONFIG.get("speech_quirk") or "").strip()
+    personality = str(cfg.get("personality_note") or AI_DEFAULT_CONFIG.get("personality_note") or "").strip()
+    style = str(cfg.get("language_style") or AI_DEFAULT_CONFIG.get("language_style") or "").strip()
+    tone = str(cfg.get("tone_note") or AI_DEFAULT_CONFIG.get("tone_note") or "").strip()
+    parts = [AI_SYSTEM_PROMPT]
+    owner = (owner_name or "").strip()
+    if owner:
+        parts.append(f"对方是你的所属人，请称呼「{owner}」（或对方要求的昵称）。")
+    if personality:
+        parts.append(f"性格强调：{personality}。")
+    if tone:
+        parts.append(f"语气：{tone}。")
+    if quirk:
+        parts.append(f"口癖/说话习惯：{quirk}。")
+    if style:
+        parts.append(f"语言风格：{style}。")
+    return "".join(parts)
+
+
 def _register_private_font(path: Path) -> bool:
     """Windows：私有加载 TTF，不写入系统字体列表。"""
     try:
@@ -8001,27 +8190,82 @@ def _register_private_font(path: Path) -> bool:
     return False
 
 
-def _init_ui_fonts(root: tk.Misc | None = None, size: int | None = None) -> None:
-    """注册捆绑像素字体并选定可爱圆体；在 Tk() 创建后调用。"""
-    global _UI_PIXEL_FAMILY, _UI_CUTE_FAMILY
-    registered = _register_private_font(_FUSION_PIXEL_TTF)
-    families: set[str] = set()
+def _ensure_bundled_ui_fonts() -> None:
+    global _BUNDLED_FONTS_READY
+    if _BUNDLED_FONTS_READY:
+        return
+    _register_private_font(_UI_CUTE_TTF)
+    _register_private_font(_FUSION_PIXEL_TTF)
+    _BUNDLED_FONTS_READY = True
+
+
+def _tk_font_families(root: tk.Misc | None = None) -> set[str]:
     try:
         if root is not None:
-            families = {str(n) for n in tkfont.families(root)}
+            return {str(n) for n in tkfont.families(root)}
     except Exception:
-        families = set()
-    # AddFontResourceEx 后未必立刻出现在 families()，注册成功即可用族名
-    if registered or _FUSION_PIXEL_FAMILY in families:
-        _UI_PIXEL_FAMILY = _FUSION_PIXEL_FAMILY
-    else:
-        _UI_PIXEL_FAMILY = "Courier New"
-    cute_pick = None
-    for cand in ("幼圆", "YouYuan", "Microsoft YaHei UI", "微软雅黑", "楷体", "KaiTi"):
-        if cand in families:
-            cute_pick = cand
+        pass
+    return set()
+
+
+def _pick_font_family(candidates: tuple[str, ...] | list[str], families: set[str], fallback: str) -> str:
+    for cand in candidates:
+        if not cand:
+            continue
+        if not families or cand in families:
+            return cand
+    return fallback
+
+
+def _normalize_font_family_key(key: str | None) -> str:
+    k = str(key or "").strip()
+    k = UI_FONT_FAMILY_LEGACY.get(k, k)
+    if k in UI_FONT_FAMILY_PRESETS:
+        return k
+    return UI_FONT_FAMILY_DEFAULT
+
+
+def _apply_ui_font_family(family_key: str, root: tk.Misc | None = None) -> str:
+    global _UI_PIXEL_FAMILY, _UI_CUTE_FAMILY, _UI_FONT_FAMILY_KEY
+    key = _normalize_font_family_key(family_key)
+    _ensure_bundled_ui_fonts()
+    families = _tk_font_families(root)
+    if root is not None:
+        families = _tk_font_families(root) or families
+    preset = UI_FONT_FAMILY_PRESETS.get(key) or UI_FONT_FAMILY_PRESETS[UI_FONT_FAMILY_DEFAULT]
+    for fname in preset.get("bundled") or ():
+        _register_private_font(_BUNDLED_FONTS_DIR / str(fname))
+    if root is not None:
+        families = _tk_font_families(root) or families
+    cands = tuple(preset.get("candidates") or ())
+    fallback = "Microsoft YaHei UI"
+    for soft in ("Microsoft YaHei UI", "微软雅黑", "Segoe UI", "Arial"):
+        if not families or soft in families:
+            fallback = soft
             break
-    _UI_CUTE_FAMILY = cute_pick or "Microsoft YaHei UI"
+    picked = _pick_font_family(cands, families, fallback)
+    if picked == fallback and key == "楷体":
+        picked = "KaiTi"
+    elif picked == fallback and key == "像素":
+        picked = _FUSION_PIXEL_FAMILY
+    elif picked == fallback and key == "仿宋":
+        picked = "FangSong"
+    _register_private_font(_FUSION_PIXEL_TTF)
+    _register_private_font(_UI_CUTE_TTF)
+    _UI_CUTE_FAMILY = picked
+    _UI_PIXEL_FAMILY = picked
+    _UI_FONT_FAMILY_KEY = key
+    return key
+
+
+def _init_ui_fonts(
+    root: tk.Misc | None = None,
+    size: int | None = None,
+    family_key: str | None = None,
+) -> None:
+    """挂载内置字体并应用样式；对话与面板同一族。"""
+    key = family_key if family_key is not None else _UI_FONT_FAMILY_KEY
+    _apply_ui_font_family(key, root)
     _apply_font_size(12 if size is None else int(size))
 
 
@@ -8061,6 +8305,7 @@ def _apply_font_size(size: int) -> None:
 def _load_app_config() -> dict:
     default = {
         "font_size": 12,
+        "font_family": UI_FONT_FAMILY_DEFAULT,
         "display_size": DEFAULT_SIZE,
         "display_preset": "中",
         "difficulty": "中",
@@ -8456,6 +8701,107 @@ def _save_pet_profile(profile: dict) -> None:
 def _owner_display_name(profile: dict | None) -> str:
     name = str((profile or {}).get("owner_name") or "").strip()
     return name[:OWNER_NAME_MAX_LEN]
+
+
+def _circle_mask(size: int) -> Image.Image:
+    m = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(m).ellipse((0, 0, size - 1, size - 1), fill=255)
+    return m
+
+
+def _pil_default_owner_avatar(size: int = CHAT_AVATAR_PX) -> Image.Image:
+    s = max(24, int(size))
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse((0, 0, s - 1, s - 1), fill=(210, 230, 250, 255))
+    cx, cy = s // 2, s // 2
+    r = max(3, s // 7)
+    d.ellipse((cx - r, cy - r * 2, cx + r, cy), fill=(120, 150, 180, 255))
+    d.ellipse((cx - r * 2, cy + 1, cx + r * 2, s - 2), fill=(120, 150, 180, 255))
+    out = Image.new("RGBA", (s, s), (255, 0, 255, 255))
+    out.paste(img, (0, 0), _circle_mask(s))
+    return out
+
+
+def _pil_circle_avatar_from_image(src: Image.Image, size: int = CHAT_AVATAR_PX) -> Image.Image:
+    s = max(24, int(size))
+    rgba = src.convert("RGBA")
+    w, h = rgba.size
+    side = min(w, h)
+    left = max(0, (w - side) // 2)
+    top = max(0, int(h * 0.08))
+    if top + side > h:
+        top = max(0, h - side)
+    crop = rgba.crop((left, top, left + side, top + side)).resize((s, s), Image.Resampling.NEAREST)
+    out = Image.new("RGBA", (s, s), (255, 0, 255, 255))
+    out.paste(crop, (0, 0), _circle_mask(s))
+    return out
+
+
+def _owner_avatar_path(profile: dict | None) -> Path | None:
+    name = str((profile or {}).get("owner_avatar") or "").strip()
+    if not name:
+        return None
+    p = DATA_DIR / Path(name).name
+    return p if p.is_file() else None
+
+
+def _save_owner_avatar_image(src_path: Path | str) -> str:
+    src = Path(src_path)
+    img = Image.open(src).convert("RGBA")
+    max_side = 256
+    w, h = img.size
+    scale = min(1.0, max_side / max(1, max(w, h)))
+    if scale < 1.0:
+        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    img.save(OWNER_AVATAR_FILE, format="PNG")
+    return OWNER_AVATAR_FILE.name
+
+
+def _load_owner_avatar_pil(profile: dict | None, size: int = CHAT_AVATAR_PX) -> Image.Image:
+    path = _owner_avatar_path(profile)
+    if path is not None:
+        try:
+            return _pil_circle_avatar_from_image(Image.open(path), size)
+        except Exception:
+            pass
+    return _pil_default_owner_avatar(size)
+
+
+def _load_pet_avatar_pil(size: int = CHAT_AVATAR_PX) -> Image.Image:
+    """苍叶站立图圆形头像（普通图组，非金目）。"""
+    try:
+        with _sprite_pack_override(SPRITE_PACK_NORMAL):
+            with _persona_override(PERSONA_DEFAULT):
+                side = max(48, int(size) * 2)
+                rgba = _sprite_rgba_image("stand.jpg", side)
+                if rgba is not None and rgba.getbbox():
+                    return _pil_circle_avatar_from_image(rgba, size)
+    except Exception:
+        pass
+    s = max(24, int(size))
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse((0, 0, s - 1, s - 1), fill=(136, 204, 255, 255))
+    out = Image.new("RGBA", (s, s), (255, 0, 255, 255))
+    out.paste(img, (0, 0), _circle_mask(s))
+    return out
+
+
+def _solid_bubble_on_magenta(width: int, height: int, fill_hex: str, *, radius: int = CHAT_BUBBLE_RADIUS) -> Image.Image:
+    w = max(1, int(width))
+    h = max(1, int(height))
+    r = max(0, min(int(radius), min(w, h) // 2))
+    fill = str(fill_hex or "#ffffff").strip() or "#ffffff"
+    img = Image.new("RGBA", (w, h), (255, 0, 255, 255))
+    d = ImageDraw.Draw(img)
+    try:
+        d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=fill)
+    except Exception:
+        d.rectangle([0, 0, w - 1, h - 1], fill=fill)
+    return img
+
 
 
 def _pet_birthday_ordinal(profile: dict) -> int:
@@ -10622,7 +10968,9 @@ class DesktopPet:
         saved_size = _snap_display_size(int(app_cfg.get("display_size", DEFAULT_SIZE)))
         self.display_size = saved_size
         self.font_size = max(8, min(24, int(app_cfg.get("font_size", 12))))
+        self.font_family = _normalize_font_family_key(app_cfg.get("font_family"))
         self.app_config = app_cfg
+        self.app_config["font_family"] = self.font_family
         persona = str(self.app_config.get("persona") or PERSONA_DEFAULT)
         if persona not in PERSONA_LABELS:
             persona = PERSONA_DEFAULT
@@ -10691,7 +11039,7 @@ class DesktopPet:
         self._apply_window_layer(self.root)
         # Tk 就绪后再挂像素/可爱字体（模块加载时还没有 root）
         try:
-            _init_ui_fonts(self.root, self.font_size)
+            _init_ui_fonts(self.root, self.font_size, self.font_family)
         except Exception:
             _apply_font_size(self.font_size)
 
@@ -12167,6 +12515,25 @@ class DesktopPet:
         except Exception:
             next_one()
 
+    def _set_font_family(self, family_key: str, *, refresh_settings: bool = False, toast: bool = True) -> None:
+        key = _normalize_font_family_key(family_key)
+        if key == getattr(self, "font_family", None):
+            if refresh_settings:
+                self._refresh_panel_settings_if_open()
+            return
+        self.font_family = key
+        _apply_ui_font_family(key, self.root)
+        _apply_font_size(int(self.font_size))
+        self.app_config["font_family"] = key
+        self._defer_save_app_config()
+        if toast:
+            self._show_toast(f"字体样式：{key}", PIXEL_COLOR)
+        if refresh_settings:
+            try:
+                self.root.after(30, self._rebuild_panel_settings_if_open)
+            except Exception:
+                self._rebuild_panel_settings_if_open()
+
     def _set_font_size(self, size: int, *, refresh_settings: bool = False, toast: bool = True) -> None:
         size = max(FONT_SIZE_MIN, min(FONT_SIZE_MAX, int(size)))
         if size == int(self.font_size):
@@ -13375,10 +13742,14 @@ class DesktopPet:
         accent_h = 3
         target_w = max(120, content_w + pad_x * 2)
         target_h = max(36, content_h + pad_y * 2 + accent_h)
+        meet = str(getattr(self, "speech_bubble_tone", "") or "").lower() in ("meet", "cyan", "blue")
+        fill = SPEECH_MEET_BUBBLE_FILL if meet else SPEECH_TEXT_BG
+        outline = SPEECH_MEET_BUBBLE_STROKE if meet else THEME_BLUE_DEEP
+        accent = THEME_BLUE if meet else THEME_PINK
         canvas.delete("all")
         canvas.config(width=target_w, height=target_h)
-        canvas.create_rectangle(0, accent_h, target_w, target_h, fill=SPEECH_TEXT_BG, outline=THEME_BLUE_DEEP)
-        canvas.create_rectangle(0, 0, target_w, accent_h, fill=THEME_PINK, outline="")
+        canvas.create_rectangle(0, accent_h, target_w, target_h, fill=fill, outline=outline)
+        canvas.create_rectangle(0, 0, target_w, accent_h, fill=accent, outline="")
         canvas.create_rectangle(0, accent_h, target_w, accent_h + 1, fill=THEME_BLUE, outline="")
         if paint_text_on_canvas or label is None or not label.winfo_exists():
             canvas.create_text(
@@ -13391,7 +13762,7 @@ class DesktopPet:
                 width=max(80, content_w),
             )
             return
-        label.config(text=text, fg=color, bg=SPEECH_TEXT_BG)
+        label.config(text=text, fg=color, bg=fill)
         canvas.create_window(
             pad_x,
             accent_h + pad_y,
@@ -14771,10 +15142,29 @@ class DesktopPet:
     def _bg_music_next_track(self) -> None:
         if not getattr(self, "music_sprite_mode", False):
             return
+        # 跟听网页/外部音乐：切系统媒体下一首（与伊得 system_media_control 对齐）
+        if bool(getattr(self, "music_ambient_only", False)):
+            try:
+                import system_media_control as smc
+
+                ok = bool(smc.send_command("next"))
+            except Exception:
+                ok = False
+            self._show_toast("下一首（外部）" if ok else "未能切歌（外部）", "#88ccff" if ok else "#ff8866", duration_ms=1200)
+            return
         self._advance_bg_music_track(silent=False)
 
     def _bg_music_prev_track(self) -> None:
         if not getattr(self, "music_sprite_mode", False):
+            return
+        if bool(getattr(self, "music_ambient_only", False)):
+            try:
+                import system_media_control as smc
+
+                ok = bool(smc.send_command("prev"))
+            except Exception:
+                ok = False
+            self._show_toast("上一首（外部）" if ok else "未能切歌（外部）", "#88ccff" if ok else "#ff8866", duration_ms=1200)
             return
         self._retreat_bg_music_track()
 
@@ -17179,9 +17569,9 @@ class DesktopPet:
                     action = getattr(self, "_hotkey_action_by_id", {}).get(int(msg.wParam))
                     if action is None:
                         for hotkey_id, _key, act in HOTKEY_ACTIONS:
-                            if msg.wParam == hotkey_id:
+                        if msg.wParam == hotkey_id:
                                 action = act
-                                break
+                            break
                     if action:
                         self._handle_hotkey_action(action)
         self._safe_after(120, self._poll_hotkey)
@@ -17650,13 +18040,19 @@ class DesktopPet:
         use_border5: bool = False,
         max_chars: int = 24,
     ) -> bool:
-        """见面路径短句入口：不叠说明 toast，短时自动收起。"""
+        """见面路径短句入口：不叠说明 toast，短时自动收起；气泡淡蓝。"""
         t = self._normalize_meet_line(text, max_chars=max_chars)
         if not t:
             return False
         hide = max(900, min(int(auto_hide_ms), 2200))
         try:
-            self._show_speech_dialog(t, auto_hide_ms=hide, use_border5=use_border5)
+            self.speech_bubble_tone = "meet"
+            self._show_speech_dialog(
+                t,
+                auto_hide_ms=hide,
+                use_border5=use_border5,
+                color=SPEECH_MEET_BUBBLE_FG,
+            )
             return True
         except Exception:
             return False
@@ -17689,7 +18085,7 @@ class DesktopPet:
 
         def _after_pop() -> None:
             if self._closing or not self._alive():
-                return
+            return
             if self.dragging or self.mode in ("loading", "game"):
                 return
             shown = False
@@ -17758,14 +18154,14 @@ class DesktopPet:
     def _peer_near(self, data: dict, *, loose: bool = False) -> bool:
         ax, ay = int(self.x), int(self.y + self.click_bounce_offset)
         asz = int(self.display_size)
-        bx = int(data.get("x") or 0)
-        by = int(data.get("y") or 0)
-        bsz = max(16, int(data.get("size") or asz))
-        pad = max(24 if loose else 16, min(asz, bsz) // (3 if loose else 4))
-        return self._rects_overlap(
-            ax - pad, ay - pad, asz + pad * 2, asz + pad * 2,
-            bx - pad, by - pad, bsz + pad * 2, bsz + pad * 2,
-        )
+            bx = int(data.get("x") or 0)
+            by = int(data.get("y") or 0)
+            bsz = max(16, int(data.get("size") or asz))
+            pad = max(24 if loose else 16, min(asz, bsz) // (3 if loose else 4))
+            return self._rects_overlap(
+                ax - pad, ay - pad, asz + pad * 2, asz + pad * 2,
+                bx - pad, by - pad, bsz + pad * 2, bsz + pad * 2,
+            )
 
     def _nearest_crossover_peer(self) -> dict | None:
         best = None
@@ -17776,6 +18172,23 @@ class DesktopPet:
             kind = str(data.get("kind") or "").strip().lower()
             if kind in ("", PEER_KIND):
                 continue
+            if not self._peer_near(data, loose=True):
+                continue
+            bx = int(data.get("x") or 0) + max(16, int(data.get("size") or 64)) // 2
+            by = int(data.get("y") or 0) + max(16, int(data.get("size") or 64)) // 2
+            d = (ax - bx) ** 2 + (ay - by) ** 2
+            if d < best_d:
+                best_d = d
+                best = data
+        return best
+
+    def _nearest_any_peer(self) -> dict | None:
+        """最近的在线桌宠（含同作品多开），用于脚下热区。"""
+        best = None
+        best_d = 10**18
+        ax = self.x + self.display_size // 2
+        ay = self.y + self.display_size // 2 + self.click_bounce_offset
+        for data in self._list_live_peers():
             if not self._peer_near(data, loose=True):
                 continue
             bx = int(data.get("x") or 0) + max(16, int(data.get("size") or 64)) // 2
@@ -17818,7 +18231,10 @@ class DesktopPet:
         command,
         size: int = 30,
     ) -> tk.Canvas:
-        """圆形软热区：品红透明底 + 极淡描边 + 单字，无白粉底条。"""
+        """圆形软热区：悬停/按下均保持浅蓝（不对齐伊得粉/青）。"""
+        fill_idle, fill_hot = "#66ccff", "#88ccff"
+        edge_idle, edge_hot = "#9ed0ff", "#c8e8ff"
+        text_idle, text_hot = "#f4faff", "#ffffff"
         cv = tk.Canvas(
             parent,
             width=size,
@@ -17831,29 +18247,37 @@ class DesktopPet:
         pad = 2
         oval = cv.create_oval(
             pad, pad, size - pad, size - pad,
-            outline="#c8a0b8",
+            outline=edge_idle,
             width=1,
-            fill="magenta",
+            fill=fill_idle,
         )
         text_id = cv.create_text(
             size // 2,
             size // 2,
             text=glyph,
-            fill="#e8d0dc",
+            fill=text_idle,
             font=HINT_FONT,
         )
 
         def _enter(_e=None) -> None:
             try:
-                cv.itemconfigure(oval, outline="#ffe8f4")
-                cv.itemconfigure(text_id, fill="#fff8fc")
+                cv.itemconfigure(oval, outline=edge_hot, fill=fill_hot)
+                cv.itemconfigure(text_id, fill=text_hot)
             except Exception:
                 pass
 
         def _leave(_e=None) -> None:
             try:
-                cv.itemconfigure(oval, outline="#c8a0b8")
-                cv.itemconfigure(text_id, fill="#e8d0dc")
+                cv.itemconfigure(oval, outline=edge_idle, fill=fill_idle)
+                cv.itemconfigure(text_id, fill=text_idle)
+            except Exception:
+                pass
+
+        def _press(_e=None) -> None:
+            # 按下仍保持蓝色，不切粉
+            try:
+                cv.itemconfigure(oval, outline=edge_hot, fill=fill_hot)
+                cv.itemconfigure(text_id, fill=text_hot)
             except Exception:
                 pass
 
@@ -17865,6 +18289,7 @@ class DesktopPet:
 
         cv.bind("<Enter>", _enter)
         cv.bind("<Leave>", _leave)
+        cv.bind("<ButtonPress-1>", _press)
         cv.bind("<Button-1>", _click)
         return cv
 
@@ -18109,7 +18534,8 @@ class DesktopPet:
             return
         self._publish_peer_presence()
         try:
-            near = self._nearest_crossover_peer()
+            # 同种多开也可出脚下热区；异种仍走交叉相遇逻辑
+            near = self._nearest_any_peer()
             if near is not None:
                 self._show_crossover_bar(near)
             else:
@@ -26987,6 +27413,47 @@ class DesktopPet:
             justify=tk.LEFT,
             wraplength=300,
         ).pack(anchor=tk.W, pady=(6, 8))
+        av_row = tk.Frame(frame, bg=MENU_BG)
+        av_row.pack(anchor=tk.W, fill=tk.X, pady=(0, 6))
+        av_lbl = tk.Label(av_row, bg=MENU_BG, bd=0)
+        av_lbl.pack(side=tk.LEFT)
+        av_btns = tk.Frame(av_row, bg=MENU_BG)
+        av_btns.pack(side=tk.LEFT, padx=(10, 0))
+        avatar_pick: dict = {"path": None}
+        av_keep: dict = {"photo": None}
+
+        def _refresh_avatar_preview(path=None) -> None:
+            try:
+                if path:
+                    pil = _pil_circle_avatar_from_image(Image.open(path), 48)
+                else:
+                    pil = _pil_default_owner_avatar(48)
+                photo = ImageTk.PhotoImage(pil.convert("RGBA"))
+                av_lbl.configure(image=photo)
+                av_keep["photo"] = photo
+            except Exception:
+                pass
+
+        def _pick_avatar() -> None:
+            path = filedialog.askopenfilename(
+                parent=win,
+                title="选择所属人头像",
+                filetypes=[("图片", "*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif"), ("全部", "*.*")],
+            )
+            if not path:
+                return
+            avatar_pick["path"] = path
+            _refresh_avatar_preview(path)
+            tip.config(text="")
+
+        def _clear_avatar() -> None:
+            avatar_pick["path"] = None
+            _refresh_avatar_preview(None)
+            tip.config(text="")
+
+        tk.Button(av_btns, text="选择头像", command=_pick_avatar, font=HINT_FONT, bg=MENU_ACTIVE, fg=MENU_FG).pack(anchor=tk.W)
+        tk.Button(av_btns, text="用默认剪影", command=_clear_avatar, font=HINT_FONT, bg=MENU_BG, fg="#8899aa").pack(anchor=tk.W, pady=(4, 0))
+        _refresh_avatar_preview(None)
         entry = tk.Entry(frame, width=18, font=PIXEL_FONT)
         entry.pack(anchor=tk.W)
         tip = tk.Label(frame, text="", font=("Courier New", 9), fg="#ff8866", bg=MENU_BG)
@@ -26999,6 +27466,19 @@ class DesktopPet:
                 return
             self.pet_profile["owner_name"] = raw
             self.pet_profile["owner_set_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            try:
+                pick = avatar_pick.get("path")
+                if pick:
+                    self.pet_profile["owner_avatar"] = _save_owner_avatar_image(str(pick))
+                else:
+                    self.pet_profile["owner_avatar"] = ""
+                    if OWNER_AVATAR_FILE.is_file():
+                        try:
+                            OWNER_AVATAR_FILE.unlink()
+                        except Exception:
+                            pass
+            except Exception:
+                self.pet_profile["owner_avatar"] = ""
             _save_pet_profile(self.pet_profile)
             self.owner_name = raw
             try:
@@ -27119,7 +27599,51 @@ class DesktopPet:
         )
         _pack_theme_motif_banner(frame, OWNER_THEME, "owner")
         tk.Label(frame, text="所属人", font=PIXEL_FONT, fg=accent, bg=paper).pack(anchor=tk.W)
-        tk.Label(frame, text=name, font=PIXEL_FONT, fg=ink, bg=paper).pack(anchor=tk.W, pady=(4, 2))
+        head = tk.Frame(frame, bg=paper)
+        head.pack(anchor=tk.W, fill=tk.X, pady=(4, 2))
+        av_lbl = tk.Label(head, bg=paper, bd=0)
+        av_lbl.pack(side=tk.LEFT)
+        name_col = tk.Frame(head, bg=paper)
+        name_col.pack(side=tk.LEFT, padx=(10, 0))
+        tk.Label(name_col, text=name, font=PIXEL_FONT, fg=ink, bg=paper).pack(anchor=tk.W)
+        av_keep: dict = {"photo": None}
+
+        def _refresh_info_avatar() -> None:
+            try:
+                pil = _load_owner_avatar_pil(self.pet_profile, 48)
+                photo = ImageTk.PhotoImage(pil.convert("RGBA"))
+                av_lbl.configure(image=photo)
+                av_keep["photo"] = photo
+            except Exception:
+                pass
+
+        def _change_avatar() -> None:
+            path = filedialog.askopenfilename(
+                parent=win,
+                title="更换所属人头像",
+                filetypes=[("图片", "*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif"), ("全部", "*.*")],
+            )
+            if not path:
+                return
+            try:
+                self.pet_profile["owner_avatar"] = _save_owner_avatar_image(path)
+                _save_pet_profile(self.pet_profile)
+                _refresh_info_avatar()
+                self._show_toast("头像已更新", THEME_PINK)
+            except Exception:
+                self._show_toast("头像保存失败", "#ff8866")
+
+        tk.Button(
+            name_col,
+            text="更换头像",
+            command=_change_avatar,
+            font=HINT_FONT,
+            bg=paper,
+            fg=muted,
+            relief=tk.FLAT,
+            cursor="hand2",
+        ).pack(anchor=tk.W, pady=(2, 0))
+        _refresh_info_avatar()
         if set_at:
             show_at = set_at[:19].replace("T", " ")
             tk.Label(
@@ -29747,6 +30271,41 @@ class DesktopPet:
             btn.pack(side=tk.LEFT, padx=2)
             size_btns[preset] = btn
         ui["size_btns"] = size_btns
+
+        fam_row = tk.Frame(frame, bg=MENU_BG)
+        fam_row.pack(fill=tk.X, pady=(4, 2))
+        tk.Label(fam_row, text="字体样式", font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+        fam_val = tk.Label(
+            fam_row,
+            text=str(getattr(self, "font_family", UI_FONT_FAMILY_DEFAULT)),
+            font=PIXEL_FONT,
+            fg="#88ccff",
+            bg=MENU_BG,
+        )
+        fam_val.pack(side=tk.RIGHT)
+        ui["font_family_val"] = fam_val
+        fam_btns_row = tk.Frame(frame, bg=MENU_BG)
+        fam_btns_row.pack(fill=tk.X, pady=(2, 4))
+        fam_btns: dict = {}
+        cur_fam = _normalize_font_family_key(getattr(self, "font_family", UI_FONT_FAMILY_DEFAULT))
+        for name in UI_FONT_FAMILY_ORDER:
+            mark = " ✓" if name == cur_fam else ""
+            btn = tk.Button(
+                fam_btns_row,
+                text=f"{name}{mark}",
+                command=lambda n=name: self._set_font_family(n, refresh_settings=True),
+                font=HINT_FONT,
+                bg=MENU_ACTIVE if mark else MENU_BG,
+                fg=MENU_FG,
+                relief=tk.FLAT,
+                highlightthickness=1,
+                highlightbackground=MENU_BTN_EDGE if mark else "#223044",
+                padx=8,
+                pady=3,
+            )
+            btn.pack(side=tk.LEFT, padx=2)
+            fam_btns[name] = btn
+        ui["font_family_btns"] = fam_btns
 
         font_row = tk.Frame(frame, bg=MENU_BG)
         font_row.pack(fill=tk.X, pady=(4, 2))
@@ -37294,22 +37853,28 @@ class DesktopPet:
                 pass
             self.preset_dialog_job = None
         reply = random.choice(answers)
-        self._show_speech_dialog(f"你：{question}", auto_hide_ms=2400, use_border5=True)
-        delay = _typing_duration_ms(f"你：{question}") + 500
+        self._show_speech_dialog(
+            question,
+            auto_hide_ms=2400,
+            use_border5=False,
+            chat_role="owner",
+            instant=True,
+        )
+        delay = _typing_duration_ms(question) + 500
         self.preset_dialog_job = self.root.after(
-            delay, lambda q=question, r=reply: self._show_preset_dialog_answer(q, r)
+            delay, lambda q=question, r=reply, pool=answers: self._show_preset_dialog_answer(q, r, pool)
         )
 
-    def _show_preset_dialog_answer(self, question: str, reply: str) -> None:
+    def _show_preset_dialog_answer(self, question: str, reply: str, answers: tuple[str, ...] | None = None) -> None:
         self.preset_dialog_job = None
         text = (reply or "").strip() or "……"
-        # 打完后再多留一会儿，长回复按字数加长停留
         hold_ms = max(6200, 2800 + len(text) * 45)
         self._show_speech_dialog(
             text,
             auto_hide_ms=hold_ms,
             typewriter_ms=TYPEWRITER_MS,
-            use_border5=True,
+            use_border5=False,
+            chat_role="aoba",
         )
 
     def _match_preset_dialog(self, user_text: str) -> str | None:
@@ -37757,6 +38322,17 @@ class DesktopPet:
             self._style_settings_choice_btn(
                 btn, selected=SIZE_PRESETS.get(name) == size_px, label=name
             )
+
+        # 字体样式
+        cur_fam = _normalize_font_family_key(getattr(self, "font_family", UI_FONT_FAMILY_DEFAULT))
+        fam_val = ui.get("font_family_val")
+        try:
+            if fam_val and fam_val.winfo_exists():
+                fam_val.configure(text=str(cur_fam))
+        except Exception:
+            pass
+        for name, btn in (ui.get("font_family_btns") or {}).items():
+            self._style_settings_choice_btn(btn, selected=name == cur_fam, label=name)
 
         # 字体
         font_val = ui.get("font_val")
@@ -38706,6 +39282,7 @@ class DesktopPet:
         if self.speech_dialog and self.speech_dialog.winfo_exists():
             self.speech_dialog.destroy()
         self.speech_dialog_color = SPEECH_FG_VPET
+        self.speech_bubble_tone = ""
         self.speech_dialog = None
         self.speech_canvas = None
         self.speech_border_photo = None
@@ -38788,9 +39365,97 @@ class DesktopPet:
         self._speech_border5_peak = (content_w, content_h)
         return content_w, content_h
 
+    def _chat_display_name(self, role: str) -> str:
+        if role == "owner":
+            return (
+                _owner_display_name(self.pet_profile)
+                or str(getattr(self, "owner_name", "") or "").strip()
+                or "你"
+            )
+        return "苍叶"
+
+    def _chat_avatar_photo(self, role: str) -> ImageTk.PhotoImage:
+        size = CHAT_AVATAR_PX
+        if role == "owner":
+            pil = _load_owner_avatar_pil(self.pet_profile, size)
+        else:
+            pil = _load_pet_avatar_pil(size)
+        return ImageTk.PhotoImage(pil.convert("RGBA"))
+
+    def _layout_chat_bubble(self, text: str, color: str) -> bool:
+        canvas = self.speech_canvas
+        if not canvas or not canvas.winfo_exists():
+            return False
+        role = str(getattr(self, "speech_chat_role", "") or "aoba")
+        is_owner = role == "owner"
+        fill = CHAT_OWNER_BUBBLE_FILL if is_owner else CHAT_PET_BUBBLE_FILL
+        text_fg = color if color and color not in (SPEECH_FG_VPET, "") else (
+            CHAT_OWNER_BUBBLE_FG if is_owner else CHAT_PET_BUBBLE_FG
+        )
+        name = self._chat_display_name(role)
+        measure = text if (text and str(text).strip()) else (getattr(self, "speech_full_text", "") or " ")
+        wrap_w = CHAT_BUBBLE_MAX_W
+        content_w, content_h = self._speech_label_content_size(measure, wrap_w=wrap_w)
+        content_w = min(wrap_w, max(48, content_w))
+        content_h = max(18, content_h)
+        pad_x, pad_y = CHAT_BUBBLE_PAD_X, CHAT_BUBBLE_PAD_Y
+        av = CHAT_AVATAR_PX
+        gap = CHAT_BUBBLE_GAP
+        name_h = 16
+        body_w = content_w + pad_x * 2
+        body_h = content_h + pad_y * 2
+        tail_w = 7
+        bubble_w = body_w + tail_w
+        total_w = av + gap + bubble_w
+        total_h = max(av + name_h, body_h + name_h)
+        layout_sig = (role, total_w, total_h, body_w, body_h, content_w, content_h, name, fill)
+        if layout_sig == getattr(self, "_speech_border_layout_sig", None) and getattr(self, "speech_text_item", None) is not None:
+            try:
+                canvas.itemconfigure(self.speech_text_item, text=text or "", fill=text_fg)
+            except Exception:
+                pass
+            return True
+        self._speech_border_layout_sig = layout_sig
+        canvas.delete("all")
+        self.speech_text_item = None
+        canvas.config(width=total_w, height=total_h, bg="magenta")
+        body_img = _solid_bubble_on_magenta(body_w, body_h, fill)
+        body_photo = ImageTk.PhotoImage(body_img)
+        av_photo = self._chat_avatar_photo(role)
+        self.speech_chat_photos = [body_photo, av_photo]
+        self.speech_border_photo = body_photo
+        if is_owner:
+            av_x = total_w - av
+            body_x = 0
+            tail_x0, tail_x1 = body_w - 1, body_w + tail_w - 1
+        else:
+            av_x = 0
+            body_x = av + gap + tail_w
+            bub_x = av + gap
+            tail_x0, tail_x1 = bub_x, bub_x + tail_w
+        canvas.create_text(av_x + av // 2, 0, text=name, fill=CHAT_NAME_FG, font=HINT_FONT, anchor=tk.N)
+        av_y = name_h
+        canvas.create_image(av_x, av_y, image=av_photo, anchor=tk.NW)
+        body_y = name_h + max(0, (av - body_h) // 2)
+        mid_y = body_y + body_h // 2
+        if is_owner:
+            canvas.create_polygon(tail_x0, mid_y - 6, tail_x1, mid_y, tail_x0, mid_y + 6, fill=fill, outline="")
+        else:
+            canvas.create_polygon(tail_x1, mid_y - 6, tail_x0, mid_y, tail_x1, mid_y + 6, fill=fill, outline="")
+        canvas.create_image(body_x, body_y, image=body_photo, anchor=tk.NW)
+        self.speech_text_item = canvas.create_text(
+            body_x + pad_x, body_y + pad_y, text=text or "", fill=text_fg, font=CUTE_FONT, anchor=tk.NW, width=max(40, content_w)
+        )
+        if self.speech_dialog and self.speech_dialog.winfo_exists():
+            self.speech_dialog.update_idletasks()
+            return self._place_speech_popup(self.speech_dialog)
+        return True
+
     def _layout_speech_dialog(self, text: str, color: str, *, use_border5: bool | None = None) -> bool:
         if not self.speech_canvas or not self.speech_canvas.winfo_exists():
             return False
+        if getattr(self, "speech_chat_role", None):
+            return self._layout_chat_bubble(text, color)
         if use_border5 is None:
             use_border5 = getattr(self, "speech_use_border5", False)
         if not use_border5:
@@ -38894,6 +39559,7 @@ class DesktopPet:
         instant: bool = False,
         use_border5: bool = False,
         from_voice: bool = False,
+        chat_role: str | None = None,
     ) -> None:
         if from_voice:
             self._cleanup_voice_subtitle_win()
@@ -38906,8 +39572,21 @@ class DesktopPet:
             self._speech_from_voice = False
 
         self.speech_use_border5 = use_border5
+        role = (chat_role or "").strip().lower() or None
+        if role in ("pet", "eiden", "苍叶", "aoba"):
+            role = "aoba"
+        elif role in ("owner", "user", "me", "所属人"):
+            role = "owner"
+        self.speech_chat_role = role
+        if role:
+            # 头像气泡路径不用 border5
+            self.speech_use_border5 = False
         self._speech_border5_peak = (0, 0)
         self._speech_border_layout_sig = None
+        if not from_voice and str(getattr(self, "speech_bubble_tone", "") or "") != "meet":
+            # 非见面路径清掉淡蓝标记，避免普通对话误用
+            if str(color or "") != SPEECH_MEET_BUBBLE_FG:
+                self.speech_bubble_tone = ""
         self.speech_dialog = tk.Toplevel(self.root)
         self.speech_dialog.overrideredirect(True)
         try:
@@ -38935,7 +39614,11 @@ class DesktopPet:
             text="",
             font=PIXEL_FONT,
             fg=color,
-            bg=SPEECH_TEXT_BG,
+            bg=(
+                SPEECH_MEET_BUBBLE_FILL
+                if str(getattr(self, "speech_bubble_tone", "") or "").lower() in ("meet", "cyan", "blue")
+                else SPEECH_TEXT_BG
+            ),
             justify=tk.LEFT,
             anchor=tk.NW,
             padx=2,
@@ -39552,21 +40235,12 @@ class DesktopPet:
             size = preview_size - 8
             base = Image.new("RGBA", (size, size), preview_pad)
             try:
-                stand_path = None
-                for cand in (
-                    GALLERY_DIR / "stand.png",
-                    SPRITES_DIR / "stand.png",
-                    SPRITES_DIR / "stand.jpg",
-                ):
-                    if cand.is_file():
-                        stand_path = cand
-                        break
-                if stand_path is not None:
-                    stand = Image.open(stand_path).convert("RGBA")
-                    stand.thumbnail((size, size), Image.Resampling.NEAREST)
-                    ox = (size - stand.width) // 2
-                    oy = size - stand.height
-                    base.alpha_composite(stand, (ox, oy))
+                # 预览固定普通图组 + 默认人格 stand（无边框、非金目）
+                with _sprite_pack_override(SPRITE_PACK_NORMAL):
+                    with _persona_override(PERSONA_DEFAULT):
+                        stand = _sprite_rgba_image("stand.jpg", size)
+                if stand is not None and stand.getbbox():
+                    base.alpha_composite(stand, (0, 0))
             except Exception:
                 pass
             view_decors = list(draft)
@@ -39815,7 +40489,8 @@ class DesktopPet:
         asset_scroll.pack(fill=tk.X, pady=(0, 2))
 
         def pick_asset(kind: str, ref: str) -> None:
-            dnx, dny, dsc = pet_outfit.defaults_for(kind, ref)
+            _defs = pet_outfit.defaults_for(kind, ref)
+            dnx, dny, dsc = float(_defs[0]), float(_defs[1]), float(_defs[2])
             probe = {
                 "kind": kind,
                 "ref": ref,
@@ -39897,8 +40572,8 @@ class DesktopPet:
         by_group: dict[str, list] = {}
         for c in choices:
             by_group.setdefault(str(c.get("group") or "其他"), []).append(c)
-        group_order = [g for g in ("我的", "公开") if g in by_group] + [
-            g for g in by_group if g not in ("我的", "公开")
+        group_order = [g for g in pet_outfit.OUTFIT_GROUP_ORDER if g in by_group] + [
+            g for g in by_group if g not in pet_outfit.OUTFIT_GROUP_ORDER
         ]
         assets_per_row = 4
         cell_bg = card
@@ -43282,27 +43957,57 @@ class DesktopPet:
         if self.ai_chat_win and self.ai_chat_win.winfo_exists():
             self._close_ai_chat()
             return
+        cfg = _load_ai_config()
+        if not bool(cfg.get("style_setup_done", False)):
+            self._open_ai_style_editor(initial=True, on_done=self._open_ai_chat_panel)
+            return
+        self._open_ai_chat_panel()
+
+    def _open_ai_chat_panel(self) -> None:
+        if self._closing or not self._alive():
+            return
+        if self.ai_chat_win and self.ai_chat_win.winfo_exists():
+            try:
+                self.ai_chat_win.lift()
+                if self.ai_input:
+                    self.ai_input.focus_set()
+            except Exception:
+                pass
+            return
         if self._vpet_voice_category_ready("email") and random.random() < 0.5:
             self._addon_voice_vpet("email")
 
         self.ai_chat_win = tk.Toplevel(self.root)
         self.ai_chat_win.overrideredirect(True)
         self._apply_window_layer(self.ai_chat_win)
-        self.ai_chat_win.configure(bg="#111122")
+        self.ai_chat_win.configure(bg=MENU_BG)
 
         border = tk.Frame(self.ai_chat_win, bg=PIXEL_COLOR, padx=1, pady=1)
         border.pack()
-        inner = tk.Frame(border, bg="#111122", padx=6, pady=4)
+        inner = tk.Frame(border, bg=MENU_BG, padx=6, pady=4)
         inner.pack()
 
-        header = tk.Frame(inner, bg="#111122")
+        header = tk.Frame(inner, bg=MENU_BG)
         header.pack(fill=tk.X)
+        style_btn = tk.Label(
+            header,
+            text="初始设置",
+            font=HINT_FONT,
+            fg=MENU_FG,
+            bg=MENU_BG,
+            cursor="hand2",
+            padx=4,
+        )
+        style_btn.pack(side=tk.LEFT)
+        style_btn.bind("<Button-1>", lambda _e: self._open_ai_style_editor(initial=False))
+        style_btn.bind("<FocusOut>", self._ai_chat_focus_out, add="+")
+        style_btn.bind("<FocusIn>", self._ai_chat_focus_in, add="+")
         close_btn = tk.Label(
             header,
             text="×",
             font=("Courier New", 14, "bold"),
             fg=THEME_PINK,
-            bg="#111122",
+            bg=MENU_BG,
             cursor="hand2",
             padx=4,
         )
@@ -43311,11 +44016,11 @@ class DesktopPet:
         close_btn.bind("<FocusOut>", self._ai_chat_focus_out, add="+")
         close_btn.bind("<FocusIn>", self._ai_chat_focus_in, add="+")
 
-        row = tk.Frame(inner, bg="#111122")
+        row = tk.Frame(inner, bg=MENU_BG)
         row.pack(fill=tk.X)
 
         self.ai_input = tk.Entry(
-            row, width=22, font=PIXEL_FONT, bg="#222233", fg=PIXEL_COLOR, insertbackground=PIXEL_COLOR
+            row, width=22, font=PIXEL_FONT, bg="#eef6ff", fg=MENU_FG, insertbackground=MENU_FG
         )
         self.ai_input.pack(side=tk.LEFT, padx=(0, 4))
         self.ai_input.bind("<Return>", lambda _e: self._send_ai_message())
@@ -43338,15 +44043,185 @@ class DesktopPet:
         self._place_ai_chat()
         self.ai_input.focus_set()
 
+    def _open_ai_style_editor(self, *, initial: bool = False, on_done=None) -> None:
+        if self._closing or not self._alive():
+            return
+        old = getattr(self, "ai_style_win", None)
+        if old and old.winfo_exists():
+            try:
+                old.lift()
+                old.focus_force()
+            except Exception:
+                pass
+            return
+        cfg = _load_ai_config()
+        win = tk.Toplevel(self.root)
+        self.ai_style_win = win
+        win.title("苍叶 · AI 初始设置" if initial else "苍叶 · 性格与语风")
+        win.configure(bg=MENU_BG)
+        try:
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        self._apply_window_layer(win)
+        outer = tk.Frame(win, bg=MENU_BG, padx=12, pady=10)
+        outer.pack()
+        tk.Label(
+            outer,
+            text="先选一种感觉，再微调口癖 / 语气；也可选云端或本地开源千问。",
+            bg=MENU_BG,
+            fg=MENU_FG,
+            font=HINT_FONT,
+            wraplength=420,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W)
+
+        fields: dict[str, tk.Text] = {}
+        state: dict[str, str] = {
+            "speech_quirk": str(cfg.get("speech_quirk") or ""),
+            "personality_note": str(cfg.get("personality_note") or ""),
+            "language_style": str(cfg.get("language_style") or ""),
+            "tone_note": str(cfg.get("tone_note") or ""),
+            "provider_preset": str(cfg.get("provider") or "dashscope"),
+        }
+
+        preset_row = tk.Frame(outer, bg=MENU_BG)
+        preset_row.pack(fill=tk.X, pady=(8, 4))
+        tk.Label(preset_row, text="性格预设", bg=MENU_BG, fg=MENU_FG, font=PIXEL_FONT).pack(side=tk.LEFT)
+
+        def _apply_style_preset(name: str, patch: dict[str, str]) -> None:
+            for k, v in patch.items():
+                state[k] = v
+                box = fields.get(k)
+                if box is not None:
+                    box.delete("1.0", tk.END)
+                    box.insert("1.0", v)
+            self._show_toast(f"已套用「{name}」", THEME_PINK, duration_ms=1400)
+
+        for pname, ppatch in AI_STYLE_PRESETS:
+            tk.Button(
+                preset_row,
+                text=pname,
+                command=lambda n=pname, p=ppatch: _apply_style_preset(n, p),
+                font=HINT_FONT,
+                bg=MENU_ACTIVE,
+                fg=MENU_FG,
+                relief=tk.FLAT,
+                padx=6,
+            ).pack(side=tk.LEFT, padx=(6, 0))
+
+        def _add_field(key: str, label: str, height: int = 2) -> None:
+            tk.Label(outer, text=label, bg=MENU_BG, fg=MENU_FG, font=PIXEL_FONT).pack(anchor=tk.W, pady=(8, 2))
+            box = tk.Text(outer, width=52, height=height, font=HINT_FONT, bg="#eef6ff", fg=MENU_FG, wrap=tk.WORD)
+            box.insert("1.0", state.get(key, ""))
+            box.pack(fill=tk.X)
+            fields[key] = box
+
+        _add_field("personality_note", "性格", 2)
+        _add_field("tone_note", "语气", 2)
+        _add_field("speech_quirk", "口癖", 2)
+        _add_field("language_style", "语风（用词节奏）", 2)
+
+        tk.Label(outer, text="对话模型（千问）", bg=MENU_BG, fg=MENU_FG, font=PIXEL_FONT).pack(anchor=tk.W, pady=(10, 2))
+        model_row = tk.Frame(outer, bg=MENU_BG)
+        model_row.pack(fill=tk.X)
+        model_var = tk.StringVar(value=str(cfg.get("provider") or "dashscope"))
+        provider_labels = {
+            "dashscope": "云端·千问 Plus",
+            "dashscope_max": "云端·千问 Max",
+            "ollama": "本地·Ollama qwen2.5",
+            "ollama_qwen3": "本地·Ollama qwen3",
+        }
+        for pid in ("dashscope", "dashscope_max", "ollama", "ollama_qwen3"):
+            if pid not in AI_PROVIDER_PRESETS:
+                continue
+            tk.Radiobutton(
+                model_row,
+                text=provider_labels.get(pid, pid),
+                variable=model_var,
+                value=pid,
+                bg=MENU_BG,
+                fg=MENU_FG,
+                selectcolor=MENU_BG,
+                font=HINT_FONT,
+                anchor=tk.W,
+            ).pack(anchor=tk.W)
+
+        key_row = tk.Frame(outer, bg=MENU_BG)
+        key_row.pack(fill=tk.X, pady=(8, 0))
+        tk.Label(key_row, text="API Key", width=8, anchor="w", bg=MENU_BG, fg=MENU_FG, font=PIXEL_FONT).pack(side=tk.LEFT)
+        key_ent = tk.Entry(key_row, width=40, font=("Consolas", 9), bg="#eef6ff", fg=MENU_FG, show="*")
+        key_ent.insert(0, str(cfg.get("api_key") or ""))
+        key_ent.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        btn_row = tk.Frame(outer, bg=MENU_BG)
+        btn_row.pack(fill=tk.X, pady=(12, 0))
+
+        def _close_editor() -> None:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            self.ai_style_win = None
+
+        def _save(and_open: bool = False) -> None:
+            patch = {k: fields[k].get("1.0", tk.END).strip() for k in fields}
+            patch["style_setup_done"] = True
+            key_val = key_ent.get().strip()
+            if key_val:
+                patch["api_key"] = key_val
+            pid = model_var.get() or "dashscope"
+            preset = AI_PROVIDER_PRESETS.get(pid) or AI_PROVIDER_PRESETS.get("dashscope") or {}
+            patch["provider"] = pid if pid.startswith("ollama") else "dashscope"
+            if preset.get("base_url"):
+                patch["base_url"] = preset.get("base_url")
+            if preset.get("model"):
+                patch["model"] = preset.get("model")
+            if str(pid).startswith("ollama") and not key_val:
+                patch["api_key"] = "ollama"
+            _save_ai_config(patch)
+            _close_editor()
+            self._show_toast("AI 初始设置已保存", "#88aa88", duration_ms=1800)
+            if and_open and callable(on_done):
+                self.root.after(120, on_done)
+            elif and_open:
+                self.root.after(120, self._open_ai_chat_panel)
+
+        tk.Button(
+            btn_row,
+            text="保存并开始对话" if initial else "保存",
+            command=lambda: _save(and_open=bool(initial) or callable(on_done)),
+            font=PIXEL_FONT,
+            bg=MENU_ACTIVE,
+            fg=MENU_FG,
+            relief=tk.FLAT,
+            padx=10,
+        ).pack(side=tk.RIGHT)
+        if initial:
+            tk.Button(
+                btn_row,
+                text="稍后再说",
+                command=lambda: (
+                    _save_ai_config({"style_setup_done": True}),
+                    _close_editor(),
+                    self.root.after(80, self._open_ai_chat_panel),
+                ),
+                font=HINT_FONT,
+                bg=MENU_BG,
+                fg=MENU_FG,
+                relief=tk.FLAT,
+                padx=8,
+            ).pack(side=tk.RIGHT, padx=(0, 8))
+
     def _show_ai_reply(self, reply: str) -> None:
         self.ai_reply_job = None
-        # 输入窗关掉也仍须弹出回答文本框（V-BORDER5 / 系统→对话）
         text = (reply or "").strip() or "……"
         self._show_speech_dialog(
             text,
             auto_hide_ms=AI_DIALOG_HIDE_MS,
             typewriter_ms=TYPEWRITER_MS,
-            use_border5=True,
+            use_border5=False,
+            chat_role="aoba",
         )
 
     def _send_ai_message(self) -> None:
@@ -43357,7 +44232,13 @@ class DesktopPet:
             return
         self.ai_input.delete(0, tk.END)
         self._cancel_ai_chat_close()
-        self._show_speech_dialog(f"你：{text}", auto_hide_ms=AI_DIALOG_HIDE_MS, use_border5=True)
+        self._show_speech_dialog(
+            text,
+            auto_hide_ms=AI_DIALOG_HIDE_MS,
+            use_border5=False,
+            chat_role="owner",
+            instant=True,
+        )
         if self.ai_reply_job:
             try:
                 self.root.after_cancel(self.ai_reply_job)
@@ -43408,12 +44289,15 @@ class DesktopPet:
         base_url = config.get("base_url", AI_DEFAULT_CONFIG["base_url"]).rstrip("/")
         model = config.get("model", AI_DEFAULT_CONFIG["model"])
         temperature = float(config.get("temperature", AI_DEFAULT_CONFIG["temperature"]))
-        system = AI_SYSTEM_PROMPT
+        system = _compose_ai_system_prompt(
+            config,
+            owner_name=_owner_display_name(self.pet_profile) or self.owner_name or "",
+        )
         seed = str(getattr(self, "_ai_topic_seed", "") or "").strip()
         keyword = str(getattr(self, "_ai_topic_keyword", "") or "").strip()
         if seed or keyword:
             extra = seed or f"请围绕关键词「{keyword}」展开简短对话。"
-            system = f"{AI_SYSTEM_PROMPT} 额外：{extra}"
+            system = f"{system} 额外：{extra}"
         messages: list[dict[str, str]] = [{"role": "system", "content": system}]
         messages.extend(self.ai_history[-AI_HISTORY_MAX * 2 :])
         messages.append({"role": "user", "content": user_text})

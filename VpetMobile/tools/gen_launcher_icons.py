@@ -7,6 +7,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 DESKTOP = ROOT.parent / "VpetPNG" / "1.0"
 RES = ROOT / "app" / "src" / "main" / "res"
+ASSETS_STAND = ROOT / "app" / "src" / "main" / "assets" / "sprites" / "stand.png"
 
 
 def _is_chroma_green(r: int, g: int, b: int, a: int = 255) -> bool:
@@ -51,21 +52,21 @@ def prepare_stand(im: Image.Image) -> Image.Image:
 
 
 def load_source() -> Image.Image:
-    # 与电脑版快捷方式同一套：优先现成 app_icon，再 normal cutout stand
-    for rel in (
-        "app_icon.png",
-        "assets/cutout/sprites/stand.png",
-        "assets/sprites/stand.png",
-        "assets/sprites/stand.jpg",
-        "assets/raw_green/sprites/stand.jpg",
-        "gallery/stand.png",
-        "gallery/stand.jpg",
-    ):
-        p = DESKTOP / rel
+    # 优先手机已抠透明 stand，再桌面 cutout / app_icon
+    ordered = [
+        ASSETS_STAND,
+        DESKTOP / "assets" / "cutout" / "sprites" / "stand.png",
+        DESKTOP / "release" / "Vpet" / "_internal" / "assets" / "cutout" / "sprites" / "stand.png",
+        DESKTOP.parent / "app_icon.png",
+        DESKTOP / "release" / "Vpet" / "_internal" / "app_icon.png",
+        DESKTOP / "assets" / "sprites" / "stand.png",
+        DESKTOP / "assets" / "sprites" / "stand.jpg",
+        DESKTOP / "gallery" / "stand.png",
+    ]
+    for p in ordered:
         if p.is_file():
             print("source:", p)
-            if p.name.lower().startswith("app_icon"):
-                return Image.open(p).convert("RGBA")
+            # 一律再抠绿幕并裁包围盒，避免粉底/黑底残留
             return prepare_stand(Image.open(p))
     raise SystemExit("desktop stand / app_icon not found")
 

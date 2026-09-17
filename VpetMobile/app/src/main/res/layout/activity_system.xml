@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_dark"
+    android:background="@drawable/bg_blue_gradient"
     android:fillViewport="true">
 
     <LinearLayout
@@ -11,10 +11,38 @@
         android:orientation="vertical"
         android:padding="16dp">
 
+        <!-- 像素装订装饰条 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="12dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="10dp">
+
+            <View
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:background="@color/accent_pink" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="3dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:background="@color/diary_line" />
+
+            <View
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:background="@color/theme_blue" />
+        </LinearLayout>
+
         <TextView
             android:id="@+id/sysTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:fontFamily="@font/youyuan"
             android:text="系统"
             android:textColor="@color/accent_pink"
             android:textSize="22sp"
@@ -25,7 +53,8 @@
             android:id="@+id/sysBody"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="@color/text_main"
+            android:fontFamily="@font/youyuan"
+            android:textColor="@color/diary_ink"
             android:textSize="14sp"
             android:layout_marginBottom="12dp" />
 
@@ -34,15 +63,19 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:visibility="gone"
-            android:textColor="@color/text_main"
-            android:textColorHint="#88A0B0"
-            android:minLines="2"
+            android:fontFamily="@font/youyuan"
+            android:textColor="@color/diary_ink"
+            android:textColorHint="#88A08090"
+            android:background="@color/diary_card"
+            android:padding="10dp"
+            android:minLines="3"
             android:gravity="top" />
 
         <LinearLayout
             android:id="@+id/sysButtons"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="vertical"
+            android:layout_marginTop="8dp" />
     </LinearLayout>
 </ScrollView>

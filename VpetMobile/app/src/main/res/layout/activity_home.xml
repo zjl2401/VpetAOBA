@@ -3,7 +3,7 @@
     android:id="@+id/homeRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FF121820">
+    android:background="@drawable/bg_blue_gradient">
 
     <LinearLayout
         android:layout_width="match_parent"

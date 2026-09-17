@@ -10,7 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.vpet.mobile.databinding.ActivityToolsBinding
 
 /**
- * 档案同步 / 本地音乐 / 日程 / 生日（不做天气预报）。
+ * 档案同步 / 本地音乐 / 生日（不做天气预报）。
  */
 class ToolsActivity : AppCompatActivity() {
 
@@ -95,6 +95,7 @@ class ToolsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityToolsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        UiFonts.applyTree(binding.root)
 
         binding.btnExportProfile.setOnClickListener {
             exportProfile.launch("pet_profile.json")
@@ -115,22 +116,6 @@ class ToolsActivity : AppCompatActivity() {
         }
         binding.btnPickMusic.setOnClickListener {
             pickMusic.launch(arrayOf("audio/*", "audio/mpeg", "audio/mp4", "*/*"))
-        }
-        binding.btnAddSchedule.setOnClickListener {
-            val ok = PetProfileStore.addSchedule(
-                this,
-                binding.scheduleTime.text.toString(),
-                binding.scheduleText.text.toString(),
-            )
-            Toast.makeText(
-                this,
-                if (ok) "已添加日程" else "时间格式用 HH:MM，内容不能空",
-                Toast.LENGTH_SHORT,
-            ).show()
-            if (ok) {
-                binding.scheduleText.setText("")
-                refresh()
-            }
         }
         binding.btnSaveBless.setOnClickListener {
             val m = binding.blessMonth.text.toString().toIntOrNull() ?: 0
@@ -166,17 +151,6 @@ class ToolsActivity : AppCompatActivity() {
         binding.musicLabel.text = PetProfileStore.musicUri(this)?.let {
             "当前：${PetProfileStore.musicTitle(this).ifEmpty { it }}"
         } ?: "当前：未导入（音乐模式将提示选歌）"
-        val arr = PetProfileStore.schedules(this)
-        binding.scheduleList.text = if (arr.length() == 0) {
-            "暂无日程"
-        } else {
-            buildString {
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    appendLine("${o.optString("time")}  ${o.optString("text")}")
-                }
-            }
-        }
         if (p.optInt("bless_month") > 0) {
             binding.blessMonth.setText(p.optInt("bless_month").toString())
             binding.blessDay.setText(p.optInt("bless_day").toString())

@@ -4,9 +4,16 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.SeekBar
+import android.widget.Switch
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -54,6 +61,7 @@ class SystemHubActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySystemBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        UiFonts.applyTree(binding.root)
         when (intent.getStringExtra(EXTRA_PAGE) ?: "about") {
             "diary" -> pageDiary()
             "achievements" -> pageAchievements()
@@ -77,46 +85,218 @@ class SystemHubActivity : AppCompatActivity() {
 
     private fun clearButtons() = binding.sysButtons.removeAllViews()
 
+    private fun dp(v: Int): Int =
+        TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            v.toFloat(),
+            resources.displayMetrics,
+        ).toInt()
+
     private fun addBtn(label: String, onClick: () -> Unit) {
         binding.sysButtons.addView(
             Button(this).apply {
                 text = label
+                typeface = UiFonts.cute(this@SystemHubActivity)
+                setTextColor(MenuDecor.MENU_FG)
+                background = MenuDecor.moduleBtnBg(false)
+                AppDataStore.applySp(this, AppDataStore.fontBodySp(this@SystemHubActivity))
+                minHeight = 0
+                minimumHeight = dp(42)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).also { it.bottomMargin = dp(6) }
                 setOnClickListener { onClick() }
             },
         )
     }
 
-    private fun pageDiary() {
-        binding.sysTitle.text = "日记"
-        binding.sysInput.visibility = View.VISIBLE
-        binding.sysInput.hint = "写点今天的事…"
-        refreshDiaryBody()
-        clearButtons()
-        addBtn("保存日记") {
-            if (AppDataStore.addDiary(this, binding.sysInput.text.toString())) {
-                Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
-                binding.sysInput.setText("")
-                refreshDiaryBody()
-            } else {
-                Toast.makeText(this, "内容不能为空", Toast.LENGTH_SHORT).show()
-            }
+    private fun addSwitchRow(title: String, checked: Boolean, onChanged: (Boolean) -> Unit) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
         }
+        val label = TextView(this).apply {
+            text = title
+            typeface = UiFonts.cute(this@SystemHubActivity)
+            setTextColor(getColor(R.color.text_main))
+            AppDataStore.applySp(this, AppDataStore.fontBodySp(this@SystemHubActivity))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val sw = Switch(this).apply {
+            isChecked = checked
+            setOnCheckedChangeListener { _, on -> onChanged(on) }
+        }
+        row.addView(label)
+        row.addView(sw)
+        binding.sysButtons.addView(row)
     }
 
-    private fun refreshDiaryBody() {
-        val arr = AppDataStore.diaries(this)
-        binding.sysBody.text = if (arr.length() == 0) {
-            "还没有日记。"
-        } else {
-            buildString {
-                for (i in arr.length() - 1 downTo 0) {
-                    val o = arr.getJSONObject(i)
-                    appendLine("· ${o.optString("ts")}")
-                    appendLine(o.optString("text"))
+    private fun addSliderRow(
+        title: String,
+        progress: Int,
+        max: Int,
+        format: (Int) -> String,
+        onChange: (Int) -> Unit,
+        applyOnStop: Boolean = false,
+    ) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val titleTv = TextView(this).apply {
+            text = title
+            typeface = UiFonts.cute(this@SystemHubActivity)
+            setTextColor(getColor(R.color.text_main))
+            AppDataStore.applySp(this, AppDataStore.fontBodySp(this@SystemHubActivity))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val valueTv = TextView(this).apply {
+            text = format(progress.coerceIn(0, max))
+            typeface = UiFonts.cute(this@SystemHubActivity)
+            setTextColor(getColor(R.color.accent_pink))
+            AppDataStore.applySp(this, AppDataStore.fontCaptionSp(this@SystemHubActivity))
+        }
+        head.addView(titleTv)
+        head.addView(valueTv)
+        val seek = SeekBar(this).apply {
+            this.max = max.coerceAtLeast(1)
+            this.progress = progress.coerceIn(0, this.max)
+            setPadding(dp(4), dp(8), dp(4), dp(4))
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, p: Int, fromUser: Boolean) {
+                    valueTv.text = format(p)
+                    if (fromUser && !applyOnStop) onChange(p)
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    if (applyOnStop) onChange(seekBar?.progress ?: return)
+                }
+            })
+        }
+        box.addView(head)
+        box.addView(seek)
+        binding.sysButtons.addView(box)
+    }
+
+    private fun pageDiary() {
+        binding.sysTitle.text = "日记"
+        binding.sysTitle.typeface = UiFonts.cute(this)
+        binding.sysBody.typeface = UiFonts.cute(this)
+        binding.sysInput.typeface = UiFonts.cute(this)
+        binding.sysInput.visibility = View.VISIBLE
+        binding.sysInput.hint = "写点今天的事…"
+
+        var moodKey = "stand"
+        var weatherKey = "sunny"
+        var browseIdx = -1 // -1 = 写新篇；>=0 浏览已有（从新到旧）
+
+        fun refreshBrowse() {
+            val arr = AppDataStore.diaries(this)
+            clearButtons()
+            if (browseIdx < 0) {
+                binding.sysInput.visibility = View.VISIBLE
+                binding.sysBody.text = buildString {
+                    appendLine("心情：${AppDataStore.moodLabel(moodKey)}")
+                    appendLine("天气：${AppDataStore.weatherLabel(weatherKey)}")
                     appendLine()
+                    val n = arr.length()
+                    if (n == 0) append("还没有日记。选心情/天气后写下今天吧。")
+                    else append("已有 $n 篇 · 点「浏览」翻看旧日记")
+                }
+                addBtn("心情 · ${AppDataStore.moodLabel(moodKey)}") {
+                    val labels = AppDataStore.DIARY_MOODS.map { it.second }.toTypedArray()
+                    AlertDialog.Builder(this)
+                        .setTitle("今天的心情")
+                        .setItems(labels) { _, which ->
+                            moodKey = AppDataStore.DIARY_MOODS[which].first
+                            refreshBrowse()
+                        }
+                        .show()
+                }
+                addBtn("天气 · ${AppDataStore.weatherLabel(weatherKey)}") {
+                    val labels = AppDataStore.DIARY_WEATHER.map { it.second }.toTypedArray()
+                    AlertDialog.Builder(this)
+                        .setTitle("今天的天气")
+                        .setItems(labels) { _, which ->
+                            weatherKey = AppDataStore.DIARY_WEATHER[which].first
+                            refreshBrowse()
+                        }
+                        .show()
+                }
+                addBtn("保存日记") {
+                    if (AppDataStore.addDiary(
+                            this,
+                            binding.sysInput.text.toString(),
+                            mood = moodKey,
+                            weather = weatherKey,
+                        )
+                    ) {
+                        Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
+                        binding.sysInput.setText("")
+                        browseIdx = -1
+                        refreshBrowse()
+                    } else {
+                        Toast.makeText(this, "内容不能为空", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                if (arr.length() > 0) {
+                    addBtn("浏览旧日记") {
+                        browseIdx = arr.length() - 1
+                        refreshBrowse()
+                    }
+                }
+            } else {
+                binding.sysInput.visibility = View.GONE
+                if (arr.length() == 0) {
+                    browseIdx = -1
+                    refreshBrowse()
+                    return
+                }
+                browseIdx = browseIdx.coerceIn(0, arr.length() - 1)
+                val o = arr.getJSONObject(browseIdx)
+                binding.sysBody.text = buildString {
+                    appendLine("· ${o.optString("ts")}")
+                    appendLine("心情 ${AppDataStore.moodLabel(o.optString("mood", "stand"))} · 天气 ${AppDataStore.weatherLabel(o.optString("weather", "sunny"))}")
+                    appendLine()
+                    append(o.optString("text"))
+                    appendLine()
+                    appendLine()
+                    append("（${browseIdx + 1} / ${arr.length()}）")
+                }
+                addBtn("上一篇") {
+                    if (browseIdx > 0) browseIdx--
+                    refreshBrowse()
+                }
+                addBtn("下一篇") {
+                    if (browseIdx < arr.length() - 1) browseIdx++
+                    refreshBrowse()
+                }
+                addBtn("删除这篇") {
+                    AlertDialog.Builder(this)
+                        .setTitle("删除日记？")
+                        .setPositiveButton("删除") { _, _ ->
+                            AppDataStore.deleteDiary(this, o.optString("id"))
+                            browseIdx = -1
+                            refreshBrowse()
+                        }
+                        .setNegativeButton("取消", null)
+                        .show()
+                }
+                addBtn("写新篇") {
+                    browseIdx = -1
+                    refreshBrowse()
                 }
             }
+            addBtn("返回") { finish() }
         }
+        refreshBrowse()
     }
 
     private fun pageAchievements() {
@@ -262,57 +442,100 @@ class SystemHubActivity : AppCompatActivity() {
 
     private fun pageSettings() {
         binding.sysTitle.text = "设置"
-        fun refresh() {
-            binding.sysBody.text = buildString {
-                appendLine("桌宠大小：${PetPrefs.sizeLabel(this@SystemHubActivity)}（${PetPrefs.sizePx(this@SystemHubActivity)}px）")
-                appendLine("字体大小：${AppDataStore.fontLabel(this@SystemHubActivity)}")
-                appendLine("音效：${if (AppDataStore.soundOn(this@SystemHubActivity)) "开" else "关"}")
-                appendLine("语音模式：${if (AppDataStore.voiceMode(this@SystemHubActivity)) "开" else "关"}")
-                appendLine("语音音量：${AppDataStore.voiceVolume(this@SystemHubActivity)}")
-                appendLine("游戏难度：${AppDataStore.difficulty(this@SystemHubActivity)}")
-                appendLine("显示层级：手机悬浮窗已置顶，无需调整")
-            }
-        }
-        refresh()
+        binding.sysBody.text = ""
         clearButtons()
-        listOf("小", "中", "大").forEach { label ->
-            addBtn("大小·$label") {
-                PetPrefs.setSizeLabel(this, label)
+        UiFonts.applyTree(binding.root)
+
+        val fontLabels = AppDataStore.FONT_PRESETS.keys.toList()
+        val fontFamilies = AppDataStore.FONT_FAMILIES
+        val diffLabels = AppDataStore.DIFF_PRESETS
+        val sizeSteps = (PetPrefs.SIZE_MAX_PX - PetPrefs.SIZE_MIN_PX) / PetPrefs.SIZE_STEP_PX
+        val curPx = PetPrefs.sizePx(this)
+        val sizeProgress = ((curPx - PetPrefs.SIZE_MIN_PX) / PetPrefs.SIZE_STEP_PX)
+            .coerceIn(0, sizeSteps)
+
+        addSliderRow(
+            title = "大小",
+            progress = sizeProgress,
+            max = sizeSteps,
+            format = { i ->
+                val px = PetPrefs.SIZE_MIN_PX + i * PetPrefs.SIZE_STEP_PX
+                val label = PetPrefs.nearestSizeLabel(px)
+                "$label · ${PetPrefs.snapSizePx(px)}px"
+            },
+            onChange = { i ->
+                val px = PetPrefs.SIZE_MIN_PX + i * PetPrefs.SIZE_STEP_PX
+                PetPrefs.setSizePx(this, px)
                 startService(
                     Intent(this, PetOverlayService::class.java).apply {
                         action = PetOverlayService.ACTION_RESIZE
                     },
                 )
-                refresh()
-            }
+            },
+            applyOnStop = true,
+        )
+
+        addSliderRow(
+            title = "字体样式",
+            progress = fontFamilies.indexOf(AppDataStore.fontFamily(this)).coerceAtLeast(0),
+            max = fontFamilies.lastIndex,
+            format = { i -> fontFamilies.getOrElse(i) { AppDataStore.FONT_FAMILY_DEFAULT } },
+            onChange = { i ->
+                AppDataStore.setFontFamily(
+                    this,
+                    fontFamilies.getOrElse(i) { AppDataStore.FONT_FAMILY_DEFAULT },
+                )
+                UiFonts.applyTree(binding.root)
+            },
+        )
+
+        addSliderRow(
+            title = "字体大小",
+            progress = fontLabels.indexOf(AppDataStore.fontLabel(this)).coerceAtLeast(0),
+            max = fontLabels.lastIndex,
+            format = { i -> fontLabels.getOrElse(i) { "中" } },
+            onChange = { i ->
+                AppDataStore.setFontLabel(this, fontLabels.getOrElse(i) { "中" })
+                UiFonts.applyTree(binding.root)
+            },
+        )
+
+        addSwitchRow("文本框", AppDataStore.speechTextOn(this)) { on ->
+            AppDataStore.setSpeechTextOn(this, on)
+            Toast.makeText(
+                this,
+                if (on) "文本框：开" else "文本框：关（语音仍可播）",
+                Toast.LENGTH_SHORT,
+            ).show()
         }
-        AppDataStore.FONT_PRESETS.keys.forEach { label ->
-            addBtn("字体·$label") {
-                AppDataStore.setFontLabel(this, label)
-                refresh()
-            }
+
+        addSwitchRow("音效", AppDataStore.soundOn(this)) { on ->
+            AppDataStore.setSoundOn(this, on)
         }
-        addBtn("音效 开/关") {
-            AppDataStore.setSoundOn(this, !AppDataStore.soundOn(this))
-            refresh()
+        addSwitchRow("语音", AppDataStore.voiceMode(this)) { on ->
+            AppDataStore.setVoiceMode(this, on)
         }
-        addBtn("语音模式 开/关") {
-            AppDataStore.setVoiceMode(this, !AppDataStore.voiceMode(this))
-            refresh()
-        }
-        addBtn("语音音量 −") {
-            AppDataStore.setVoiceVolume(this, AppDataStore.voiceVolume(this) - 10)
-            refresh()
-        }
-        addBtn("语音音量 +") {
-            AppDataStore.setVoiceVolume(this, AppDataStore.voiceVolume(this) + 10)
-            refresh()
-        }
-        AppDataStore.DIFF_PRESETS.forEach { d ->
-            addBtn("难度·$d") {
-                AppDataStore.setDifficulty(this, d)
-                refresh()
-            }
+
+        addSliderRow(
+            title = "语音音量",
+            progress = AppDataStore.voiceVolume(this),
+            max = 100,
+            format = { "$it%" },
+            onChange = { AppDataStore.setVoiceVolume(this, it) },
+        )
+
+        addSliderRow(
+            title = "难度",
+            progress = diffLabels.indexOf(AppDataStore.difficulty(this)).coerceAtLeast(0),
+            max = diffLabels.lastIndex,
+            format = { diffLabels.getOrElse(it) { "中" } },
+            onChange = { i ->
+                AppDataStore.setDifficulty(this, diffLabels.getOrElse(i) { "中" })
+            },
+        )
+
+        addBtn("档案 · 音乐") {
+            startActivity(Intent(this, ToolsActivity::class.java))
         }
         addBtn("显示层级说明") {
             Toast.makeText(
@@ -321,6 +544,7 @@ class SystemHubActivity : AppCompatActivity() {
                 Toast.LENGTH_LONG,
             ).show()
         }
+        addBtn("返回") { finish() }
     }
 
     private fun pageAbout() {
@@ -354,14 +578,14 @@ class SystemHubActivity : AppCompatActivity() {
         binding.sysTitle.text = "操作说明"
         binding.sysBody.text = """
             【手机版要点】
-            · 点立绘打开四大模块菜单（模式/面板/互动/系统）
+            · 点立绘打开菜单（模式/面板/互动/系统）
             · 拖动移动；漫步/自由走动；跟随点空白处引路
-            · 工作：运送箱到旗；番茄钟=工作运送↔休息睡眠
-            · 音乐：设置 → 档案·音乐 导入本地歌曲
+            · 工作 / 睡眠：点开，再点结束（或 HUD 结束）
+            · 音乐：系统 → 设置 → 档案·音乐 导入本地歌曲
             · 所属人与电脑 data/pet_profile.json 可互导
-            · 家园 layout 可存读，与电脑 home_layout.json 互导
-            · 系统→我的：日记/成就/画廊/留声；设置：大小字体声音难度
-            · 悬浮需系统「显示在其他应用上层」权限
+            · 系统：我的 / 设置 / 社区 / 重置 / 退出
+            · 设置面板内调大小、字体、音效、文本框、语音、难度
+            · 首次开启桌宠需「显示在其他应用上层」权限
         """.trimIndent()
         if (auto) AppConfigStore.markOperationGuideSeen(this)
         clearButtons()

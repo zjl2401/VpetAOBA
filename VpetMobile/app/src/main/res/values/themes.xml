@@ -1,11 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.VpetMobile" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/accent_pink</item>
-        <item name="colorPrimaryVariant">@color/btn_bg</item>
+        <item name="colorPrimary">@color/theme_blue</item>
+        <item name="colorPrimaryVariant">@color/theme_blue_deep</item>
         <item name="colorOnPrimary">@color/text_main</item>
         <item name="android:statusBarColor">@color/bg_dark</item>
         <item name="android:navigationBarColor">@color/bg_dark</item>
-        <item name="android:windowBackground">@color/bg_dark</item>
+        <item name="android:windowBackground">@drawable/bg_blue_gradient</item>
+        <item name="android:textColor">@color/text_main</item>
+        <item name="materialButtonStyle">@style/Widget.Vpet.Button</item>
+        <item name="buttonStyle">@style/Widget.Vpet.Button</item>
+        <item name="alertDialogTheme">@style/Theme.Vpet.AlertDialog</item>
+    </style>
+
+    <style name="Widget.Vpet.Button" parent="Widget.MaterialComponents.Button">
+        <item name="backgroundTint">@null</item>
+        <item name="android:background">@drawable/bg_btn_light</item>
+        <item name="android:textColor">@color/text_main</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+
+    <style name="Theme.Vpet.AlertDialog" parent="Theme.MaterialComponents.DayNight.Dialog.Alert">
+        <item name="colorPrimary">@color/theme_blue</item>
+        <item name="android:windowBackground">@drawable/bg_panel_blue</item>
     </style>
 </resources>

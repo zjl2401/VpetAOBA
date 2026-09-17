@@ -227,6 +227,10 @@ class PetModeHub(
         speech?.reposition()
     }
 
+    fun hideSpeechBubble() {
+        speech?.hide()
+    }
+
     /**
      * 长拖 yuqi：对照 `_maybe_drag_move_voice`。
      * @return 是否触发了语音/台词
@@ -515,6 +519,12 @@ class PetModeHub(
         }
         clearSleepInteract()
         launchQuiet()
+    }
+
+    /** 对照工作：点一次开启睡眠，再点（或 HUD 结束）关闭。 */
+    fun toggleQuiet() {
+        if (isQuiet) endQuiet(fromMenu = true)
+        else startQuiet()
     }
 
     /** 互动→睡眠：对照 SLEEP_INTERACT_MS=30s 后自动醒。 */

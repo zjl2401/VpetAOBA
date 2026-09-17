@@ -3,7 +3,7 @@
     android:id="@+id/roomRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/room_wall">
+    android:background="@drawable/bg_blue_gradient">
 
     <TextView
         android:layout_width="wrap_content"

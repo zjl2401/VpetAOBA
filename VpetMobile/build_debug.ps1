@@ -39,14 +39,23 @@ if (-not $env:JAVA_HOME -or -not (Test-Path (Join-Path $env:JAVA_HOME "bin\java.
     }
 }
 
-& .\gradlew.bat assembleDebug --no-daemon
+# Prefer extracted Gradle if wrapper keeps re-downloading the zip
+$gradleBat = Join-Path $root "gradlew.bat"
+$extracted = Get-ChildItem (Join-Path $env:USERPROFILE ".gradle\wrapper\dists\gradle-8.7-bin") -Recurse -Filter "gradle.bat" -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match "gradle-8\.7\\bin\\gradle\.bat$" } |
+    Select-Object -First 1
+if ($extracted) {
+    $gradleBat = $extracted.FullName
+    Write-Host "Using extracted Gradle: $gradleBat"
+}
+
+& $gradleBat -p $root :shared:assembleDebug :app:assembleDebug --no-daemon
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $apk = Join-Path $root "app\build\outputs\apk\debug\app-debug.apk"
 $out = Join-Path $root "dist"
 New-Item -ItemType Directory -Force -Path $out | Out-Null
+Copy-Item $apk (Join-Path $out "VpetMobile-debug.apk") -Force
 Copy-Item $apk (Join-Path $out "VpetAoba-debug.apk") -Force
-Write-Host "OK: $(Join-Path $out 'VpetAoba-debug.apk')"
-Get-Item (Join-Path $out "VpetAoba-debug.apk") | Format-List FullName, Length, LastWriteTime
-# 不再另存 VpetMobile-debug.apk，避免同包双份
-Remove-Item -Force (Join-Path $out "VpetMobile-debug.apk") -ErrorAction SilentlyContinue
+Write-Host "OK: $(Join-Path $out 'VpetMobile-debug.apk')"
+Get-Item (Join-Path $out "VpetMobile-debug.apk") | Format-List FullName, Length, LastWriteTime

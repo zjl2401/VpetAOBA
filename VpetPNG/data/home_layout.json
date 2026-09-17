@@ -1,0 +1,1683 @@
+{
+  "cols": 12,
+  "rows": 10,
+  "zone": "outdoor",
+  "move_mode": "free",
+  "floor_a": "#6a7080",
+  "floor_b": "#5a6070",
+  "furn_color": "#6aa8d8",
+  "bg_colors": {
+    "grass": "#3d8a45",
+    "land": "#8b6a3a",
+    "water": "#3a78b8",
+    "rock": "#7a7a88"
+  },
+  "indoor_tiles": [
+    [
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "window",
+        "c": "#6aa8d8"
+      },
+      {
+        "g": "floor_wood",
+        "k": "@window:1,0"
+      },
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood"
+    ],
+    [
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "plant",
+        "c": "#6aa8d8"
+      },
+      "floor_wood"
+    ],
+    [
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "bed",
+        "c": "#6aa8d8"
+      },
+      {
+        "g": "floor_wood",
+        "k": "@bed:1,0"
+      },
+      {
+        "g": "floor_wood",
+        "k": "nightstand",
+        "c": "#6aa8d8"
+      },
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood"
+    ],
+    [
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "@bed:0,1"
+      },
+      {
+        "g": "floor_wood",
+        "k": "@bed:1,1"
+      },
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood"
+    ],
+    [
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "lamp",
+        "c": "#6aa8d8"
+      },
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "stairs_up",
+        "c": "#6aa8d8"
+      },
+      "floor_wood"
+    ],
+    [
+      {
+        "g": "floor_wood",
+        "k": "door",
+        "c": "#6aa8d8"
+      },
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "carpet",
+        "c": "#6aa8d8"
+      },
+      {
+        "g": "floor_wood",
+        "k": "@carpet:1,0"
+      },
+      {
+        "g": "floor_wood",
+        "k": "@carpet:2,0"
+      },
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood"
+    ],
+    [
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "@carpet:0,1"
+      },
+      {
+        "g": "floor_wood",
+        "k": "@carpet:1,1"
+      },
+      {
+        "g": "floor_wood",
+        "k": "@carpet:2,1"
+      },
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "stairs_down",
+        "c": "#6aa8d8"
+      },
+      "floor_wood"
+    ],
+    [
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "table",
+        "c": "#6aa8d8"
+      },
+      {
+        "g": "floor_wood",
+        "k": "@table:1,0"
+      },
+      {
+        "g": "floor_wood",
+        "k": "chair",
+        "c": "#6aa8d8"
+      },
+      "floor_wood",
+      {
+        "g": "floor_wood",
+        "k": "plant",
+        "c": "#6aa8d8"
+      },
+      "floor_wood",
+      "floor_wood"
+    ],
+    [
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood"
+    ],
+    [
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood",
+      "floor_wood"
+    ]
+  ],
+  "outdoor_tiles": [
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "path",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      {
+        "g": "grass",
+        "k": "tree",
+        "c": "#6aa8d8"
+      },
+      {
+        "g": "grass",
+        "k": "tree_pine",
+        "c": "#6aa8d8"
+      },
+      {
+        "g": "grass",
+        "k": "tree",
+        "c": "#6aa8d8"
+      },
+      "path",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "path",
+      "grass",
+      "grass",
+      "grass",
+      {
+        "g": "grass",
+        "k": "flower",
+        "c": "#6aa8d8"
+      },
+      "grass",
+      "grass"
+    ],
+    [
+      {
+        "g": "grass",
+        "k": "fence",
+        "c": "#6aa8d8"
+      },
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      {
+        "g": "grass",
+        "k": "door",
+        "c": "#6aa8d8"
+      },
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      {
+        "g": "grass",
+        "k": "fence",
+        "c": "#6aa8d8"
+      },
+      "grass",
+      "grass",
+      "grass",
+      {
+        "g": "grass",
+        "k": "flower",
+        "c": "#6aa8d8"
+      },
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      {
+        "g": "grass",
+        "k": "flower",
+        "c": "#6aa8d8"
+      },
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "rock",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      {
+        "g": "grass",
+        "k": "bush",
+        "c": "#6aa8d8"
+      },
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "land",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "water",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ]
+  ],
+  "indoor_pet": [
+    6,
+    5
+  ],
+  "outdoor_pet": [
+    5,
+    4
+  ],
+  "on_desktop": false,
+  "desktop_x": 0,
+  "desktop_y": 0,
+  "house_name": "我的小屋",
+  "farm": [
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  ],
+  "crafted_furniture": [
+    "bed",
+    "table",
+    "chair",
+    "lamp",
+    "plant",
+    "carpet",
+    "vase",
+    "nightstand"
+  ],
+  "till_hits": {},
+  "chop_jobs": {},
+  "tree_regrow": [],
+  "rooms": [
+    {
+      "name": "主屋",
+      "kind": "room",
+      "ox": 0,
+      "oy": 0,
+      "w": 12,
+      "h": 10,
+      "tiles": [
+        [
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "window",
+            "c": "#6aa8d8"
+          },
+          {
+            "g": "floor_wood",
+            "k": "@window:1,0"
+          },
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood"
+        ],
+        [
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "plant",
+            "c": "#6aa8d8"
+          },
+          "floor_wood"
+        ],
+        [
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "bed",
+            "c": "#6aa8d8"
+          },
+          {
+            "g": "floor_wood",
+            "k": "@bed:1,0"
+          },
+          {
+            "g": "floor_wood",
+            "k": "nightstand",
+            "c": "#6aa8d8"
+          },
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood"
+        ],
+        [
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "@bed:0,1"
+          },
+          {
+            "g": "floor_wood",
+            "k": "@bed:1,1"
+          },
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood"
+        ],
+        [
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "lamp",
+            "c": "#6aa8d8"
+          },
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "stairs_up",
+            "c": "#6aa8d8"
+          },
+          "floor_wood"
+        ],
+        [
+          {
+            "g": "floor_wood",
+            "k": "door",
+            "c": "#6aa8d8"
+          },
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "carpet",
+            "c": "#6aa8d8"
+          },
+          {
+            "g": "floor_wood",
+            "k": "@carpet:1,0"
+          },
+          {
+            "g": "floor_wood",
+            "k": "@carpet:2,0"
+          },
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood"
+        ],
+        [
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "@carpet:0,1"
+          },
+          {
+            "g": "floor_wood",
+            "k": "@carpet:1,1"
+          },
+          {
+            "g": "floor_wood",
+            "k": "@carpet:2,1"
+          },
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "stairs_down",
+            "c": "#6aa8d8"
+          },
+          "floor_wood"
+        ],
+        [
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "table",
+            "c": "#6aa8d8"
+          },
+          {
+            "g": "floor_wood",
+            "k": "@table:1,0"
+          },
+          {
+            "g": "floor_wood",
+            "k": "chair",
+            "c": "#6aa8d8"
+          },
+          "floor_wood",
+          {
+            "g": "floor_wood",
+            "k": "plant",
+            "c": "#6aa8d8"
+          },
+          "floor_wood",
+          "floor_wood"
+        ],
+        [
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood"
+        ],
+        [
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood",
+          "floor_wood"
+        ]
+      ],
+      "pet": [
+        6,
+        5
+      ]
+    }
+  ],
+  "halls": [],
+  "active_room": 0,
+  "active_floor": 1,
+  "floors": {
+    "-1": {
+      "rooms": [
+        {
+          "name": "地下",
+          "kind": "room",
+          "ox": 0,
+          "oy": 0,
+          "w": 12,
+          "h": 10,
+          "tiles": [
+            [
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile"
+            ],
+            [
+              "floor_tile",
+              {
+                "g": "floor_tile",
+                "k": "shelf",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_tile",
+                "k": "fridge",
+                "c": "#6aa8d8"
+              },
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile"
+            ],
+            [
+              "floor_tile",
+              {
+                "g": "floor_tile",
+                "k": "@shelf:0,1"
+              },
+              {
+                "g": "floor_tile",
+                "k": "@fridge:0,1"
+              },
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile"
+            ],
+            [
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile"
+            ],
+            [
+              "floor_tile",
+              {
+                "g": "floor_tile",
+                "k": "counter",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_tile",
+                "k": "@counter:1,0"
+              },
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "stairs_up",
+              "floor_tile"
+            ],
+            [
+              "floor_tile",
+              {
+                "g": "floor_tile",
+                "k": "stove",
+                "c": "#6aa8d8"
+              },
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile"
+            ],
+            [
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile"
+            ],
+            [
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile"
+            ],
+            [
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile"
+            ],
+            [
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile",
+              "floor_tile"
+            ]
+          ],
+          "pet": [
+            6,
+            5
+          ]
+        }
+      ],
+      "active_room": 0,
+      "halls": []
+    },
+    "1": {
+      "rooms": [
+        {
+          "name": "主屋",
+          "kind": "room",
+          "ox": 0,
+          "oy": 0,
+          "w": 12,
+          "h": 10,
+          "tiles": [
+            [
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "window",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@window:1,0"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "plant",
+                "c": "#6aa8d8"
+              },
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "bed",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@bed:1,0"
+              },
+              {
+                "g": "floor_wood",
+                "k": "nightstand",
+                "c": "#6aa8d8"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "@bed:0,1"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@bed:1,1"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "lamp",
+                "c": "#6aa8d8"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "stairs_up",
+                "c": "#6aa8d8"
+              },
+              "floor_wood"
+            ],
+            [
+              {
+                "g": "floor_wood",
+                "k": "door",
+                "c": "#6aa8d8"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "carpet",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@carpet:1,0"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@carpet:2,0"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "@carpet:0,1"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@carpet:1,1"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@carpet:2,1"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "stairs_down",
+                "c": "#6aa8d8"
+              },
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "table",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@table:1,0"
+              },
+              {
+                "g": "floor_wood",
+                "k": "chair",
+                "c": "#6aa8d8"
+              },
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "plant",
+                "c": "#6aa8d8"
+              },
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ]
+          ],
+          "pet": [
+            6,
+            5
+          ]
+        }
+      ],
+      "active_room": 0,
+      "halls": []
+    },
+    "2": {
+      "rooms": [
+        {
+          "name": "2F",
+          "kind": "room",
+          "ox": 0,
+          "oy": 0,
+          "w": 12,
+          "h": 10,
+          "tiles": [
+            [
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "window",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@window:1,0"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "partition",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "bathtub",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@bathtub:1,0"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "bed",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@bed:1,0"
+              },
+              {
+                "g": "floor_wood",
+                "k": "nightstand",
+                "c": "#6aa8d8"
+              },
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "partition",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@bathtub:0,1"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@bathtub:1,1"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "@bed:0,1"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@bed:1,1"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "basin",
+                "c": "#6aa8d8"
+              },
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "toilet",
+                "c": "#6aa8d8"
+              },
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "wardrobe",
+                "c": "#6aa8d8"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "stairs_up",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "@wardrobe:0,1"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "stairs_down",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ]
+          ],
+          "pet": [
+            6,
+            5
+          ]
+        }
+      ],
+      "active_room": 0,
+      "halls": []
+    },
+    "3": {
+      "rooms": [
+        {
+          "name": "3F",
+          "kind": "room",
+          "ox": 0,
+          "oy": 0,
+          "w": 12,
+          "h": 10,
+          "tiles": [
+            [
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "window",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@window:1,0"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "sofa",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@sofa:1,0"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@sofa:2,0"
+              },
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "tv",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@tv:1,0"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@tv:2,0"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "coffee",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@coffee:1,0"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "carpet",
+                "c": "#6aa8d8"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@carpet:1,0"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@carpet:2,0"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "@carpet:0,1"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@carpet:1,1"
+              },
+              {
+                "g": "floor_wood",
+                "k": "@carpet:2,1"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "stairs_down",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              {
+                "g": "floor_wood",
+                "k": "plant",
+                "c": "#6aa8d8"
+              },
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ],
+            [
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood",
+              "floor_wood"
+            ]
+          ],
+          "pet": [
+            6,
+            5
+          ]
+        }
+      ],
+      "active_room": 0,
+      "halls": []
+    }
+  }
+}

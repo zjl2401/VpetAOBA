@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 可爱像素面板：粉外框 + 奶油底 + 贴纸顶条 -->
+<!-- 深蓝→蓝渐变面板 + 蓝描边 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/menuChrome"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="#FFFF7EB0"
+    android:background="#FFC8E4FF"
     android:padding="2dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="#FFFFA8CC"
+        android:background="#FFE8F4FF"
         android:gravity="center_vertical"
         android:paddingStart="6dp"
         android:paddingEnd="6dp"
@@ -22,7 +22,7 @@
         <View
             android:layout_width="8dp"
             android:layout_height="8dp"
-            android:background="#FFFFFFFF" />
+            android:background="#FFF4FAFF" />
 
         <View
             android:layout_width="0dp"
@@ -30,12 +30,12 @@
             android:layout_weight="1"
             android:layout_marginStart="6dp"
             android:layout_marginEnd="6dp"
-            android:background="#FFFFF8FB" />
+            android:background="#FF7EC8FF" />
 
         <View
             android:layout_width="8dp"
             android:layout_height="8dp"
-            android:background="#FF7EC8FF" />
+            android:background="#FF2A6BB8" />
     </LinearLayout>
 
     <LinearLayout
@@ -43,7 +43,7 @@
         android:layout_width="236dp"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="#FFFFF8FB"
+        android:background="@drawable/bg_panel_blue"
         android:padding="6dp">
 
         <LinearLayout
@@ -80,9 +80,9 @@
             android:layout_marginTop="4dp"
             android:gravity="center"
             android:text="×"
-            android:textColor="#FF4A3550"
+            android:textColor="@color/text_main"
             android:textSize="16sp"
-            android:background="#FFFFD6E8" />
+            android:background="@drawable/bg_panel_blue" />
     </LinearLayout>
 
     <View

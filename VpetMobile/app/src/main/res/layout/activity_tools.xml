@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_dark"
+    android:background="@drawable/bg_blue_gradient"
     android:fillViewport="true">
 
     <LinearLayout
@@ -92,46 +92,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="导入本地歌曲"
-            android:layout_marginBottom="20dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="日程提醒"
-            android:textColor="@color/accent_pink"
-            android:textSize="16sp"
-            android:layout_marginBottom="6dp" />
-
-        <EditText
-            android:id="@+id/scheduleTime"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="时间 HH:MM"
-            android:inputType="time"
-            android:textColor="@color/text_main"
-            android:textColorHint="#88A0B0" />
-
-        <EditText
-            android:id="@+id/scheduleText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="提醒内容"
-            android:textColor="@color/text_main"
-            android:textColorHint="#88A0B0" />
-
-        <Button
-            android:id="@+id/btnAddSchedule"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="添加日程"
-            android:layout_marginBottom="8dp" />
-
-        <TextView
-            android:id="@+id/scheduleList"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="@color/text_main"
-            android:textSize="13sp"
             android:layout_marginBottom="20dp" />
 
         <TextView

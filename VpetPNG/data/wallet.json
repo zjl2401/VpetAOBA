@@ -1,0 +1,60 @@
+{
+  "coins": 61,
+  "items": {
+    "seed_wheat": 7,
+    "seed_berry": 4,
+    "seed_corn": 4,
+    "seed_apple": 1,
+    "seed_grape": 1,
+    "seed_rose": 1,
+    "crop_wheat": 0,
+    "crop_berry": 0,
+    "crop_corn": 0,
+    "crop_apple": 0,
+    "crop_grape": 0,
+    "crop_rose": 0,
+    "wood": 6,
+    "flower_cut": 0,
+    "fish": 0,
+    "work_reward_box": 0,
+    "compost": 0,
+    "dew_drop": 0,
+    "jam_berry": 0,
+    "flour": 0,
+    "corn_flakes": 0
+  },
+  "last_daily_coin_ymd": "2026-09-16",
+  "farm_action_ymd": "",
+  "farm_actions": 0,
+  "farm_offline_ymd": "2026-09-16",
+  "last_farm_visit": 1789562946.1205883,
+  "farm_login_days": 1,
+  "farm_login_ymd": "2026-09-16",
+  "farm_orders_ymd": "2026-09-16",
+  "farm_orders": [
+    {
+      "id": "o_wheat",
+      "item": "crop_wheat",
+      "need": 2,
+      "pay": 14,
+      "label": "邻居订单·小麦×2",
+      "done": false
+    },
+    {
+      "id": "o_fish",
+      "item": "fish",
+      "need": 1,
+      "pay": 12,
+      "label": "晚饭订单·鲜鱼×1",
+      "done": false
+    }
+  ],
+  "farm_processors": [],
+  "ranch_pet": {
+    "name": "团子",
+    "kind": "sheep",
+    "mood": 70,
+    "last_pet_ymd": "",
+    "last_feed_ymd": ""
+  }
+}

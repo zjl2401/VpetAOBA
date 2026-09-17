@@ -15,12 +15,17 @@ object AppDataStore {
     private const val KEY_DIARY = "diary_json"
     private const val KEY_ACH = "achievements_json"
     private const val KEY_FONT = "font_label"
+    private const val KEY_FONT_FAMILY = "font_family"
     private const val KEY_SOUND = "sound_on"
     private const val KEY_VOICE_MODE = "voice_mode"
     private const val KEY_VOICE_VOL = "voice_volume"
     private const val KEY_DIFF = "difficulty"
+    private const val KEY_SPEECH_TEXT = "show_speech_text"
 
     val FONT_PRESETS = linkedMapOf("小" to 11f, "中" to 13f, "大" to 15f, "特大" to 17f)
+    /** 与电脑版设置对齐的字体样式；默认楷体。 */
+    const val FONT_FAMILY_DEFAULT = "楷体"
+    val FONT_FAMILIES = listOf("楷体", "幼圆", "像素", "雅黑", "默认")
     val DIFF_PRESETS = listOf("低", "中", "高")
 
     private fun prefs(ctx: Context): SharedPreferences =
@@ -31,11 +36,35 @@ object AppDataStore {
         return if (v in FONT_PRESETS) v else "中"
     }
 
+    fun fontFamily(ctx: Context): String {
+        val raw = prefs(ctx).getString(KEY_FONT_FAMILY, FONT_FAMILY_DEFAULT) ?: FONT_FAMILY_DEFAULT
+        val v = if (raw == "可爱") FONT_FAMILY_DEFAULT else raw
+        return if (v in FONT_FAMILIES) v else FONT_FAMILY_DEFAULT
+    }
+
     fun fontSp(ctx: Context): Float = FONT_PRESETS.getValue(fontLabel(ctx))
+
+    fun fontBodySp(ctx: Context): Float = fontSp(ctx)
+    fun fontCaptionSp(ctx: Context): Float = (fontSp(ctx) - 1f).coerceAtLeast(9f)
+    fun fontClockTitleSp(ctx: Context): Float = fontCaptionSp(ctx)
+    fun fontClockTimeSp(ctx: Context): Float = (fontSp(ctx) + 6f).coerceAtLeast(16f)
+    fun fontClockBtnSp(ctx: Context): Float = fontCaptionSp(ctx)
+
+    fun applySp(tv: android.widget.TextView?, sp: Float) {
+        tv ?: return
+        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, sp)
+    }
 
     fun setFontLabel(ctx: Context, label: String) {
         val k = if (label in FONT_PRESETS) label else "中"
         prefs(ctx).edit().putString(KEY_FONT, k).apply()
+    }
+
+    fun setFontFamily(ctx: Context, family: String) {
+        val mapped = if (family == "可爱") FONT_FAMILY_DEFAULT else family
+        val k = if (mapped in FONT_FAMILIES) mapped else FONT_FAMILY_DEFAULT
+        prefs(ctx).edit().putString(KEY_FONT_FAMILY, k).apply()
+        UiFonts.clearCache()
     }
 
     /** 音效（打字音等）；对照桌面 sfx，与语音分离。 */
@@ -43,6 +72,13 @@ object AppDataStore {
 
     fun setSoundOn(ctx: Context, on: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_SOUND, on).apply()
+    }
+
+    /** 对话/语音台词文本框；对照桌面 show_speech_text。默认开。 */
+    fun speechTextOn(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_SPEECH_TEXT, true)
+
+    fun setSpeechTextOn(ctx: Context, on: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_SPEECH_TEXT, on).apply()
     }
 
     /** 语音模式；对照桌面 voice_mode。默认开（兼容旧「声音含语音」习惯）。 */
@@ -125,7 +161,46 @@ object AppDataStore {
         }
     }
 
-    fun addDiary(ctx: Context, text: String): Boolean {
+    /** 天气选项（对齐电脑 DIARY_WEATHER_OPTIONS 低配）。 */
+    val DIARY_WEATHER: List<Pair<String, String>> = listOf(
+        "sunny" to "晴朗",
+        "partly" to "多云",
+        "cloudy" to "阴天",
+        "fog" to "有雾",
+        "drizzle" to "毛毛雨",
+        "rain" to "降雨",
+        "snow" to "降雪",
+        "storm" to "雷暴",
+    )
+
+    /** 心情选项（对齐电脑 DIARY_MOOD_FACES 标签）。 */
+    val DIARY_MOODS: List<Pair<String, String>> = listOf(
+        "stand" to "平常",
+        "happy" to "开心",
+        "wink" to "Wink",
+        "like" to "点赞",
+        "shy" to "害羞",
+        "sad" to "伤心",
+        "angry" to "生气",
+        "question" to "疑惑",
+        "speechless" to "无语",
+        "awkward" to "尴尬",
+        "zzz" to "睡觉Z",
+        "sleep" to "困倦",
+    )
+
+    fun weatherLabel(key: String): String =
+        DIARY_WEATHER.firstOrNull { it.first == key }?.second ?: key
+
+    fun moodLabel(key: String): String =
+        DIARY_MOODS.firstOrNull { it.first == key }?.second ?: key
+
+    fun addDiary(
+        ctx: Context,
+        text: String,
+        mood: String = "stand",
+        weather: String = "sunny",
+    ): Boolean {
         val t = text.trim()
         if (t.isEmpty()) return false
         val arr = diaries(ctx)
@@ -134,10 +209,29 @@ object AppDataStore {
             JSONObject()
                 .put("id", UUID.randomUUID().toString())
                 .put("ts", fmt.format(Date()))
-                .put("text", t.take(200)),
+                .put("text", t.take(500))
+                .put("mood", mood)
+                .put("weather", weather),
         )
         prefs(ctx).edit().putString(KEY_DIARY, arr.toString()).apply()
         unlock(ctx, "diary_first")
+        return true
+    }
+
+    fun deleteDiary(ctx: Context, id: String): Boolean {
+        val arr = diaries(ctx)
+        val next = JSONArray()
+        var removed = false
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            if (o.optString("id") == id) {
+                removed = true
+                continue
+            }
+            next.put(o)
+        }
+        if (!removed) return false
+        prefs(ctx).edit().putString(KEY_DIARY, next.toString()).apply()
         return true
     }
 

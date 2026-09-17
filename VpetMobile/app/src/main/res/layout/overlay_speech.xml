@@ -4,7 +4,7 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:padding="10dp"
-    android:background="#EE1A1A22">
+    android:background="@android:color/transparent">
 
     <ImageView
         android:id="@+id/speechBorder"
@@ -16,9 +16,9 @@
 
     <TextView
         android:id="@+id/speechText"
-        android:layout_width="240dp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textColor="#FFFFFFFF"
+        android:textColor="@color/speech_fg"
         android:textSize="13sp"
         android:lineSpacingExtra="2dp" />
 </FrameLayout>

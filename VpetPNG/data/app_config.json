@@ -1,0 +1,48 @@
+{
+  "font_size": 14,
+  "font_family": "楷体",
+  "display_size": 176,
+  "display_preset": "大",
+  "difficulty": "中",
+  "rhythm_speed": "中",
+  "rhythm_chart_diff": "中",
+  "rhythm_auto": false,
+  "weather_city": "北京",
+  "seen_hints": {
+    "rhyme_invite": true,
+    "companion_bar": true,
+    "game_mode": true,
+    "music_mode": true,
+    "startup_warmup": true,
+    "startup_first_warmup": true,
+    "startup_first_warmup_v2": true,
+    "operation_guide": true,
+    "post_owner_guide": true,
+    "home_farm_guide": true
+  },
+  "work_mode": {
+    "show_props": true,
+    "show_stack": true
+  },
+  "show_timers": true,
+  "voice_mode": false,
+  "voice_interval_ms": 35000,
+  "voice_interval_preset": "长",
+  "difficulty_t": 0.5,
+  "strip_outer_black": false,
+  "sprite_pack": "normal",
+  "display_layer": "top",
+  "persona": "default",
+  "pet_id_api_url": "",
+  "pet_id_activation_code": "",
+  "launch_at_login": true,
+  "spawn_on_launcher_start": true,
+  "work_box_total": 5,
+  "font_style": "楷体",
+  "home_ui": {
+    "last_edit_mode": "farm",
+    "more_expanded": true,
+    "starter_pack_claimed": true
+  },
+  "office_todo_hud": false
+}

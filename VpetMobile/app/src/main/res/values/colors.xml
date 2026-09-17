@@ -1,14 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_dark">#FFFFF4F8</color>
-    <color name="launcher_bg">#FFFFF0F5</color>
+    <color name="bg_dark">#FF2A6BB8</color>
+    <color name="launcher_bg">#FFC8E4FF</color>
     <color name="accent_pink">#FFFF7EB0</color>
     <color name="theme_blue">#FF7EC8FF</color>
-    <color name="theme_blue_deep">#FF5AA8E8</color>
-    <color name="text_main">#FF4A3550</color>
-    <color name="menu_bg">#FFFFF8FB</color>
-    <color name="menu_fg">#FF4A3550</color>
-    <color name="menu_item_bg">#FFFFE8F2</color>
-    <color name="btn_bg">#FFFFD0E4</color>
-    <color name="room_wall">#FFFFEAF2</color>
+    <color name="theme_blue_deep">#FF2A6BB8</color>
+    <!-- 深蓝字：浅蓝底上对比更大 -->
+    <color name="text_main">#FF0A1F3D</color>
+    <color name="speech_fg">#FF0A1F3D</color>
+    <color name="speech_bg">#FFE8F4FF</color>
+    <color name="menu_bg">#FFC8E4FF</color>
+    <color name="menu_fg">#FF0A1F3D</color>
+    <color name="menu_item_bg">#FFE8F4FF</color>
+    <!-- 按键：白 / 浅蓝 -->
+    <color name="btn_bg">#FFF4FAFF</color>
+    <color name="btn_bg_pressed">#FFE8F4FF</color>
+    <color name="btn_stroke">#FF9ED0FF</color>
+    <color name="room_wall">#FFC8E4FF</color>
+    <color name="diary_paper">#FFF4FAFF</color>
+    <color name="diary_line">#FF7EC8FF</color>
+    <color name="diary_ink">#FF0A1F3D</color>
+    <color name="diary_card">#FFE8F4FF</color>
+    <color name="diary_margin">#FF7EC8FF</color>
 </resources>

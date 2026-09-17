@@ -11,8 +11,8 @@ android {
         applicationId = "com.vpet.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 65
-        versionName = "0.2.63-vpet-aoba"
+        versionCode = 68
+        versionName = "0.2.66-kaiti-default"
     }
 
     buildTypes {
@@ -44,6 +44,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":shared"))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")

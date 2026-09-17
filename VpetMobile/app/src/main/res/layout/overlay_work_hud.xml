@@ -8,7 +8,7 @@
     android:paddingEnd="8dp"
     android:paddingTop="8dp"
     android:paddingBottom="8dp"
-    android:background="#CC222222">
+    android:background="@drawable/tool_hud_panel">
 
     <TextView
         android:id="@+id/workProgress"

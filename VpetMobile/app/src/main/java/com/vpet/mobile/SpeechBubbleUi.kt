@@ -2,9 +2,15 @@ package com.vpet.mobile
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Point
+import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
@@ -17,7 +23,7 @@ import com.vpet.mobile.databinding.OverlaySpeechBinding
 
 /**
  * 对话/台词气泡。定位对照桌面：桌宠正下方。
- * 系统→对话可用 border5；语音字幕/动作等为扁平框。
+ * 默认微信风：蓝色半透明圆角气泡 + 上指小三角。
  */
 class SpeechBubbleUi(
     private val context: Context,
@@ -31,10 +37,18 @@ class SpeechBubbleUi(
     },
 ) {
     companion object {
-        const val PET_SPEECH_GAP = 6
+        const val PET_SPEECH_GAP = 4
         const val PET_SPEECH_FOLLOW_MS = 180L
         const val TYPEWRITER_MS = 70L
         const val HI_TYPEWRITER_MS = 130L
+        private const val FLAT_MIN_DP = 48
+        private const val FLAT_MAX_DP = 260
+        /** 深蓝字配浅蓝气泡 */
+        private const val SPEECH_FG = 0xFF0A1F3D.toInt()
+        /** 浅蓝底（再浅一档，避免发闷） */
+        private const val SPEECH_BUBBLE_FILL = 0xF5E8F4FF.toInt()
+        private const val SPEECH_BUBBLE_STROKE = 0xFFB8DCFF.toInt()
+        private const val SPEECH_BUBBLE_SHADOW = 0x227EC8FF
     }
 
     private var binding: OverlaySpeechBinding? = null
@@ -53,9 +67,9 @@ class SpeechBubbleUi(
         showInternal(text, autoHideMs, typewriterMs = 0L, border5 = border5)
     }
 
-    /** 语音字幕：瞬时全文，无打字音；扁平框。 */
+    /** 语音字幕：瞬时全文，无打字音。 */
     fun showVoiceSubtitle(text: String, autoHideMs: Long = 3200L) {
-        showInternal(text, autoHideMs, typewriterMs = 0L, border5 = false)
+        showInternal(text.ifBlank { "……" }, autoHideMs.coerceAtLeast(800L), typewriterMs = 0L, border5 = false)
     }
 
     fun showTypewriter(
@@ -71,17 +85,21 @@ class SpeechBubbleUi(
         showTypewriter(text, autoHideMs, HI_TYPEWRITER_MS, border5 = false)
     }
 
-    /** 系统→对话（预设问答等）：border5 + 打字机。 */
+    /** 系统→对话：蓝气泡 + 打字机。 */
     fun showDialog(text: String, autoHideMs: Long = 4200L, typewriterMs: Long = TYPEWRITER_MS) {
-        showTypewriter(text, autoHideMs, typewriterMs, border5 = true)
+        showTypewriter(text, autoHideMs, typewriterMs, border5 = false)
     }
 
     private fun showInternal(text: String, autoHideMs: Long, typewriterMs: Long, border5: Boolean) {
+        if (!AppDataStore.speechTextOn(context)) {
+            hide()
+            return
+        }
         ensure()
         cancelType()
         useBorder5 = border5
         if (!border5) borderPeak = 0 to 0
-        binding?.speechText?.textSize = AppDataStore.fontSp(context)
+        AppDataStore.applySp(binding?.speechText, AppDataStore.fontSp(context))
         applyChrome(text.ifBlank { " " })
         binding?.root?.visibility = View.VISIBLE
         placeNow()
@@ -97,8 +115,7 @@ class SpeechBubbleUi(
             return
         }
         binding?.speechText?.text = ""
-        // 打字机：按全文锁定 border5 尺寸
-        if (border5) applyChrome(text)
+        if (border5) applyChrome(text) else applyChrome(text)
         var i = 0
         typeJob = object : Runnable {
             override fun run() {
@@ -115,7 +132,10 @@ class SpeechBubbleUi(
                 if (!ch.isWhitespace()) typeSound.tick()
                 i++
                 val delay = if (ch == '\n') typewriterMs * 2 else typewriterMs
-                if (i % 4 == 0 || ch == '\n') placeNow()
+                if (i % 4 == 0 || ch == '\n') {
+                    if (!useBorder5) applyChrome(binding?.speechText?.text?.toString().orEmpty())
+                    placeNow()
+                }
                 handler.postDelayed(this, delay)
             }
         }
@@ -157,10 +177,7 @@ class SpeechBubbleUi(
             TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics,
         )
         if (!useBorder5) {
-            b.speechBorder.visibility = View.GONE
-            b.speechRoot.setPadding(dp(10), dp(10), dp(10), dp(10))
-            b.speechRoot.setBackgroundColor(0xEE1A1A22.toInt())
-            b.speechText.layoutParams = FrameLayout.LayoutParams(dp(240), FrameLayout.LayoutParams.WRAP_CONTENT)
+            applyFlatChrome(fullText)
             return
         }
         var (cw, ch) = SpeechBorder5.measureContent(fullText, textPx)
@@ -187,6 +204,44 @@ class SpeechBubbleUi(
         }
         b.speechText.layoutParams = tp
         b.speechText.setBackgroundColor(0x00000000)
+        b.speechText.setTextColor(SPEECH_FG)
+    }
+
+    /** 近白浅蓝气泡 + 上指三角（对照桌面文本框对比）。 */
+    private fun applyFlatChrome(fullText: String) {
+        val b = binding ?: return
+        b.speechBorder.visibility = View.GONE
+        val padH = dp(12)
+        val padV = dp(9)
+        val tailH = dp(7)
+        val shadowPad = dp(2)
+        b.speechRoot.setPadding(padH + shadowPad, padV + tailH + shadowPad, padH + shadowPad, padV + shadowPad)
+        b.speechRoot.background = WeChatBubbleDrawable(
+            fillColor = SPEECH_BUBBLE_FILL,
+            strokeColor = SPEECH_BUBBLE_STROKE,
+            cornerRadius = dp(10).toFloat(),
+            tailWidth = dp(12).toFloat(),
+            tailHeight = tailH.toFloat(),
+            shadowColor = SPEECH_BUBBLE_SHADOW,
+            shadowDy = dp(1).toFloat(),
+        )
+        b.speechRoot.elevation = 0f
+        b.speechText.setTextColor(SPEECH_FG)
+        val minW = dp(FLAT_MIN_DP)
+        val maxW = minOf(dp(FLAT_MAX_DP), (screenSize().x * 0.72f).toInt().coerceAtLeast(minW))
+        val tv = b.speechText
+        AppDataStore.applySp(tv, AppDataStore.fontSp(context))
+        val paint = tv.paint
+        var natural = 0f
+        for (line in fullText.split('\n')) {
+            natural = maxOf(natural, paint.measureText(line.ifEmpty { " " }))
+        }
+        val contentW = (natural + dp(2)).toInt().coerceIn(minW, maxW)
+        tv.maxWidth = contentW
+        tv.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+        )
     }
 
     private fun dp(v: Int): Int =
@@ -274,6 +329,81 @@ class SpeechBubbleUi(
             }
             roomHost?.addView(b.root, roomLp)
         }
+        b.root.setBackgroundColor(0x00000000)
         b.root.visibility = View.GONE
+    }
+
+    /** 浅蓝底气泡：圆角矩形 + 顶部居中小三角（指向桌宠）。 */
+    private class WeChatBubbleDrawable(
+        private val fillColor: Int,
+        private val strokeColor: Int,
+        private val cornerRadius: Float,
+        private val tailWidth: Float,
+        private val tailHeight: Float,
+        private val shadowColor: Int,
+        private val shadowDy: Float,
+    ) : Drawable() {
+        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = fillColor
+        }
+        private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = strokeColor
+            strokeWidth = 2f
+        }
+        private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = shadowColor
+        }
+        private val path = Path()
+        private val body = RectF()
+
+        override fun draw(canvas: Canvas) {
+            val b = bounds
+            if (b.width() <= 0 || b.height() <= 0) return
+            val left = b.left.toFloat()
+            val top = b.top.toFloat()
+            val right = b.right.toFloat()
+            val bottom = b.bottom.toFloat()
+            val th = tailHeight.coerceAtMost((bottom - top) * 0.35f)
+            val tw = tailWidth.coerceAtMost((right - left) * 0.4f)
+            val cx = (left + right) * 0.5f
+            val r = cornerRadius.coerceAtMost(minOf(right - left, bottom - top - th) * 0.5f)
+
+            fun build(target: Path, dy: Float) {
+                target.reset()
+                body.set(left, top + th + dy, right, bottom + dy)
+                target.addRoundRect(body, r, r, Path.Direction.CW)
+                target.moveTo(cx - tw * 0.5f, top + th + dy + 0.5f)
+                target.lineTo(cx, top + dy)
+                target.lineTo(cx + tw * 0.5f, top + th + dy + 0.5f)
+                target.close()
+            }
+
+            if (shadowDy > 0f) {
+                build(path, shadowDy)
+                canvas.drawPath(path, shadowPaint)
+            }
+            build(path, 0f)
+            canvas.drawPath(path, fillPaint)
+            canvas.drawPath(path, strokePaint)
+        }
+
+        override fun setAlpha(alpha: Int) {
+            fillPaint.alpha = alpha
+            strokePaint.alpha = alpha
+            shadowPaint.alpha = (alpha * 0.35f).toInt().coerceIn(0, 255)
+            invalidateSelf()
+        }
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {
+            fillPaint.colorFilter = colorFilter
+            strokePaint.colorFilter = colorFilter
+            invalidateSelf()
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
     }
 }

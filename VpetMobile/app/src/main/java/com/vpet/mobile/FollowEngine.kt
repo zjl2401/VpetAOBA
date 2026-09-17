@@ -23,13 +23,13 @@ class FollowEngine(private val host: Host) {
     }
 
     companion object {
-        const val FOLLOW_MOVE_INTERVAL_MS = 40L
-        const val FOLLOW_STOP_DIST = 65
-        const val FOLLOW_FAR_DIST = 220
-        const val FOLLOW_DIZZY_STAND_MS = 3000L
-        const val FOLLOW_DIZZY_SPIN_STEPS = 4
-        const val FOLLOW_DIZZY_TEXT = "我晕了……"
-        const val MOVE_STEP = 2
+        const val FOLLOW_MOVE_INTERVAL_MS = FollowMath.FOLLOW_MOVE_INTERVAL_MS
+        const val FOLLOW_STOP_DIST = FollowMath.FOLLOW_STOP_DIST
+        const val FOLLOW_FAR_DIST = FollowMath.FOLLOW_FAR_DIST
+        const val FOLLOW_DIZZY_STAND_MS = FollowMath.FOLLOW_DIZZY_STAND_MS
+        const val FOLLOW_DIZZY_SPIN_STEPS = FollowMath.FOLLOW_DIZZY_SPIN_STEPS
+        const val FOLLOW_DIZZY_TEXT = FollowMath.FOLLOW_DIZZY_TEXT
+        const val MOVE_STEP = FollowMath.MOVE_STEP
     }
 
     var active = false

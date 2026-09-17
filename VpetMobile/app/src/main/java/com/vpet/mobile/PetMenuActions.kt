@@ -13,6 +13,15 @@ class PetMenuActions(
     private val onResize: (() -> Unit)? = null,
     private val onExitOverlay: (() -> Unit)? = null,
 ) {
+    fun displayTitle(id: String, default: String): String = when (id) {
+        "mode_work", "act_work" -> if (hub.isWorking) "结束工作" else "工作"
+        "mode_quiet" -> if (hub.isQuiet) "结束睡眠" else "睡眠"
+        "set_sound" -> "音效·${if (AppDataStore.soundOn(context)) "开" else "关"}"
+        "set_speech" -> "文本框·${if (AppDataStore.speechTextOn(context)) "开" else "关"}"
+        "set_voice" -> "语音·${if (AppDataStore.voiceMode(context)) "开" else "关"}"
+        else -> default
+    }
+
     fun run(id: String): Boolean {
         when {
             id.startsWith("dialog_q_") -> {
@@ -24,7 +33,7 @@ class PetMenuActions(
                 "mode_free" -> hub.startFree()
                 "mode_stroll", "act_walk" -> hub.startStroll()
                 "mode_follow" -> hub.startFollow()
-                "mode_quiet" -> hub.startQuiet()
+                "mode_quiet" -> hub.toggleQuiet()
                 "act_sleep" -> hub.startSleepInteract()
                 "mode_music" -> hub.startMusic()
                 "act_stand" -> hub.playAction("act_stand")
@@ -54,19 +63,15 @@ class PetMenuActions(
                 "tool_pomo_15_5" -> hub.startPomodoro(15, 5)
                 "tool_pomo_1_1" -> hub.startPomodoro(1, 1)
                 "tool_pomo_end" -> hub.endPomodoro(silent = false)
-                "tool_schedule", "tool_bday_set", "tool_archive", "sys_sync" -> hub.openTools()
+                "tool_bday_set", "tool_archive", "sys_sync" -> hub.openTools()
                 "panel_open" -> hub.openPanel()
                 "panel_companion" -> hub.toggleCompanion()
                 "panel_persona" -> hub.togglePersona()
-                "panel_rhyme" -> hub.openRhyme()
-                "panel_expose" -> hub.openExpose()
                 "game_collect" -> hub.openCollect()
                 "game_rhythm" -> hub.openRhythm()
                 "sys_owner" -> hub.showOwnerInfo()
                 "sys_diary" -> hub.openSystemPage("diary")
-                "sys_achievements" -> hub.openSystemPage("achievements")
-                "sys_gallery" -> hub.openSystemPage("gallery")
-                "sys_phonograph" -> hub.openSystemPage("phonograph")
+                "sys_settings" -> hub.openSystemPage("settings")
                 "sys_about" -> hub.openSystemPage("about")
                 "sys_feedback" -> hub.openSystemPage("feedback")
                 "sys_submit" -> hub.openSystemPage("submit")
@@ -82,6 +87,12 @@ class PetMenuActions(
                 "set_sound" -> {
                     AppDataStore.setSoundOn(context, !AppDataStore.soundOn(context))
                     toast("音效：${if (AppDataStore.soundOn(context)) "开" else "关"}")
+                }
+                "set_speech" -> {
+                    val on = !AppDataStore.speechTextOn(context)
+                    AppDataStore.setSpeechTextOn(context, on)
+                    if (!on) hub.hideSpeechBubble()
+                    toast("文本框：${if (on) "开" else "关"}")
                 }
                 "set_voice" -> {
                     AppDataStore.setVoiceMode(context, !AppDataStore.voiceMode(context))

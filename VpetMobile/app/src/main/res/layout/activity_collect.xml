@@ -3,7 +3,7 @@
     android:id="@+id/collectRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FF1A2030">
+    android:background="@drawable/bg_blue_gradient">
 
     <TextView
         android:id="@+id/collectHud"

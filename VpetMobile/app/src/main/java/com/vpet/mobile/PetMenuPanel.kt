@@ -275,11 +275,12 @@ class PetMenuPanel(
             })
         }
         for (item in items) {
+            val base = actions.displayTitle(item.id, item.title)
             val label = when {
-                item.children.isNotEmpty() -> item.title
-                item.status == DesktopMenuCatalog.Status.READY -> item.title
-                item.status == DesktopMenuCatalog.Status.STUB -> "${item.title} ·"
-                else -> "${item.title} …"
+                item.children.isNotEmpty() -> base
+                item.status == DesktopMenuCatalog.Status.READY -> base
+                item.status == DesktopMenuCatalog.Status.STUB -> "$base ·"
+                else -> "$base …"
             }
             list.addView(makeItemBtn(label) {
                 when {

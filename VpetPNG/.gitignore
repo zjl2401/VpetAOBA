@@ -1,0 +1,24 @@
+# 构建产物
+build/
+dist/
+__pycache__/
+*.pyc
+
+# 重复/暂存发布
+release/Vpet_old/
+release/Vpet_new/
+release/Vpet_build_*/
+
+# 音频缓存（可重建）
+data/audio/voice_cache/
+data/audio/music_*_cache.wav
+data/audio/rhythm_chart_*_v3.json
+data/audio/rhythm_chart_*_v4.json
+data/audio/rhythm_chart_aicatch_*
+
+# bundled 内不应出现视频
+bundled/**/*.mp4
+bundled/**/*.mkv
+bundled/**/*.webm
+bundled/**/*.avi
+bundled/**/*.mov

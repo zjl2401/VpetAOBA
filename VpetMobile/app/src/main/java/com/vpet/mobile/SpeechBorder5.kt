@@ -64,8 +64,8 @@ object SpeechBorder5 {
         canvas.drawBitmap(leftCap, 0f, 0f, paint)
         canvas.drawBitmap(mid, leftCap.width.toFloat(), 0f, paint)
         canvas.drawBitmap(rightCap, (tw - rightCap.width).toFloat(), 0f, paint)
-        // 不透明内容底
-        val fill = Paint().apply { color = 0xFF1A1A22.toInt() }
+        // 浅蓝不透明内容底（与气泡框一致，避免深色发闷）
+        val fill = Paint().apply { color = 0xFFE8F4FF.toInt() }
         canvas.drawRect(
             padL.toFloat(),
             padT.toFloat(),

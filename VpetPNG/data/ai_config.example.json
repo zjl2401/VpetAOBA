@@ -1,0 +1,34 @@
+{
+  "_comment": "复制为 data/ai_config.json 后填写。provider 可填 dashscope / ollama / openai_compatible。",
+  "provider": "dashscope",
+  "api_key": "你的阿里云 DashScope API Key",
+  "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "model": "qwen-plus",
+  "temperature": 0.85,
+  "_presets": {
+    "dashscope_qwen_plus": {
+      "provider": "dashscope",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen-plus",
+      "api_key": "sk-..."
+    },
+    "dashscope_qwen_max": {
+      "provider": "dashscope",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen-max",
+      "api_key": "sk-..."
+    },
+    "ollama_qwen25": {
+      "provider": "ollama",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "model": "qwen2.5:7b",
+      "api_key": "ollama"
+    },
+    "ollama_qwen3": {
+      "provider": "ollama",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "model": "qwen3:8b",
+      "api_key": "ollama"
+    }
+  }
+}

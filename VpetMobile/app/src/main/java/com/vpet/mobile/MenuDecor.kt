@@ -26,47 +26,57 @@ import kotlin.math.sin
 object MenuDecor {
     val THEME_BLUE = Color.parseColor("#7EC8FF")
     val THEME_PINK = Color.parseColor("#FF7EB0")
-    val THEME_BLUE_DEEP = Color.parseColor("#5AA8E8")
-    val THEME_WHITE = Color.parseColor("#FFF8FB")
-    val THEME_BLACK = Color.parseColor("#4A3550")
-    val MENU_BG = Color.parseColor("#FFF8FB")
-    val MENU_FG = Color.parseColor("#4A3550")
-    val MENU_ACTIVE = Color.parseColor("#FFB8D8")
-    val THEME_ITEM_BG = Color.parseColor("#FFE8F2")
-    val THEME_CREAM = Color.parseColor("#FFF0F5")
+    val THEME_BLUE_DEEP = Color.parseColor("#2A6BB8")
+    val THEME_WHITE = Color.parseColor("#F4FAFF")
+    val THEME_BLACK = Color.parseColor("#0A1F3D")
+    val MENU_BG = Color.parseColor("#C8E4FF")
+    val MENU_FG = Color.parseColor("#0A1F3D")
+    /** 按键：白 / 浅蓝 */
+    val MENU_ACTIVE = Color.parseColor("#F4FAFF")
+    val THEME_ITEM_BG = Color.parseColor("#E8F4FF")
+    val THEME_CREAM = Color.parseColor("#C8E4FF")
 
     private val glyphColors = intArrayOf(THEME_BLUE_DEEP, THEME_BLUE, THEME_PINK, THEME_BLACK, THEME_WHITE)
     private val glyphCache = HashMap<Pair<String, Int>, Bitmap>()
-    private var cuteTypeface: Typeface? = null
 
-    fun cuteFont(ctx: Context): Typeface {
-        cuteTypeface?.let { return it }
-        val tf = try {
-            androidx.core.content.res.ResourcesCompat.getFont(ctx, R.font.youyuan)
-        } catch (_: Exception) {
-            null
-        } ?: Typeface.create("sans-serif", Typeface.BOLD)
-        cuteTypeface = tf
-        return tf
-    }
+    fun cuteFont(ctx: Context): Typeface = UiFonts.cute(ctx)
 
     fun dp(ctx: Context, v: Float): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, ctx.resources.displayMetrics).toInt()
 
-    fun chromeOuterBg(): GradientDrawable = GradientDrawable().apply {
-        setColor(THEME_PINK)
+    fun chromeOuterBg(): GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TOP_BOTTOM,
+        intArrayOf(Color.parseColor("#E8F4FF"), Color.parseColor("#7EB8F0")),
+    ).apply {
         cornerRadius = 10f
     }
 
-    fun menuItemBg(pressed: Boolean = false): GradientDrawable = GradientDrawable().apply {
-        setColor(if (pressed) MENU_ACTIVE else THEME_ITEM_BG)
+    fun pageBg(): GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TOP_BOTTOM,
+        intArrayOf(Color.parseColor("#F4FAFF"), Color.parseColor("#C8E4FF"), Color.parseColor("#7EB8F0")),
+    )
+
+    fun menuItemBg(pressed: Boolean = false): GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TOP_BOTTOM,
+        if (pressed) {
+            intArrayOf(Color.parseColor("#E8F4FF"), Color.parseColor("#C8E4FF"))
+        } else {
+            intArrayOf(Color.parseColor("#F4FAFF"), Color.parseColor("#E8F4FF"))
+        },
+    ).apply {
         cornerRadius = 10f
         setStroke(2, if (pressed) THEME_PINK else THEME_BLUE)
     }
 
-    fun moduleBtnBg(selected: Boolean): GradientDrawable = GradientDrawable().apply {
-        setColor(if (selected) MENU_ACTIVE else THEME_CREAM)
-        setStroke(2, if (selected) THEME_PINK else THEME_BLUE)
+    fun moduleBtnBg(selected: Boolean): GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TOP_BOTTOM,
+        if (selected) {
+            intArrayOf(Color.parseColor("#E8F4FF"), Color.parseColor("#C8E4FF"))
+        } else {
+            intArrayOf(Color.parseColor("#F4FAFF"), Color.parseColor("#F0F8FF"))
+        },
+    ).apply {
+        setStroke(2, if (selected) THEME_PINK else Color.parseColor("#9ED0FF"))
         cornerRadius = 12f
     }
 

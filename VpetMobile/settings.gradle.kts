@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "VpetMobile"
 include(":app")
+include(":shared")
