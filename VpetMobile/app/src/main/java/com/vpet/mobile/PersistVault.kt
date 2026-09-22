@@ -6,6 +6,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
 
 /**
  * 覆盖安装/异常清空后的本地保险档。
@@ -18,6 +19,10 @@ object PersistVault {
 
     @Volatile
     private var bootstrapped = false
+    private val snapshotExecutor = Executors.newSingleThreadExecutor()
+    private val snapshotLock = Any()
+    private var snapshotWriting = false
+    private var snapshotRequested = false
 
     fun bootstrap(ctx: Context) {
         if (bootstrapped) return
@@ -25,7 +30,6 @@ object PersistVault {
             if (bootstrapped) return
             try {
                 restoreIfNeeded(ctx.applicationContext)
-                snapshot(ctx.applicationContext)
             } catch (_: Exception) {
             }
             bootstrapped = true
@@ -35,6 +39,27 @@ object PersistVault {
     /** 关键存档写入保险档（各 Store 保存后调用）。 */
     fun snapshot(ctx: Context) {
         val app = ctx.applicationContext
+        synchronized(snapshotLock) {
+            // SharedPreferences 已由调用方 apply；把文件 I/O 合并到后台线程，避免保存操作卡住动画和触摸。
+            snapshotRequested = true
+            if (snapshotWriting) return
+            snapshotWriting = true
+        }
+        snapshotExecutor.execute {
+            while (true) {
+                synchronized(snapshotLock) { snapshotRequested = false }
+                writeSnapshot(app)
+                synchronized(snapshotLock) {
+                    if (!snapshotRequested) {
+                        snapshotWriting = false
+                        return@execute
+                    }
+                }
+            }
+        }
+    }
+
+    private fun writeSnapshot(app: Context) {
         try {
             val profilePrefs = app.getSharedPreferences("vpet_profile", Context.MODE_PRIVATE)
             val profileRaw = profilePrefs.getString("pet_profile_json", null)

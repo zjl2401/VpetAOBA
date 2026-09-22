@@ -57,13 +57,7 @@ class MainActivity : AppCompatActivity() {
         refreshStatus()
         refreshSizeHints()
         maybePromptOwner()
-        PetProfileStore.checkBirthdayToasts(this).let { msgs ->
-            if (msgs.isNotEmpty()) BirthdayGiftUi.showMessages(this, msgs)
-        }
-        FoodInventoryStore.ensureSeeded(this)
-        if (WalletStore.tryDailyLoginCoin(this)) {
-            Toast.makeText(this, "每日登录礼：金币 +1", Toast.LENGTH_SHORT).show()
-        }
+        scheduleStartupMaintenance()
     }
 
     override fun onResume() {
@@ -71,6 +65,23 @@ class MainActivity : AppCompatActivity() {
         refreshStatus()
         refreshSizeHints()
         maybePromptOwner()
+    }
+
+    /**
+     * 非首屏必需的存档迁移、每日礼和生日提示放到首帧之后。
+     * 仍在每次启动时完整执行，但不会与布局 inflate / 首次绘制争用主线程。
+     */
+    private fun scheduleStartupMaintenance() {
+        binding.root.post {
+            if (isFinishing || isDestroyed) return@post
+            PetProfileStore.checkBirthdayToasts(this).let { msgs ->
+                if (msgs.isNotEmpty()) BirthdayGiftUi.showMessages(this, msgs)
+            }
+            FoodInventoryStore.ensureSeeded(this)
+            if (WalletStore.tryDailyLoginCoin(this)) {
+                Toast.makeText(this, "每日登录礼：金币 +1", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun maybePromptOwner() {
