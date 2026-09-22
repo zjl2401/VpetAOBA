@@ -2,18 +2,18 @@
 #   %USERPROFILE%\Desktop\VpetAOBA      → 苍叶（KIND=aoba）
 #   %USERPROFILE%\Desktop\VpetEidenPet  → 伊得（KIND=eiden）
 # 并刷新桌面快捷方式。
+# 源码根：VpetPNG\（不再使用过时的 VpetPNG\1.0 副本）
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-if (-not (Test-Path (Join-Path $repoRoot "VpetPNG\1.0\pet.py"))) {
-  # 若脚本放在仓库根目录
-  if (Test-Path (Join-Path $PSScriptRoot "VpetPNG\1.0\pet.py")) {
+if (-not (Test-Path (Join-Path $repoRoot "VpetPNG\pet.py"))) {
+  if (Test-Path (Join-Path $PSScriptRoot "VpetPNG\pet.py")) {
     $repoRoot = $PSScriptRoot
   } elseif (Test-Path (Join-Path $PSScriptRoot "pet.py")) {
     $repoRoot = Split-Path -Parent $PSScriptRoot
   }
 }
-$src = Join-Path $repoRoot "VpetPNG\1.0"
+$src = Join-Path $repoRoot "VpetPNG"
 if (-not (Test-Path (Join-Path $src "pet.py"))) {
   Write-Host "找不到源码: $src\pet.py" -ForegroundColor Red
   exit 1
@@ -44,14 +44,15 @@ $copyFiles = @(
 
 function Resolve-PetCodeDir([string]$root) {
   $cands = @(
+    (Join-Path $root "VpetPNG"),
+    $root,
     (Join-Path $root "VpetPNG\1.0"),
-    (Join-Path $root "1.0"),
-    $root
+    (Join-Path $root "1.0")
   )
   foreach ($c in $cands) {
     if (Test-Path (Join-Path $c "pet.py")) { return $c }
   }
-  $preferred = Join-Path $root "VpetPNG\1.0"
+  $preferred = Join-Path $root "VpetPNG"
   New-Item -ItemType Directory -Force -Path $preferred | Out-Null
   return $preferred
 }
@@ -65,44 +66,24 @@ function Sync-OnePet($target) {
     New-Item -ItemType Directory -Force -Path $root | Out-Null
   }
 
-  # 若是 git 仓库，尽量拉到功能分支
-  $gitDir = Join-Path $root ".git"
-  if (Test-Path $gitDir) {
-    Push-Location $root
-    try {
-      git fetch origin 2>$null
-      git checkout cursor/auto-restore-companion-c4c2 2>$null
-      git pull origin cursor/auto-restore-companion-c4c2 2>$null
-      Write-Host "[$label] git 已尝试更新到 cursor/auto-restore-companion-c4c2" -ForegroundColor Cyan
-    } catch {
-      Write-Host "[$label] git 更新跳过: $_" -ForegroundColor DarkYellow
-    } finally {
-      Pop-Location
-    }
-  }
-
   $dest = Resolve-PetCodeDir $root
   foreach ($f in $copyFiles) {
     $from = Join-Path $src $f
     if (-not (Test-Path $from)) { continue }
     Copy-Item -Force -Path $from -Destination (Join-Path $dest $f)
   }
-  # 角色标记：双开时凭文件夹/KIND 自动识别，面板显示对应「友情」
   Set-Content -Path (Join-Path $dest "KIND.txt") -Value $kind -Encoding UTF8
-  # 根目录也放一份，方便从仓库根启动
   Set-Content -Path (Join-Path $root "KIND.txt") -Value $kind -Encoding UTF8
-  # 版本戳：方便确认桌面目录是否已同步到最新源码（勿再跑旧 exe）
   $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
   $stampBody = @"
-branch=cursor/auto-restore-companion-c4c2
 kind=$kind
 synced_at=$stamp
 prefer=pet.py
+source=VpetPNG
 "@
   Set-Content -Path (Join-Path $dest "SYNC_STAMP.txt") -Value $stampBody -Encoding UTF8
   Set-Content -Path (Join-Path $root "SYNC_STAMP.txt") -Value $stampBody -Encoding UTF8
 
-  # 该目录默认启动脚本（优先 pet.py，避免旧 release exe 挡住更新）
   $boot = Join-Path $dest "启动本宠.bat"
   $bootBody = @"
 @echo off
@@ -142,7 +123,6 @@ foreach ($t in $targets) {
   $results += Sync-OnePet $t
 }
 
-# 桌面快捷方式分别指向两个目录
 $shell = New-Object -ComObject WScript.Shell
 $icon = Join-Path $src "app_icon.ico"
 foreach ($r in $results) {

@@ -1,6 +1,6 @@
 # VpetMobile（双端手机版 · 1C + KMP）
 
-与电脑版 **`VpetPNG/1.0` 完全独立**：本目录是 Android + 共享 KMP + iOS 房间壳，**不为手机需求大改桌面**。
+与电脑版 **`VpetPNG` 完全独立**：本目录是 Android + 共享 KMP + iOS 房间壳，**不为手机需求大改桌面**。
 
 ## 架构
 

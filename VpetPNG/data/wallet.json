@@ -1,5 +1,5 @@
 {
-  "coins": 61,
+  "coins": 75,
   "items": {
     "seed_wheat": 7,
     "seed_berry": 4,
@@ -23,7 +23,7 @@
     "flour": 0,
     "corn_flakes": 0
   },
-  "last_daily_coin_ymd": "2026-09-16",
+  "last_daily_coin_ymd": "2026-09-21",
   "farm_action_ymd": "",
   "farm_actions": 0,
   "farm_offline_ymd": "2026-09-16",

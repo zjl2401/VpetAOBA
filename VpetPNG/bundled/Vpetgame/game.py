@@ -757,7 +757,7 @@ def _allmate_asset_candidates(filename: str) -> list[Path]:
 def _desktop_asset_candidates(*parts: str) -> list[Path]:
     """桌宠工程 assets（minipet / sprites）相对 RPG 包的候选路径。"""
     bases = [
-        ROOT.parent.parent / "assets",  # VpetPNG/1.0/assets
+        ROOT.parent.parent / "assets",  # VpetPNG/assets
         ROOT.parent.parent.parent / "assets",
         ROOT.parent / "assets",  # bundled/assets（若有）
         Path.cwd() / "assets",

@@ -1,6 +1,6 @@
 # VpetMobile 对照复现清单（诚实版）
 
-> 对照源：`VpetPNG/1.0/PRE_VOICE_BASELINE.md` + `FEATURES.md` + `pet.py`  
+> 对照源：`VpetPNG/PRE_VOICE_BASELINE.md` + `FEATURES.md` + `pet.py`  
 > 原则：对照抄行为与常量，不整包搬 `pet.py`；**桌面禁止为本需求大改**。  
 > **交差门禁**：Phase 6 按基线逐条勾选通过后才算完成；壳/假 ✅ 不算交差。  
 > 可视化计划：Cursor Canvas `vpet-mobile-repro-plan`
@@ -134,9 +134,9 @@ Phase 0–5 能力已接入 Android；Phase 6 补 hurt / 莱姆结算 / 退出 e
 
 | 用途 | 路径 |
 |------|------|
-| 主程序 | `VpetPNG/1.0/pet.py` |
-| 功能清单 | `VpetPNG/1.0/FEATURES.md` |
-| 验收基线 | `VpetPNG/1.0/PRE_VOICE_BASELINE.md` |
+| 主程序 | `VpetPNG/pet.py` |
+| 功能清单 | `VpetPNG/FEATURES.md` |
+| 验收基线 | `VpetPNG/PRE_VOICE_BASELINE.md` |
 | 手机入口 | `VpetMobile/.../MainActivity.kt` |
 | 悬浮 | `VpetMobile/.../PetOverlayService.kt` |
 | 共享核心 | `VpetMobile/shared/` |
@@ -148,6 +148,6 @@ Phase 0–5 能力已接入 Android；Phase 6 补 hurt / 莱姆结算 / 退出 e
 
 1. 一次只做一个 Phase，验收过再开下一个。  
 2. 禁止壳打 ✅；已知限制必须写进清单。  
-3. 桌面 `VpetPNG/1.0` 不为手机需求大改。  
+3. 桌面 `VpetPNG` 不为手机需求大改。  
 4. **交差**：上表「手测」项由你确认后，才算正式交差。  
 5. **双端**：以本清单 MVP 为唯一对等基线；平台差异写入「已知限制 · iOS」。

@@ -70,6 +70,315 @@ _GAME_EXES = frozenset(
         "robloxplayerbeta.exe",
     }
 )
+_CODE_EXES = frozenset(
+    {
+        "code.exe",
+        "code - insiders.exe",
+        "cursor.exe",
+        "devenv.exe",
+        "idea64.exe",
+        "idea.exe",
+        "pycharm64.exe",
+        "pycharm.exe",
+        "webstorm64.exe",
+        "clion64.exe",
+        "goland64.exe",
+        "rider64.exe",
+        "androidstudio64.exe",
+        "sublime_text.exe",
+        "notepad++.exe",
+        "zed.exe",
+        "windsurf.exe",
+        "trae.exe",
+    }
+)
+_STUDY_EXES = frozenset(
+    {
+        "winword.exe",
+        "word.exe",
+        "acrobat.exe",
+        "acrord32.exe",
+        "foxitreader.exe",
+        "foxitpdfreader.exe",
+        "notion.exe",
+        "obsidian.exe",
+        "anki.exe",
+        "anki-console.exe",
+        "zotero.exe",
+        "caxa.pdf.exe",
+    }
+)
+_OFFICE_EXES = frozenset(
+    {
+        "winword.exe",
+        "word.exe",
+        "excel.exe",
+        "powerpnt.exe",
+        "powerpoint.exe",
+        # OneNote 归记事场景（手写/便签感），见 _NOTE_EXES
+        "outlook.exe",
+        "outlookforwindows.exe",
+        "olk.exe",  # 新版 Outlook
+        "teams.exe",
+        "ms-teams.exe",
+        "ms-teams_exe",
+        "wps.exe",
+        "et.exe",  # WPS 表格
+        "wpp.exe",  # WPS 演示
+        "wpspdf.exe",
+        "wpsoffice.exe",
+        "wpscloudsvr.exe",
+        "prometheus.exe",  # 部分 WPS 进程
+        "kingsoftpresentation.exe",
+        "soffice.bin",  # LibreOffice
+        "soffice.exe",
+        "scalc.exe",
+        "simpress.exe",
+        "swriter.exe",
+        "notion.exe",
+        "feishudocs.exe",
+    }
+)
+_CHAT_EXES = frozenset(
+    {
+        "wechat.exe",
+        "weixin.exe",
+        "wechatappex.exe",  # 微信内嵌网页/小程序宿主
+        "wechatapp.exe",
+        "qq.exe",
+        "qqnt.exe",
+        "tim.exe",
+        "discord.exe",
+        "telegram.exe",
+        "telegram desktop.exe",
+        "slack.exe",
+        "feishu.exe",
+        "lark.exe",
+        "dingtalk.exe",
+        "dingding.exe",
+        "wxwork.exe",
+        "wxworkweb.exe",
+        "skype.exe",
+        "line.exe",
+        "whatsapp.exe",
+        "signal.exe",
+    }
+)
+# 绘画软件（→ paint 场景：draw + picture）
+_PAINT_EXES = frozenset(
+    {
+        "photoshop.exe",
+        "illustrator.exe",
+        "clipstudio.exe",
+        "clipstudiopaint.exe",
+        "csp.exe",
+        "sai.exe",
+        "sai2.exe",
+        "painttoolsaiver2.exe",
+        "painttoolsaiver3.exe",
+        "krita.exe",
+        "medibangpaintpro.exe",
+        "firealpaca.exe",
+        "mspaint.exe",
+        "paint.exe",
+        "pbrush.exe",
+        "figma.exe",
+        "affinityphoto.exe",
+        "affinitydesigner.exe",
+        "affinityphoto2.exe",
+        "affinitydesigner2.exe",
+        "coreldraw.exe",
+        "gimp.exe",
+        "gimp-2.10.exe",
+        "aseprite.exe",
+        "sketchbook.exe",
+        "infinitepainter.exe",
+        "procreate.exe",
+        "blender.exe",  # 建模画布也常当绘画席
+        "opencanvas.exe",
+        "opencanvas7.exe",
+        "ibispaint.exe",
+        "pixilart.exe",
+        "pixelorama.exe",
+        "azpainter.exe",
+        "azpainter2.exe",
+        "mypaint.exe",
+    }
+)
+# 记事 / 手写便签（→ note 场景：仅 draw）
+_NOTE_EXES = frozenset(
+    {
+        "stikynot.exe",  # Sticky Notes
+        "microsoft.notes.exe",
+        "onenote.exe",
+        "onenoteim.exe",
+        "onnotenm.exe",
+        "notepad.exe",
+        "write.exe",
+        "wordpad.exe",
+        "simplenote.exe",
+        "joplin.exe",
+        "standardnotes.exe",
+        "notion calendar.exe",
+        "nebo.exe",
+        "goodnotes.exe",
+        "xournal++.exe",
+        "xournalpp.exe",
+        "onesnote.exe",
+    }
+)
+# 窗口类名片段（小写）— 微信/QQ 标题常只有联系人名，靠类名补判
+_CHAT_CLASS_KEYS = (
+    "wechatmainwndforpc",
+    "wechat",
+    "weixin",
+    "chrome_widgetwin_",  # 微信 NT / QQ NT 常为此类；需配合 exe
+    "txguifoundation",
+    "qqbrowserdoc",
+    "oipchat",
+)
+_OFFICE_CLASS_KEYS = (
+    "xlmain",  # Excel
+    "pptframeclass",
+    "framework::cframewnd",
+    "opusapp",  # Word（也可学习）
+    "rctrl_renwnd32",  # Outlook
+    "netuihwnd",
+)
+_CODE_TITLE_KEYS = (
+    "visual studio code",
+    "vscode",
+    "- cursor",
+    "cursor -",
+    "intellij",
+    "pycharm",
+    "webstorm",
+    "goland",
+    "clion",
+    "android studio",
+    "sublime text",
+    "github.dev",
+    "gitlab",
+)
+_STUDY_TITLE_KEYS = (
+    "作业",
+    "论文",
+    "课件",
+    "复习",
+    "考试",
+    "课程",
+    "textbook",
+    "homework",
+    "assignment",
+    "thesis",
+    "lecture",
+    "anki",
+    "notion",
+    "obsidian",
+    ".pdf",
+    "word",
+)
+_OFFICE_TITLE_KEYS = (
+    "excel",
+    "powerpoint",
+    "microsoft word",
+    "microsoft excel",
+    "microsoft powerpoint",
+    "microsoft 365",
+    "microsoft teams",
+    ".xlsx",
+    ".xls",
+    ".pptx",
+    ".ppt",
+    ".docx",  # 办公文档常在标题
+    "outlook",
+    "teams",
+    "会议",
+    "报表",
+    "周报",
+    "日报",
+    "表格",
+    "幻灯片",
+    "wps",
+    "docs.google",
+    "sheets.google",
+    "slides.google",
+    "office.com",
+    "outlook.office",
+    "outlook.live",
+    "onedrive",
+    "sharepoint",
+    "飞书文档",
+    "钉钉文档",
+    "石墨文档",
+    "腾讯文档",
+    "语雀",
+    "notion",
+)
+_CHAT_TITLE_KEYS = (
+    "微信",
+    "wechat",
+    "weixin",
+    "qq",
+    "tim",
+    "discord",
+    "telegram",
+    "slack",
+    "飞书",
+    "lark",
+    "钉钉",
+    "dingtalk",
+    "企业微信",
+    "会话",
+    "聊天",
+    "消息",
+    "web.whatsapp",
+    "web.telegram",
+)
+_PAINT_TITLE_KEYS = (
+    "photoshop",
+    "illustrator",
+    "clip studio",
+    "clipstudio",
+    "paint tool sai",
+    "painttool sai",
+    "krita",
+    "medibang",
+    "firealpaca",
+    "画图",
+    "mspaint",
+    "figma",
+    "affinity photo",
+    "affinity designer",
+    "coreldraw",
+    "gimp",
+    "aseprite",
+    "sketchbook",
+    "绘画",
+    "画板",
+    "pixel art",
+    "opencanvas",
+    "ibispaint",
+    "azpainter",
+    "mypaint",
+)
+_NOTE_TITLE_KEYS = (
+    "sticky notes",
+    "便签",
+    "记事本",
+    "记事",
+    "onenote",
+    "one note",
+    "notebook",
+    "手写",
+    "手账",
+    "journal",
+    "xournal",
+    "nebo",
+    "goodnotes",
+    "simplenote",
+    "joplin",
+)
 # 标题 / 页签里常见片段（小写匹配）；含域名碎片，适配「看片后标题只剩片名」前后仍带站点的情况
 _VIDEO_TITLE_KEYS = (
     "youtube",
@@ -206,46 +515,128 @@ _BROWSER_EXES = frozenset(
 )
 
 
-def _get_foreground_info() -> tuple[str, str]:
-    """返回 (exe_name_lower, window_title)。"""
+def _get_foreground_info() -> tuple[str, str, str]:
+    """返回 (exe_name_lower, window_title, class_name_lower)。"""
     if sys.platform != "win32":
-        return "", ""
+        return "", "", ""
     try:
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
-            return "", ""
+            return "", "", ""
         length = int(user32.GetWindowTextLengthW(hwnd) or 0)
         buf = ctypes.create_unicode_buffer(length + 2)
         user32.GetWindowTextW(hwnd, buf, length + 2)
         title = (buf.value or "").strip()
 
+        cls_buf = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, cls_buf, 256)
+        cls = (cls_buf.value or "").strip().lower()
+
         pid = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         if not pid.value:
-            return "", title
+            return "", title, cls
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         hproc = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
         if not hproc:
-            return "", title
+            return "", title, cls
         try:
             size = wintypes.DWORD(512)
             path_buf = ctypes.create_unicode_buffer(512)
-            # QueryFullProcessImageNameW
             if not kernel32.QueryFullProcessImageNameW(hproc, 0, path_buf, ctypes.byref(size)):
-                return "", title
+                return "", title, cls
             path = (path_buf.value or "").replace("\\", "/").lower()
             exe = path.rsplit("/", 1)[-1] if path else ""
-            return exe, title
+            return exe, title, cls
         finally:
             kernel32.CloseHandle(hproc)
     except Exception:
-        return "", ""
+        return "", "", ""
 
 
 def _title_hit(title_l: str, keys: tuple[str, ...]) -> bool:
     return any(k in title_l for k in keys)
+
+
+def _class_hit(cls_l: str, keys: tuple[str, ...]) -> bool:
+    return any(k in cls_l for k in keys)
+
+
+def _looks_like_chat(exe: str, title_l: str, cls_l: str) -> bool:
+    if exe in _CHAT_EXES:
+        return True
+    if _title_hit(title_l, _CHAT_TITLE_KEYS):
+        return True
+    # 微信/QQ 等主窗类名（标题常只有联系人名）
+    if _class_hit(
+        cls_l,
+        (
+            "wechatmainwndforpc",
+            "wechatmainwnd",
+            "wechat",
+            "weixin",
+            "txguifoundation",
+            "qqbrowserdoc",
+            "oipchat",
+        ),
+    ):
+        return True
+    # Electron 壳（Chrome_WidgetWin）：必须配合聊天 exe，避免误伤其它 Electron 应用
+    if "chrome_widgetwin" in cls_l and exe in _CHAT_EXES:
+        return True
+    if exe in _BROWSER_EXES and _title_hit(
+        title_l,
+        (
+            "web.whatsapp",
+            "web.telegram",
+            "discord.com",
+            "feishu.cn/messenger",
+            "dingtalk.com",
+            "teams.microsoft",
+            "web.qq",
+            "slack.com",
+        ),
+    ):
+        return True
+    return False
+
+
+def _looks_like_office(exe: str, title_l: str, cls_l: str) -> bool:
+    if exe in _OFFICE_EXES:
+        return True
+    if _class_hit(cls_l, _OFFICE_CLASS_KEYS) and exe not in _CHAT_EXES:
+        # Word 类名也算办公（与学习重叠时办公优先于 none）
+        return True
+    if _title_hit(title_l, _OFFICE_TITLE_KEYS):
+        # 浏览器网页办公
+        if exe in _BROWSER_EXES or exe in _OFFICE_EXES or not exe:
+            return True
+        # 非浏览器也允许标题命中（如本地文件名带 xlsx）
+        if any(k in title_l for k in (".xlsx", ".xls", ".pptx", ".ppt", "excel", "powerpoint", "wps", "outlook", "teams")):
+            return True
+    return False
+
+
+def _looks_like_paint(exe: str, title_l: str) -> bool:
+    if exe in _PAINT_EXES:
+        return True
+    if _title_hit(title_l, _PAINT_TITLE_KEYS):
+        if exe in _BROWSER_EXES or exe in _PAINT_EXES or not exe:
+            return True
+        # 本地绘画文件名常见后缀
+        if any(k in title_l for k in (".psd", ".clip", ".kra", ".ora", ".xcf", ".sai", "figma")):
+            return True
+    return False
+
+
+def _looks_like_note(exe: str, title_l: str) -> bool:
+    if exe in _NOTE_EXES:
+        return True
+    if _title_hit(title_l, _NOTE_TITLE_KEYS):
+        return True
+    return False
 
 
 # 进程名缓存：避免每 tick 枚举全表（听音乐最小化检测用）
@@ -354,15 +745,19 @@ def video_source_still_alive(sticky_exe: str) -> bool:
 def classify_foreground() -> tuple[str, str]:
     """
     返回 (scene, signature)
-    scene: none | hold | music | video | game
+    scene: none | hold | music | video | game | code | study | office | chat | paint | note
     hold = 前台是桌宠自身，保持上一场景（避免点宠后立刻退出）
     signature: 始终带 exe（含 none），供「同进程粘住」；格式 exe|title前缀
     """
-    exe, title = _get_foreground_info()
+    exe, title, cls = _get_foreground_info()
     t = (title or "").lower()
+    cls_l = (cls or "").lower()
     sig = f"{exe}|{(title or '')[:64]}"
     # 本桌宠抢到前台时保持场景，不要当成「已离开」
-    if exe in ("python.exe", "pythonw.exe", "vpet.exe") and ("vpet" in t or not t):
+    # Tk 浮层（提示、侧栏）标题不一定带 Vpet，拖动时前台会在宠和软件间跳
+    if exe in ("python.exe", "pythonw.exe", "vpet.exe") and (
+        "vpet" in t or not t or "tk" in cls_l
+    ):
         return "hold", sig
     video_title = _title_hit(t, _VIDEO_TITLE_KEYS)
     music_title = _title_hit(t, _MUSIC_TITLE_KEYS)
@@ -378,16 +773,30 @@ def classify_foreground() -> tuple[str, str]:
         else:
             return "video", sig
     if exe in _GAME_EXES or _title_hit(t, _GAME_TITLE_KEYS):
-        # javaw / steam 需标题或非浏览器
         if exe == "javaw.exe" and not _title_hit(t, _GAME_TITLE_KEYS):
             pass
         elif exe == "steam.exe" and not _title_hit(t, _GAME_TITLE_KEYS) and t.strip() in ("", "steam"):
             pass
         else:
             return "game", sig
-    # 常见游戏：*-Win64-Shipping.exe / UnityCrashHandler 旁的主程序
     if exe.endswith("-win64-shipping.exe") or exe.endswith("_data.exe"):
         return "game", sig
     if "unity" in exe or exe.endswith("game.exe"):
         return "game", sig
+    # 聊天优先于办公（飞书/钉钉既开会又聊天时，前台会话窗更像 chat）
+    if _looks_like_chat(exe, t, cls_l):
+        return "chat", sig
+    if exe in _CODE_EXES or _title_hit(t, _CODE_TITLE_KEYS):
+        return "code", sig
+    if exe in _BROWSER_EXES and _title_hit(t, _CODE_TITLE_KEYS):
+        return "code", sig
+    # 绘画 / 记事：在办公之前，避免 Word 类名等误伤
+    if _looks_like_paint(exe, t):
+        return "paint", sig
+    if _looks_like_note(exe, t):
+        return "note", sig
+    if _looks_like_office(exe, t, cls_l):
+        return "office", sig
+    if exe in _STUDY_EXES or (exe in _BROWSER_EXES and _title_hit(t, _STUDY_TITLE_KEYS)):
+        return "study", sig
     return "none", sig

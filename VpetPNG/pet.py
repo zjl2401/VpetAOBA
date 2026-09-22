@@ -39,7 +39,10 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 from bundled_paths import LEGACY_GAME_ROOT, LEGACY_MUSIC_ROOT, resolve_bundled
 import app_scene_desktop
+import companion_quotes
 import desktop_clock
+import typing_pose
+import pointer_draw_pose
 import home_cottage as home_room
 import home_farm
 import pet_outfit
@@ -262,7 +265,7 @@ SPEECH_MEET_BUBBLE_STROKE = "#9EC8E8"
 SPEECH_MEET_BUBBLE_SHADOW = "#C8E0F4"
 SPEECH_MEET_BUBBLE_FG = "#1e3a5c"
 # aoba_launch 启动校验用修订号
-CODE_REV = "office-ia-home-friend-20260916"
+CODE_REV = "aoba-startup-gate-full-20260922"
 PEER_MEET_LINES: tuple[str, ...] = (
     "咦，怎么还有一个我？",
     "……你也是苍叶？",
@@ -369,6 +372,16 @@ GUIDE_TEXT_WRAP = 460
 DEFAULT_GALLERY_GROUPS: tuple[dict, ...] = (
     {"title": "站立", "files": ("stand.jpg",)},
     {"title": "开心", "files": ("happy1.jpg", "happy2.jpg")},
+    {"title": "打call", "files": ("cheer1.jpg", "cheer2.jpg")},
+    {"title": "送花", "files": ("flower1.jpg", "flower2.jpg")},
+    {"title": "害怕", "files": ("afraid1.jpg", "afraid2.jpg")},
+    {"title": "自豪", "files": ("pround1.jpg", "pround2.jpg", "pround3.jpg")},
+    {"title": "摊手", "files": ("shrug2.jpg",)},
+    {"title": "介绍", "files": ("shrug1.jpg",)},
+    {"title": "办公画画", "files": ("draw1.jpg", "draw2.jpg", "draw3.jpg", "picture1.jpg", "picture2.jpg", "picture3.jpg", "picture4.jpg", "picture5.jpg", "picture6.jpg")},
+    {"title": "绘画/记事·指针", "files": ("draw1.jpg", "draw2.jpg", "draw3.jpg", "draw1_m.jpg", "draw2_m.jpg", "draw3_m.jpg")},
+    {"title": "聊天/代码·工作", "files": ("work1.jpg", "work2.jpg", "work3.jpg")},
+    {"title": "办公·写字", "files": ("work_write1.jpg", "work_write2.jpg", "work_write3.jpg")},
     {"title": "打招呼", "files": ("hi1.jpg", "hi2.jpg")},
     {"title": "Wink", "files": ("wink.jpg",)},
     {"title": "点赞", "files": ("like.jpg",)},
@@ -1634,6 +1647,116 @@ def get_active_sprite_pack() -> str:
     return _ACTIVE_SPRITE_PACK if _ACTIVE_SPRITE_PACK in SPRITE_PACK_LABELS else SPRITE_PACK_NORMAL
 
 
+_BLACK_OUTER_RATIO_CACHE: float | None = None
+
+
+def _stand_content_long_side(*, black: bool) -> int:
+    """站姿内容包围盒长边（抠绿后，不去掉美术黑框）。"""
+    path: Path | None = None
+    if black:
+        for cand in (
+            CUTOUT_DIR / "sprites_black" / "stand.png",
+            ASSETS_DIR / "sprites_black" / "stand.png",
+            ASSETS_DIR / "sprites_black" / "stand.jpg",
+        ):
+            if cand.is_file():
+                path = cand
+                break
+    else:
+        for cand in (
+            CUTOUT_DIR / "sprites" / "stand.png",
+            SPRITES_DIR / "stand.png",
+            SPRITES_DIR / "stand.jpg",
+        ):
+            if cand.is_file():
+                path = cand
+                break
+    if path is None or not path.is_file():
+        return 1
+    try:
+        img = Image.open(path)
+        prekeyed = _path_is_prekeyed(path)
+        rgba = img.convert("RGBA") if prekeyed else _remove_green(img)
+        bbox = rgba.getbbox()
+        if not bbox:
+            return 1
+        return max(1, bbox[2] - bbox[0], bbox[3] - bbox[1])
+    except Exception:
+        return 1
+
+
+def black_frame_outer_ratio() -> float:
+    """黑框相对普通：同一缩放倍数下外圈大约大一圈。"""
+    global _BLACK_OUTER_RATIO_CACHE
+    if _BLACK_OUTER_RATIO_CACHE is not None:
+        return float(_BLACK_OUTER_RATIO_CACHE)
+    normal = float(_stand_content_long_side(black=False))
+    framed = float(_stand_content_long_side(black=True))
+    if framed > 1 and normal > 1:
+        ratio = framed / normal
+    else:
+        ratio = 1.125
+    ratio = max(1.12, min(1.35, ratio))
+    _BLACK_OUTER_RATIO_CACHE = ratio
+    return ratio
+
+
+def pack_render_size(logical_size: int) -> int:
+    """实际立绘/窗口边长。缩放倍数与普通档相同，黑框只外扩画布。"""
+    try:
+        logical = max(1, int(logical_size))
+    except Exception:
+        logical = DEFAULT_SIZE
+    if get_active_sprite_pack() != SPRITE_PACK_BLACK:
+        return logical
+    return max(logical, int(round(logical * black_frame_outer_ratio())))
+
+
+def _logical_size_for_scale(display_size: int) -> int:
+    """把当前画布边长还原成大小档位（黑框 render → logical）。"""
+    try:
+        ds = max(1, int(display_size))
+    except Exception:
+        ds = DEFAULT_SIZE
+    if get_active_sprite_pack() != SPRITE_PACK_BLACK:
+        return ds
+    for logical in SIZE_PRESETS.values():
+        if int(pack_render_size(int(logical))) == ds:
+            return int(logical)
+    snapped = _snap_display_size(ds)
+    if snapped == ds:
+        return snapped
+    ratio = black_frame_outer_ratio()
+    if ratio > 1.001:
+        return _snap_display_size(int(round(ds / ratio)))
+    return snapped
+
+
+def _load_pack_stand_rgba(*, black: bool, cap_size: int) -> Image.Image:
+    """直接读普通/黑框 stand，不切换当前图组。"""
+    paths: list[Path] = (
+        [
+            CUTOUT_DIR / "sprites_black" / "stand.png",
+            SPRITES_BLACK_DIR / "stand.png",
+            SPRITES_BLACK_DIR / "stand.jpg",
+        ]
+        if black
+        else [
+            CUTOUT_DIR / "sprites" / "stand.png",
+            SPRITES_DIR / "stand.png",
+            SPRITES_DIR / "stand.jpg",
+        ]
+    )
+    path = next((p for p in paths if p.is_file()), None)
+    if path is None:
+        return Image.new("RGBA", (8, 8), (0, 0, 0, 0))
+    img = Image.open(path)
+    rgba = img.convert("RGBA") if _path_is_prekeyed(path) else _remove_green(img)
+    if max(rgba.size) > max(int(cap_size) * 5, 512):
+        rgba = _cap_source_image(rgba, cap_size)
+    return rgba
+
+
 @contextlib.contextmanager
 def _sprite_pack_override(pack: str):
     """with 块内按指定图组读立绘（不影响用户当前普通/黑框设置）。"""
@@ -1731,6 +1854,17 @@ CORE_OUTFIT_SPRITE_FILES: tuple[str, ...] = (
     "happy1.jpg",
     "happy2.jpg",
     "happy.jpg",
+    "cheer1.jpg",
+    "cheer2.jpg",
+    "flower1.jpg",
+    "flower2.jpg",
+    "afraid1.jpg",
+    "afraid2.jpg",
+    "pround1.jpg",
+    "pround2.jpg",
+    "pround3.jpg",
+    "shrug1.jpg",
+    "shrug2.jpg",
     "sleep1.jpg",
     "sleep2.jpg",
     "walkfront1.jpg",
@@ -1818,10 +1952,12 @@ def _resolve_sprite_filename(filename: str, persona: str | None = None) -> str:
 
 
 def _clear_sprite_image_caches() -> None:
+    global _BLACK_OUTER_RATIO_CACHE
     _SOURCE_FILE_CACHE.clear()
     _PROCESSED_CANVAS_CACHE.clear()
     _GALLERY_RGB_CACHE.clear()
     _REF_SCALE_CACHE.clear()
+    _BLACK_OUTER_RATIO_CACHE = None
 
 
 def set_strip_outer_black(enabled: bool) -> None:
@@ -2274,6 +2410,13 @@ INTERACT_DURATIONS: dict[str, int] = {
     "sad": 5000,
     "idea": 4000,
     "happy": 1720,  # HAPPY_CYCLES×2×HAPPY_HALF_MS + 余量
+    "cheer": 1720,
+    "flower": 2000,
+    "afraid": 2000,
+    "proud": 4000,
+    "shrug": 1500,
+    "introduce": 1500,
+    "office_draw": 6000,
     "kick": 1200,
     "shy": 3600,
     "wink": WINK_DURATION_MS,
@@ -2340,6 +2483,8 @@ REST_BOBBLE_PAUSE_MIN_MS = 2500
 REST_BOBBLE_PAUSE_MAX_MS = 4500
 # 轮询：兼顾进场手感与卡顿（过密会拖主线程）
 APP_SCENE_POLL_MS = 1600
+TYPING_POSE_POLL_MS = 90
+TYPING_POSE_HOLD_MS = 420
 # 切到「其它进程」后需连续多次未命中才退出（墙钟约 12s）
 APP_SCENE_MISS_EXIT = 8  # ≈13s @1600ms
 # 同浏览器仍在前台，但标题已不是视频/音乐/游戏：软退出
@@ -2593,6 +2738,80 @@ MINI_PET_TURN_AXIS_RATIO = 1.4
 SAD_SQUAT_MS = 1000
 SAD_SAD1_MS = 1000
 SAD_SAD2_MS = 3000
+FLOWER_FRAME1_MS = 1000
+FLOWER_FRAME2_MS = 1000
+AFRAID_FRAME_MS = 1000
+PROUD_HOLD1_MS = 1000
+PROUD_LOOP_HALF_MS = 500
+PROUD_LOOPS = 3
+SHRUG_HOLD_MS = 1500
+OFFICE_DRAW_FRAME_MS = 1000
+OFFICE_DRAW_FILES: tuple[str, ...] = ("draw1.jpg", "draw2.jpg", "draw3.jpg")
+OFFICE_PICTURE_FILES: tuple[str, ...] = (
+    "picture1.jpg",
+    "picture2.jpg",
+    "picture3.jpg",
+    "picture4.jpg",
+    "picture5.jpg",
+    "picture6.jpg",
+)
+# 聊天 / 代码页面识别：work1–3 随机切图 + 侧向像素窗
+WORK_LIGHT_FILES: tuple[str, ...] = ("work1.jpg", "work2.jpg", "work3.jpg")
+WORK_WRITE_FILES: tuple[str, ...] = ("work_write1.jpg", "work_write2.jpg", "work_write3.jpg")
+WORK_LIGHT_POSE_KINDS = frozenset({"chat", "code", "office"})
+# 绘画 / 记事页面识别姿
+DRAW_SCENE_KINDS = frozenset({"paint", "note"})
+# 前台软件会自动进入的情景；设置里可逐个关闭
+SCENE_DETECT_ITEMS: tuple[tuple[str, str], ...] = (
+    ("music", "音乐"),
+    ("chat", "聊天"),
+    ("code", "代码"),
+    ("study", "学习"),
+    ("office", "办公"),
+    ("paint", "绘画"),
+    ("note", "记事"),
+    ("game", "游戏"),
+    ("video", "视频"),
+)
+SCENE_DETECT_KEYS = frozenset(kind for kind, _label in SCENE_DETECT_ITEMS)
+DRAW_SCENE_FRAME_MS = 1000
+DRAW_SCENE_POINTER_POLL_MS = 120
+DRAW_SCENE_POINTER_HOLD_MS = 900  # 指针移动/落笔后保持区位姿
+WORK_LIGHT_FRAME_MS = 1000
+WORK_LIGHT_FX_MS = 160
+WORK_LIGHT_FX_W = 120
+WORK_LIGHT_FX_H = 98
+WORK_LIGHT_FX_GAP = 8
+# 办公 / 记事侧栏默认文案；行数固定，双击面板只改文字
+WORK_LIGHT_OFFICE_LINES: tuple[str, ...] = ("会议 10:00", "回邮件", "整理表", "提交稿")
+WORK_LIGHT_NOTE_LINES: tuple[str, ...] = ("买菜", "记得回", "明天交", "别忘了")
+# 聊天窗台词：(文字, 表情包键)。表情包用像素小图，不依赖系统字体。
+WORK_LIGHT_CHAT_LINES: tuple[tuple[str, str | None], ...] = (
+    ("在吗?", None),
+    ("嗯嗯!", "smile"),
+    ("好的~", "ok"),
+    ("哈哈哈", "laugh"),
+    ("收到!", "thumb"),
+    ("稍等…", "wait"),
+    ("OK!", "ok"),
+    ("", "heart"),
+    ("可爱", "heart"),
+    ("", "star"),
+    ("？？", "ask"),
+    ("", "spark"),
+    ("晚安", "zzz"),
+    ("", "laugh"),
+)
+WORK_LIGHT_CODE_LINES: tuple[str, ...] = (
+    "def pet():",
+    "  smile()",
+    "  hop()",
+    "while True:",
+    "  draw()",
+    "  tick()",
+    "return ok",
+    "print('hi')",
+)
 MINI_PET_SIDE_GAP = 6
 MINI_PET_SAD_GAP = 22
 MINI_PET_ANGRY_GAP = 20
@@ -2641,6 +2860,9 @@ SPRITE_BATCH_MS = 8
 # 切尺寸：先瞬时占位上屏；完整立绘后台小批量转，避免主线程一次转完卡死
 SIZE_SWITCH_SPRITE_BATCH_SIZE = 10
 SIZE_SWITCH_SPRITE_BATCH_MS = 1
+# 开场：更大批量、零间隔，尽快转完当前档正式套图
+STARTUP_SPRITE_BATCH_SIZE = 64
+STARTUP_SPRITE_BATCH_MS = 0
 PERSONA_SPRITE_BATCH_SIZE = 48
 PERSONA_SPRITE_BATCH_MS = 8
 UI_BUSY_LAG_THRESHOLD_MS = 800
@@ -2722,33 +2944,31 @@ PIXEL_BLOCK_DISSOLVE_FRAMES = EXIT_DISSOLVE_FRAMES
 VPET_ANIM_PALETTE = ("#ff3d9a", "#ff7ec8", "#66a8ff", "#88ccff", "#d6f0ff", "#ffffff")
 COMPANION_ANIM_PALETTE = ("#071433", "#0d2a5c", "#1a4a9a", "#2f74d6", "#6eb6ff", "#cfe8ff")
 PIXEL_REASSEMBLY_CYCLE = 36
-STARTUP_WATCHDOG_MS = 10000
-# 首次打开（且仅一只时）：静置预热可稍长；多开时绝不走长预热
-STARTUP_FIRST_WARMUP_MS = 14000
-# 非首次 / 多开：极短静置；走动帧一齐就结束 sleep 占位
-STARTUP_REPEAT_WARMUP_MS = 160
-# 非首次：从启动到离开 sleep 的硬上限（入场+预热合计，目标 15s 内）
-STARTUP_REPEAT_TO_FREE_CAP_MS = 12000
-# 首次尺寸未齐时最多再延几拍（每拍 800ms）
-STARTUP_WARMUP_EXTEND_MAX = 5
-STARTUP_WARMUP_TIP_ROTATE_MS = 3500
+# 首次：极短静置；最小走动套就绪就进自由，全量立绘后台补
+STARTUP_FIRST_WARMUP_MS = 1200
+# 非首次 / 多开：极短静置
+STARTUP_REPEAT_WARMUP_MS = 120
+# 非首次：从启动到离开 loading 的硬上限
+STARTUP_REPEAT_TO_FREE_CAP_MS = 10000
+# 首次：硬上限
+STARTUP_FIRST_TO_FREE_CAP_MS = 12000
+# 当前档未齐时最多再延几拍（每拍 200ms）
+STARTUP_WARMUP_EXTEND_MAX = 24
+STARTUP_WARMUP_TIP_ROTATE_MS = 1400
 STARTUP_WARMUP_TIPS_FIRST = (
-    "第一次启动会初始化大约十几秒",
-    "在准备桌宠尺寸与设置",
-    "完成后会进入所属人设置",
-    "之后再打开就会快很多",
+    "正在加速加载资源",
+    "马上就能互动",
+    "其它档位进自由后再补",
 )
 STARTUP_WARMUP_TIPS_REPEAT = (
     "启动中",
 )
-# 非首次 / 多开入场最长等待
-STARTUP_REPEAT_ENTRANCE_MAX_MS = 900
-STARTUP_MULTI_ENTRANCE_MAX_MS = 700
-# 入场至少露脸这么久；就绪后即可收束（功能：像素入场仍在，只减空等）
-STARTUP_ENTRANCE_VISIBLE_MIN_MS = 360
-STARTUP_MULTI_ENTRANCE_MIN_MS = 260
-# 加载动画最长等待：超时强制进入，避免一直停在等待条
-LOADING_MAX_WAIT_MS = 7000
+STARTUP_WATCHDOG_MS = 8000
+STARTUP_REPEAT_ENTRANCE_MAX_MS = 560
+STARTUP_MULTI_ENTRANCE_MAX_MS = 420
+STARTUP_ENTRANCE_VISIBLE_MIN_MS = 220
+STARTUP_MULTI_ENTRANCE_MIN_MS = 160
+LOADING_MAX_WAIT_MS = 3600
 COMPANION_LOAD_MAX_MS = 6000
 SIZE_LOAD_MAX_MS = 4200
 PIXEL_DISSOLVE_STYLES = ("radial", "spiral", "rain", "burst")
@@ -4214,10 +4434,9 @@ GUIDE_TOPICS: dict[str, dict] = {
             "· 漫步：只走动\n"
             "· 睡眠：休息；体力过低会自动入睡\n"
             "· 音乐：边走边听 BGM\n"
-            "· 工作：\n"
+            "· 送货：模式 → 情景 → 送货\n"
             "　　自由：终点在旗脚；「结束」跟在旗旁，点了才停\n"
-            "　　自定义：箱数或时间到回自由；终点同样跟旗脚\n"
-            "　　旗/箱显示只在「模式 → 工作 → 设置」里开关\n"
+            "　　定义：箱数或时间到回自由；终点同样跟旗脚\n"
             "· 游戏 / 家园：见对应专题"
         ),
     },
@@ -4378,7 +4597,7 @@ ONCE_HINTS: dict[str, str] = {
     "rhythm_game": "音乐：键位 D F J K。Esc 退出。",
     "companion_bar": "智能伴侣已开启。",
     "music_mode": "音乐漫步已开启：播内置曲。若检测到音乐软件，则跟听外部并可用控歌键切外部歌。",
-    "startup_warmup": "第一次启动会初始化大约十几秒，完成后再设置所属人昵称。",
+    "startup_warmup": "第一次启动会稍作准备，资源就绪后再设置所属人昵称。",
 }
 DEFAULT_VOCAB_WORDS: list[dict[str, str]] = [
     {"word": "苍叶", "meaning": "濑良垣苍叶，桌宠主角", "hint": "角色名"},
@@ -5427,6 +5646,13 @@ STATE_MULTI_CLICK: dict[str, tuple[str, ...]] = {
     "wink": ("😉 你懂的~", "嘿嘿~", "眨眼眨眼~"),
     "bixin": ("比心给你~", "爱心发射！", "收到了吗？"),
     "happy": ("超开心！", "耶——！", "今天也是好日子~"),
+    "cheer": ("打 call！", "耶耶耶——！", "气氛组就位！"),
+    "flower": ("送你一朵花~", "花给你！", "小心刺哦~"),
+    "afraid": ("好吓人…", "别过来…", "害怕怕…"),
+    "proud": ("哼哼，厉害吧！", "自豪一波~", "看我的！"),
+    "shrug": ("那就这样吧~", "我也没办法嘛…"),
+    "introduce": ("请多指教！", "我来介绍一下~", "认识一下吧！"),
+    "office_draw": ("画画中…", "这幅会好看的！", "再涂一笔~"),
     "sad": ("呜…", "别安慰了我更想哭…", "心里下雨了呢…"),
     "angry": ("哼！", "气鼓鼓！", "不理你了！"),
     "question": ("嗯？", "怎么回事？", "诶？？"),
@@ -5454,6 +5680,13 @@ INTERACT_BANTER: dict[str, tuple[str, ...]] = {
     "sad": ("呜…", "心里下雨了呢…"),
     "idea": ("有了！", "灵光一闪~"),
     "happy": ("耶——！", "超开心！"),
+    "cheer": ("打 call！", "氛围拉满！"),
+    "flower": ("送你花~", "花花给你！"),
+    "afraid": ("怕怕…", "别吓我…"),
+    "proud": ("自豪！", "看我厉害吧！"),
+    "shrug": ("摊手~", "没辙啦…"),
+    "introduce": ("请多指教！", "我是苍叶~"),
+    "office_draw": ("画画中…", "这幅会好看的！", "再涂一笔~"),
     "shy": ("///", "脸红了啦…"),
     "like": ("棒棒！", "给你点赞~"),
     "bixin": ("比心~", "爱你哦！", "传给你啦~"),
@@ -5982,13 +6215,13 @@ def _to_fixed_canvas(
 
 
 def _reference_scale(display_size: int) -> float:
+    """缩放倍数始终按普通 stand 装入逻辑档位；黑框共用同一倍数，只外扩画布。"""
     strip = strip_outer_black_enabled()
-    pack = get_active_sprite_pack()
-    cached = _REF_SCALE_CACHE.get((display_size, strip, pack))
+    logical = _logical_size_for_scale(display_size)
+    cached = _REF_SCALE_CACHE.get((logical, strip, "normal-body"))
     if cached is not None:
         return cached
-    img = _cap_source_image(_open_asset_image("stand.jpg"), display_size)
-    rgba = img.convert("RGBA") if img.info.get("vpet_prekeyed") else _remove_green(img)
+    rgba = _load_pack_stand_rgba(black=False, cap_size=logical)
     if strip:
         rgba = _remove_outer_black_frame(rgba)
     bbox = rgba.getbbox()
@@ -5997,8 +6230,8 @@ def _reference_scale(display_size: int) -> float:
     else:
         cropped = rgba.crop(bbox)
         crop_w, crop_h = cropped.size
-        scale = min(display_size / crop_w, display_size / crop_h)
-    _REF_SCALE_CACHE[(display_size, strip, pack)] = scale
+        scale = min(logical / float(crop_w), logical / float(crop_h))
+    _REF_SCALE_CACHE[(logical, strip, "normal-body")] = scale
     return scale
 
 
@@ -6091,6 +6324,337 @@ def _compose_side_scene(
     return canvas
 
 
+def _fixed_cycle(files: tuple[str, ...] | list[str]) -> list[str]:
+    """固定错位循环，观感像打乱，不每轮重洗。"""
+    seq = list(files)
+    n = len(seq)
+    if n <= 1:
+        return seq
+    order = {
+        3: (1, 2, 0),          # 2 → 3 → 1
+        6: (3, 0, 5, 1, 4, 2),  # 4 → 1 → 6 → 2 → 5 → 3
+    }.get(n)
+    if order is not None and len(order) == n:
+        return [seq[i] for i in order]
+    step = 2 if (n % 2) else max(1, n // 2 - 1)
+    if step % n == 0:
+        step = 1
+    return [seq[(i * step) % n] for i in range(n)]
+
+
+_DRAW_PICTURE_COMPOSE_CACHE: dict[tuple, Image.Image] = {}
+
+
+def _compose_draw_picture_frame(
+    draw_file: str,
+    picture_file: str,
+    display_size: int,
+) -> Image.Image:
+    """draw 与 picture 走同一套画布缩放，再叠在一起。"""
+    ref = _reference_scale(display_size)
+    key = (draw_file, picture_file, int(display_size), round(float(ref), 5))
+    cached = _DRAW_PICTURE_COMPOSE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    base = _get_processed_canvas(draw_file, display_size, ref).copy()
+    overlay = _get_processed_canvas(picture_file, display_size, ref)
+    base.alpha_composite(overlay)
+    if len(_DRAW_PICTURE_COMPOSE_CACHE) > 48:
+        _DRAW_PICTURE_COMPOSE_CACHE.clear()
+    _DRAW_PICTURE_COMPOSE_CACHE[key] = base
+    return base
+
+
+def _draw_chat_sticker(canvas: tk.Canvas, x: int, y: int, kind: str) -> int:
+    """聊天气泡里的像素表情包，返回占用宽度。"""
+    # 7×7，1=主色 2=辅色
+    packs: dict[str, tuple[str, str, tuple[str, ...]]] = {
+        "heart": ("#ff6a8a", "#ffd0dc", (
+            ".11.11.",
+            "1221221",
+            "1222221",
+            ".12221.",
+            "..121..",
+            "...1...",
+            ".......",
+        )),
+        "smile": ("#ffe08a", "#3a3228", (
+            "2.....2",
+            ".......",
+            ".......",
+            ".11111.",
+            "1.....1",
+            ".11111.",
+            ".......",
+        )),
+        "laugh": ("#ffe08a", "#ff6a8a", (
+            "2.1.1.2",
+            "..1.1..",
+            ".......",
+            ".22222.",
+            "2.....2",
+            ".11111.",
+            "1.....1",
+        )),
+        "ok": ("#7ad4a0", "#f4fff8", (
+            "....111",
+            "...12..",
+            "..12...",
+            ".12.1..",
+            "12..1..",
+            ".1..1..",
+            "..111..",
+        )),
+        "thumb": ("#ffd2a8", "#e09060", (
+            "..22...",
+            "..2211.",
+            "222211.",
+            ".22211.",
+            "..222..",
+            "..22...",
+            "..22...",
+        )),
+        "wait": ("#9fd0ea", "#f4fbff", (
+            "..111..",
+            ".1...1.",
+            ".1.2.1.",
+            ".1..21.",
+            ".1...1.",
+            "..111..",
+            ".......",
+        )),
+        "star": ("#ffe08a", "#fff6c8", (
+            "...1...",
+            "..121..",
+            ".12221.",
+            "1222221",
+            ".12221.",
+            "..121..",
+            "...1...",
+        )),
+        "ask": ("#c8b0ff", "#f4f0ff", (
+            "..111..",
+            ".1...1.",
+            "....11.",
+            "...11..",
+            "...1...",
+            ".......",
+            "...1...",
+        )),
+        "spark": ("#ffd0ea", "#fff0f8", (
+            "...1...",
+            ".1.1.1.",
+            "..111..",
+            "1111111",
+            "..111..",
+            ".1.1.1.",
+            "...1...",
+        )),
+        "zzz": ("#b8d4ff", "#f4f8ff", (
+            ".11111.",
+            "....1..",
+            "...1...",
+            "..111..",
+            ".1.....",
+            "11111..",
+            ".......",
+        )),
+    }
+    main, alt, rows = packs.get(kind) or packs["smile"]
+    px = 1
+    for row_i, row in enumerate(rows):
+        for col_i, ch in enumerate(row):
+            if ch == ".":
+                continue
+            color = main if ch == "1" else alt
+            x0 = x + col_i * px
+            y0 = y + row_i * px
+            canvas.create_rectangle(x0, y0, x0 + px, y0 + px, fill=color, outline=color)
+    return 8
+
+
+def _draw_work_light_chat_fx(
+    canvas: tk.Canvas,
+    w: int,
+    h: int,
+    phase: int,
+    lines: tuple | list | None = None,
+) -> None:
+    """像素风聊天窗：标题栏 + 文字/表情包气泡 + 输入闪烁。"""
+    canvas.delete("all")
+    canvas.create_rectangle(0, 0, w, h, fill="#1a2433", outline="")
+    canvas.create_rectangle(1, 1, w - 2, h - 2, fill="#2b3a4d", outline="#7ec8e8", width=2)
+    canvas.create_rectangle(2, 2, w - 3, 16, fill="#3d5a73", outline="")
+    canvas.create_text(8, 9, text="CHAT", anchor="w", fill="#d7f3ff", font=("Courier New", 7, "bold"))
+    for i, col in enumerate(("#ff7777", "#ffdd66", "#77dd88")):
+        canvas.create_rectangle(w - 14 - i * 8, 5, w - 10 - i * 8, 9, fill=col, outline="")
+    script = list(lines) if lines else list(WORK_LIGHT_CHAT_LINES)
+    n = max(1, len(script))
+    start = (phase // 4) % n
+    y = 22
+    for i in range(3):
+        text, sticker = script[(start + i) % n]
+        mine = ((start + i) % 2) == 0
+        sticker_w = 9 if sticker else 0
+        text_w = len(text) * 6 if text else 0
+        bw = min(w - 16, 8 + sticker_w + text_w)
+        if mine:
+            x0 = w - 8 - bw
+            fill, outline = "#4a8f6a", "#a8e0b8"
+        else:
+            x0 = 8
+            fill, outline = "#3a4f66", "#9eb6cc"
+        canvas.create_rectangle(x0, y, x0 + bw, y + 14, fill=fill, outline=outline, width=1)
+        tx = x0 + 3
+        if sticker:
+            _draw_chat_sticker(canvas, tx, y + 3, sticker)
+            tx += sticker_w
+        if text:
+            canvas.create_text(tx, y + 7, text=text, anchor="w", fill="#f0f6fa", font=("Courier New", 7))
+        y += 18
+    canvas.create_rectangle(6, h - 18, w - 6, h - 6, fill="#1e2a38", outline="#6a90aa", width=1)
+    dots = (phase // 3) % 4
+    tip = "输入中" + ("." * dots)
+    canvas.create_text(10, h - 12, text=tip, anchor="w", fill="#9fd0ea", font=("Courier New", 7))
+    if (phase // 2) % 2 == 0:
+        canvas.create_rectangle(w - 14, h - 15, w - 12, h - 9, fill="#c8eefc", outline="")
+
+
+def _draw_work_light_code_fx(canvas: tk.Canvas, w: int, h: int, phase: int) -> None:
+    """像素风代码窗：行号 + 代码卷动 + 光标。"""
+    canvas.delete("all")
+    canvas.create_rectangle(0, 0, w, h, fill="#101820", outline="")
+    canvas.create_rectangle(1, 1, w - 2, h - 2, fill="#1a2430", outline="#88c070", width=2)
+    canvas.create_rectangle(2, 2, w - 3, 16, fill="#243040", outline="")
+    canvas.create_text(8, 9, text="code.py", anchor="w", fill="#b8e098", font=("Courier New", 7, "bold"))
+    canvas.create_rectangle(w - 18, 5, w - 8, 11, fill="#5a9a4a", outline="")
+    gutter = 22
+    canvas.create_rectangle(2, 17, gutter, h - 3, fill="#141c26", outline="")
+    n = len(WORK_LIGHT_CODE_LINES)
+    start = (phase // 3) % n
+    y = 20
+    for i in range(5):
+        ln = (start + i) % n
+        line = WORK_LIGHT_CODE_LINES[ln]
+        canvas.create_text(gutter - 3, y + 5, text=str(ln + 1), anchor="e", fill="#4a6070", font=("Courier New", 6))
+        color = "#c8e8a8" if i != 2 else "#ffe08a"
+        canvas.create_text(gutter + 4, y + 5, text=line[:14], anchor="w", fill=color, font=("Courier New", 7))
+        y += 13
+    # 光标闪烁在中间行
+    if (phase // 2) % 2 == 0:
+        canvas.create_rectangle(gutter + 4, 20 + 2 * 13, gutter + 6, 20 + 2 * 13 + 10, fill="#ffe08a", outline="")
+
+
+def _draw_work_light_office_fx(
+    canvas: tk.Canvas,
+    w: int,
+    h: int,
+    phase: int,
+    lines: tuple | list | None = None,
+) -> None:
+    """像素风办公窗：文稿横线 + 勾选清单。"""
+    canvas.delete("all")
+    canvas.create_rectangle(0, 0, w, h, fill="#f4f7fb", outline="")
+    canvas.create_rectangle(1, 1, w - 2, h - 2, fill="#f7fafc", outline="#7eb0d0", width=2)
+    canvas.create_rectangle(2, 2, w - 3, 16, fill="#d7e8f4", outline="")
+    canvas.create_text(8, 9, text="DOC", anchor="w", fill="#1e3a5c", font=("Courier New", 7, "bold"))
+    canvas.create_rectangle(4, 18, 8, h - 4, fill="#f0c0c8", outline="")
+    rows = list(lines) if lines else list(WORK_LIGHT_OFFICE_LINES)
+    y = 22
+    for i, text in enumerate(rows):
+        on = ((phase // 5) % (len(rows) + 1)) > i
+        box = "#5a9a6a" if on else "#d0d8e0"
+        mark = "#f4fff8" if on else box
+        canvas.create_rectangle(14, y, 22, y + 8, fill="#ffffff", outline=box, width=1)
+        if on:
+            canvas.create_line(15, y + 4, 18, y + 7, fill=mark, width=1)
+            canvas.create_line(18, y + 7, 21, y + 1, fill=mark, width=1)
+        canvas.create_text(26, y + 4, text=str(text)[:8], anchor="w", fill="#1e3a5c" if on else "#8aa0b0", font=("Courier New", 7))
+        y += 14
+    bar_w = 8 + ((phase * 3) % 70)
+    canvas.create_rectangle(14, h - 14, 14 + bar_w, h - 8, fill="#8ec8ea", outline="")
+
+
+def _draw_work_light_note_fx(
+    canvas: tk.Canvas,
+    w: int,
+    h: int,
+    phase: int,
+    lines: tuple | list | None = None,
+) -> None:
+    """像素风记事窗：横线纸 + 逐行写下。"""
+    canvas.delete("all")
+    canvas.create_rectangle(0, 0, w, h, fill="#f3e9d5", outline="")
+    canvas.create_rectangle(1, 1, w - 2, h - 2, fill="#f7f0e2", outline="#d7c4a4", width=2)
+    canvas.create_rectangle(2, 2, 10, h - 3, fill="#e8a0a8", outline="")
+    for i in range(3):
+        yy = 8 + i * 10
+        canvas.create_oval(3, yy, 9, yy + 6, outline="#6a7888", width=1)
+    notes = list(lines) if lines else list(WORK_LIGHT_NOTE_LINES)
+    shown = (phase // 4) % (len(notes) + 1)
+    y = 22
+    row_n = max(1, len(notes))
+    for i in range(row_n):
+        canvas.create_line(16, y + 10, w - 8, y + 10, fill="#e4d2b0", width=1)
+        if i < shown and i < len(notes):
+            canvas.create_text(18, y + 4, text=str(notes[i])[:8], anchor="w", fill="#3a3228", font=("Courier New", 7))
+        y += 12
+    if shown < len(notes) and (phase // 2) % 2 == 0:
+        cy = 22 + shown * 12
+        canvas.create_rectangle(18, cy, 20, cy + 8, fill="#3a3228", outline="")
+
+
+def _draw_work_light_paint_fx(canvas: tk.Canvas, w: int, h: int, phase: int) -> None:
+    """像素风绘画窗：调色点 + 一笔正在画。"""
+    canvas.delete("all")
+    canvas.create_rectangle(0, 0, w, h, fill="#1c2430", outline="")
+    canvas.create_rectangle(1, 1, w - 2, h - 2, fill="#243044", outline="#8eb8d8", width=2)
+    canvas.create_rectangle(2, 2, w - 3, 16, fill="#31445c", outline="")
+    canvas.create_text(8, 9, text="DRAW", anchor="w", fill="#d7f3ff", font=("Courier New", 7, "bold"))
+    colors = ("#ff6a8a", "#ffe08a", "#7ad4a0", "#7eb8ff", "#c8b0ff")
+    for i, col in enumerate(colors):
+        x = 8 + i * 14
+        canvas.create_rectangle(x, 20, x + 10, 30, fill=col, outline="#f4f8ff", width=1)
+    canvas.create_rectangle(8, 36, w - 8, h - 8, fill="#f7f4ee", outline="#d7c4a4", width=1)
+    stroke = ("#5a8fc8", "#e07088", "#5a9a6a", "#d4a03a")
+    col = stroke[(phase // 8) % len(stroke)]
+    n = 4 + (phase % 8)
+    x, y = 16, 48
+    for i in range(n):
+        canvas.create_rectangle(x, y, x + 3, y + 3, fill=col, outline=col)
+        x += 4
+        y += 1 if i % 2 == 0 else -1
+    bx, by = 8 + x, 34 + y
+    canvas.create_rectangle(bx, by, bx + 3, by + 10, fill="#c4a574", outline="")
+    canvas.create_rectangle(bx - 1, by + 8, bx + 4, by + 12, fill="#3a3228", outline="")
+
+
+def _draw_work_light_type_fx(canvas: tk.Canvas, w: int, h: int, phase: int) -> None:
+    """像素风打字窗：键盘按键轮流亮起。"""
+    canvas.delete("all")
+    canvas.create_rectangle(0, 0, w, h, fill="#1a2030", outline="")
+    canvas.create_rectangle(1, 1, w - 2, h - 2, fill="#243044", outline="#9ec8e8", width=2)
+    canvas.create_rectangle(2, 2, w - 3, 16, fill="#31445c", outline="")
+    canvas.create_text(8, 9, text="TYPE", anchor="w", fill="#d7f3ff", font=("Courier New", 7, "bold"))
+    rows = (10, 9, 7)
+    lit = phase % 26
+    seen = 0
+    y = 24
+    for count in rows:
+        gap = 2
+        key_w = max(6, (w - 16 - gap * (count - 1)) // count)
+        x = (w - (key_w * count + gap * (count - 1))) // 2
+        for _ in range(count):
+            on = seen == lit
+            fill = "#7eb8ff" if on else "#3a4a60"
+            outline = "#f4fbff" if on else "#1a2433"
+            canvas.create_rectangle(x, y, x + key_w - 1, y + 10, fill=fill, outline=outline, width=1)
+            x += key_w + gap
+            seen += 1
+        y += 14
+    canvas.create_rectangle(28, y, w - 28, y + 8, fill="#7eb8ff" if (phase // 2) % 2 == 0 else "#3a4a60", outline="")
+
+
 def _build_video_scroll_strip(
     variants: list[Image.Image],
     col_w: int,
@@ -6149,12 +6713,15 @@ def _compose_video_credits_scene(
         )
     scroll = int(float(scroll_px) % period)
     region = strip.crop((0, scroll, strip.width, scroll + display_size))
-    ox = 0 if video_on_left else max(0, display_size - region.width)
-    canvas.paste(region, (ox, 0), region)
+    if region.mode != "RGBA":
+        region = region.convert("RGBA")
     pl = pet_layer if pet_layer.size == (display_size, display_size) else _fit_rgba(
         pet_layer.convert("RGBA"), display_size, display_size
     )
+    # 先铺角色，再叠侧条：避免立绘/黑框把滚动条盖掉
     canvas.alpha_composite(pl)
+    ox = 0 if video_on_left else max(0, display_size - region.width)
+    canvas.alpha_composite(region, (ox, 0))
     return canvas
 
 
@@ -8494,6 +9061,8 @@ def _load_app_config() -> dict:
         # 开机启动托盘并自动显示桌宠（写入 Windows「启动」快捷方式）
         "launch_at_login": True,
         "spawn_on_launcher_start": True,
+        # 前台自动进入的情景开关；缺省为开
+        "scene_detect": {kind: True for kind, _label in SCENE_DETECT_ITEMS},
     }
     if not APP_CONFIG_FILE.exists():
         return default
@@ -11036,6 +11605,12 @@ class SpriteSet:
         self.stand_zzz: ImageTk.PhotoImage
         self.stand_like: ImageTk.PhotoImage
         self.happy: tuple[ImageTk.PhotoImage, ImageTk.PhotoImage]
+        self.cheer: tuple[ImageTk.PhotoImage, ImageTk.PhotoImage]
+        self.flower: tuple[ImageTk.PhotoImage, ImageTk.PhotoImage]
+        self.afraid: tuple[ImageTk.PhotoImage, ImageTk.PhotoImage]
+        self.proud: tuple[ImageTk.PhotoImage, ImageTk.PhotoImage, ImageTk.PhotoImage]
+        self.shrug1: ImageTk.PhotoImage
+        self.shrug2: ImageTk.PhotoImage
         self.sleep: tuple[ImageTk.PhotoImage, ImageTk.PhotoImage]
         self.front: tuple[ImageTk.PhotoImage, ImageTk.PhotoImage]
         self.back: tuple[ImageTk.PhotoImage, ImageTk.PhotoImage]
@@ -11117,6 +11692,12 @@ def _build_sprite_pack(display_size: int, persona: str | None = None) -> dict:
             load_img("happy1.jpg") if _find_existing_asset(_resolve_sprite_filename("happy1.jpg", persona)) or _find_existing_asset("happy1.jpg") else load_img("happy.jpg"),
             load_img("happy2.jpg") if _find_existing_asset(_resolve_sprite_filename("happy2.jpg", persona)) or _find_existing_asset("happy2.jpg") else load_img("happy.jpg"),
         ),
+        "cheer": (load_img("cheer1.jpg"), load_img("cheer2.jpg")),
+        "flower": (load_img("flower1.jpg"), load_img("flower2.jpg")),
+        "afraid": (load_img("afraid1.jpg"), load_img("afraid2.jpg")),
+        "proud": (load_img("pround1.jpg"), load_img("pround2.jpg"), load_img("pround3.jpg")),
+        "shrug1": load_img("shrug1.jpg"),
+        "shrug2": load_img("shrug2.jpg"),
         "sleep": (load_img("sleep1.jpg"), load_img("sleep2.jpg")),
         "front": (load_img("walkfront1.jpg"), load_img("walkfront2.jpg")),
         "back": (load_img("walkback1.jpg"), load_img("walkback2.jpg")),
@@ -11169,6 +11750,12 @@ def _build_quick_stand_pack(display_size: int, persona: str | None = None) -> di
         "stand_zzz": sleep1,
         "stand_like": sleep1,
         "happy": (sleep1, sleep1),
+        "cheer": (sleep1, sleep1),
+        "flower": (sleep1, sleep1),
+        "afraid": (sleep1, sleep1),
+        "proud": (sleep1, sleep1, sleep1),
+        "shrug1": sleep1,
+        "shrug2": sleep1,
         "sleep": (sleep1, sleep1),
         "front": pair,
         "back": pair,
@@ -11202,6 +11789,73 @@ def _build_quick_stand_pack(display_size: int, persona: str | None = None) -> di
     }
 
 
+def _build_minimal_walk_pack(display_size: int, persona: str | None = None) -> dict:
+    """后台加速用：真 stand + 四向走动 + 睡眠；其余槽暂用 stand。
+    开场画面仍保持 sleep 占位，仅用于尽快清掉 placeholder、缩短等待。
+    """
+    persona = persona or _ACTIVE_PERSONA
+    ref = _reference_scale(display_size)
+
+    def load_img(filename: str, *, flip: bool = False) -> Image.Image:
+        resolved = _resolve_sprite_filename(filename, persona)
+        return _get_processed_canvas(resolved, display_size, ref, flip=flip)
+
+    stand = load_img("stand.jpg")
+    pair_stand = (stand, stand)
+    triple_stand = (stand, stand, stand)
+    sleep = (load_img("sleep1.jpg"), load_img("sleep2.jpg"))
+    front = (load_img("walkfront1.jpg"), load_img("walkfront2.jpg"))
+    back = (load_img("walkback1.jpg"), load_img("walkback2.jpg"))
+    left = (load_img("walkleft1.jpg"), load_img("walkleft2.jpg"))
+    right = (load_img("walkleft1.jpg", flip=True), load_img("walkleft2.jpg", flip=True))
+    return {
+        "stand": stand,
+        "stand_angry": stand,
+        "stand_question": stand,
+        "stand_speechless": stand,
+        "stand_awkward": stand,
+        "stand_zzz": stand,
+        "stand_like": stand,
+        "happy": pair_stand,
+        "cheer": pair_stand,
+        "flower": pair_stand,
+        "afraid": pair_stand,
+        "proud": triple_stand,
+        "shrug1": stand,
+        "shrug2": stand,
+        "sleep": sleep,
+        "front": front,
+        "back": back,
+        "left": left,
+        "right": right,
+        "move": triple_stand,
+        "work_front": front,
+        "work_back": back,
+        "work_left": left,
+        "work_right": right,
+        "work_stand": stand,
+        "box_img": stand,
+        "flag_img": stand,
+        "kick": stand,
+        "shy": triple_stand,
+        "wink": stand,
+        "like": stand,
+        "sad1": stand,
+        "sad2": stand,
+        "yes": stand,
+        "no": stand,
+        "eat2_only": stand,
+        "music_stand": stand,
+        "music_front": front,
+        "music_back": back,
+        "music_left": left,
+        "music_right": right,
+        "actions": {
+            name: tuple(stand for _ in files) for name, files in SELECT_ACTIONS.items()
+        },
+    }
+
+
 def _build_size_switch_placeholder_pack(display_size: int, persona: str | None = None) -> dict:
     """切尺寸瞬时占位：与开场相同，用 sleep1 铺满各槽。"""
     return _build_quick_stand_pack(display_size, persona)
@@ -11209,6 +11863,17 @@ def _build_size_switch_placeholder_pack(display_size: int, persona: str | None =
 
 def _sprite_set_is_placeholder(ss) -> bool:
     return bool(ss is not None and getattr(ss, "_vpet_placeholder", False))
+
+
+def _sprite_set_ready_for_free(ss) -> bool:
+    """正式全量套图才算可进自由/触发模式；占位与最小套都不算。"""
+    if ss is None:
+        return False
+    if getattr(ss, "_vpet_placeholder", False):
+        return False
+    if getattr(ss, "_vpet_partial", False):
+        return False
+    return True
 
 
 def _tk_photo_from_pil(img: Image.Image, *, master: tk.Misc | None = None) -> ImageTk.PhotoImage:
@@ -11267,6 +11932,17 @@ def _sprite_photo_tasks(pack: dict) -> list[tuple[str, Image.Image]]:
     ha, hb = pack["happy"]
     tasks.append(("happy.0", ha))
     tasks.append(("happy.1", hb))
+    ca, cb = pack["cheer"]
+    tasks.append(("cheer.0", ca))
+    tasks.append(("cheer.1", cb))
+    fa, fb = pack["flower"]
+    tasks.append(("flower.0", fa))
+    tasks.append(("flower.1", fb))
+    aa, ab = pack["afraid"]
+    tasks.append(("afraid.0", aa))
+    tasks.append(("afraid.1", ab))
+    for i, img in enumerate(pack["proud"]):
+        tasks.append((f"proud.{i}", img))
     for key in ("front", "back", "left", "right"):
         a, b = pack[key]
         tasks.append((f"{key}.0", a))
@@ -11280,6 +11956,8 @@ def _sprite_photo_tasks(pack: dict) -> list[tuple[str, Image.Image]]:
         "like",
         "sad1",
         "sad2",
+        "shrug1",
+        "shrug2",
         "yes",
         "no",
         "eat2_only",
@@ -11339,6 +12017,10 @@ def _bind_sprite_photos(ss: "SpriteSet", photos: dict[str, ImageTk.PhotoImage], 
     ss.stand_zzz = photos["stand_zzz"]
     ss.stand_like = photos["stand_like"]
     ss.happy = pair("happy")
+    ss.cheer = pair("cheer")
+    ss.flower = pair("flower")
+    ss.afraid = pair("afraid")
+    ss.proud = triple("proud")
     ss.sleep = pair("sleep")
     ss.front = pair("front")
     ss.back = pair("back")
@@ -11358,6 +12040,8 @@ def _bind_sprite_photos(ss: "SpriteSet", photos: dict[str, ImageTk.PhotoImage], 
     ss.like = photos["like"]
     ss.sad1 = photos["sad1"]
     ss.sad2 = photos["sad2"]
+    ss.shrug1 = photos["shrug1"]
+    ss.shrug2 = photos["shrug2"]
     ss.yes = photos["yes"]
     ss.no = photos["no"]
     ss.eat2_only = photos["eat2_only"]
@@ -11393,8 +12077,17 @@ class DesktopPet:
         if _reset_operation_guide_if_updated(app_cfg):
             _save_app_config(app_cfg)
         _apply_font_size(int(app_cfg.get("font_size", 12)))
-        saved_size = _snap_display_size(int(app_cfg.get("display_size", DEFAULT_SIZE)))
-        self.display_size = saved_size
+        saved_logical = _snap_display_size(int(app_cfg.get("display_size", DEFAULT_SIZE)))
+        self._logical_display_size = saved_logical
+        # 立绘图组先于尺寸：黑框需按逻辑档位外扩窗口
+        raw_pack = app_cfg.get("sprite_pack")
+        if raw_pack is None and bool(app_cfg.get("strip_outer_black")):
+            raw_pack = SPRITE_PACK_NORMAL
+        elif raw_pack is None:
+            raw_pack = SPRITE_PACK_NORMAL
+        set_active_sprite_pack(str(raw_pack or SPRITE_PACK_NORMAL))
+        set_strip_outer_black(bool(app_cfg.get("strip_outer_black")))
+        self.display_size = pack_render_size(saved_logical)
         self.font_size = max(8, min(24, int(app_cfg.get("font_size", 12))))
         self.font_family = _normalize_font_family_key(app_cfg.get("font_family"))
         self.app_config = app_cfg
@@ -11403,14 +12096,6 @@ class DesktopPet:
         if persona not in PERSONA_LABELS:
             persona = PERSONA_DEFAULT
         set_active_persona(persona)
-        # 立绘图组：默认普通；兼容旧 strip_outer_black（True→普通，False 且未写 sprite_pack→黑框）
-        raw_pack = self.app_config.get("sprite_pack")
-        if raw_pack is None and bool(self.app_config.get("strip_outer_black")):
-            raw_pack = SPRITE_PACK_NORMAL
-        elif raw_pack is None:
-            raw_pack = SPRITE_PACK_NORMAL
-        set_active_sprite_pack(str(raw_pack or SPRITE_PACK_NORMAL))
-        set_strip_outer_black(bool(self.app_config.get("strip_outer_black")))
         # 开机自启快捷方式：后台同步，且已存在则跳过（避免每次出宠卡 PowerShell）
         try:
             import vpet_launcher
@@ -11491,6 +12176,7 @@ class DesktopPet:
         self._drag_handle_cache: dict[int, tuple[int, int, int, int]] = {}
         self._pet_click_zones_cache: dict[int, dict[str, tuple[int, int, int, int]]] = {}
         self._startup_ready = False
+        self._startup_sprites_full_ready = False
         self._startup_loading_active = True
         self._startup_warmup_active = False
         self._startup_warmup_job: str | None = None
@@ -11847,7 +12533,8 @@ class DesktopPet:
         self.music_ambient_only = False
         # True = 用户从面板开的音乐模式；外部跟听结束后可回内置曲
         self._music_from_panel = False
-        self.app_scene: str = "none"  # none | game | video | music
+        self.app_scene: str = "none"  # none | game | video | music | code | study | office | chat | paint | note
+        self._scene_hold_manual: str = ""  # 情景菜单手动进入时，关闭自动识别也不被轮询立刻清掉
         self.app_scene_sig = ""
         self.app_scene_job: str | None = None
         self.app_scene_frame_job: str | None = None
@@ -11863,6 +12550,52 @@ class DesktopPet:
         self.app_scene_slide = 0
         self.app_scene_scroll_px = 0.0
         self._app_scene_photo: ImageTk.PhotoImage | None = None
+        # 桌面可拾取金币 / 惊喜宝箱
+        self._world_coins: list[dict] = []
+        self._world_coin_job: str | None = None
+        self._world_coin_seek_id: str | None = None
+        self._surprise_session_sec: float = 0.0
+        self._surprise_last_spawn_ms: int = 0
+        self._surprise_last_quote: str = ""
+        # 打字姿势（type_down1/2 · type_up_left/right · type_up）
+        self._typing_pose: str | None = None
+        self._typing_pose_job: str | None = None
+        self._typing_pose_photo: ImageTk.PhotoImage | None = None
+        self._typing_last_key_ms: int = 0
+        self._typing_pose_since_ms: int = 0
+        # 聊天/代码：work1–3 循环 + 侧向像素窗
+        self._work_light_active: bool = False
+        self._work_light_kind: str = ""  # chat | code | office
+        self._work_light_job: str | None = None
+        self._work_light_seq: list[str] = []
+        self._work_light_idx: int = 0
+        self._work_light_photo: ImageTk.PhotoImage | None = None
+        self._work_light_fx_win: tk.Toplevel | None = None
+        self._work_light_fx_canvas: tk.Canvas | None = None
+        self._work_light_fx_job: str | None = None
+        self._work_light_fx_phase: int = 0
+        self._work_light_fx_place_sig: tuple[int, int] | None = None
+        self._chat_fx_lines: list[tuple[str, str | None]] = list(WORK_LIGHT_CHAT_LINES)
+        self._office_fx_lines: list[str] = list(WORK_LIGHT_OFFICE_LINES)
+        self._note_fx_lines: list[str] = list(WORK_LIGHT_NOTE_LINES)
+        self._chat_fx_input_win: tk.Toplevel | None = None
+        self._fx_lines_editor_win: tk.Toplevel | None = None
+        # 绘画 / 记事：draw(+picture) + 指针区位
+        self._draw_scene_active: bool = False
+        self._draw_scene_kind: str = ""  # paint | note
+        self._draw_scene_job: str | None = None
+        self._draw_scene_pointer_job: str | None = None
+        self._draw_scene_draw_seq: list[str] = []
+        self._draw_scene_draw_idx: int = 0
+        self._draw_scene_pic_seq: list[str] = []
+        self._draw_scene_pic_idx: int = 0
+        self._draw_scene_zone: str = ""
+        self._draw_scene_last_pointer_ms: int = 0
+        self._draw_scene_photo: ImageTk.PhotoImage | None = None
+        self._draw_scene_cur_draw: str = ""
+        self._draw_scene_cur_pic: str | None = None
+        self._draw_scene_from_self: bool = False
+        self._self_paint_hold: bool = False
         self._video_variant_pil: list[Image.Image] = []
         self._video_strip_cache: tuple[int, int, Image.Image, int] | None = None  # size, idx, strip, period
         self._video_pet_layer_cache: tuple[str, int, Image.Image] | None = None  # persona, size, layer
@@ -12290,7 +13023,15 @@ class DesktopPet:
             pass
 
     def _startup_busy(self) -> bool:
-        return not self._startup_ready
+        if not self._startup_ready:
+            return True
+        if bool(getattr(self, "_startup_warmup_active", False)):
+            return True
+        if self.mode == "loading":
+            return True
+        if not bool(getattr(self, "_startup_sprites_full_ready", False)):
+            return True
+        return False
 
     def _app_loading_busy(self) -> bool:
         return (
@@ -12481,12 +13222,20 @@ class DesktopPet:
     def _startup_load_worker(self) -> None:
         try:
             _migrate_legacy_layout()
-            # 先只处理 sleep1：开场静止，不加载 stand
+            # 1) sleep1 占位立刻上屏（观感不变）
             quick = _build_quick_stand_pack(self.display_size)
             self.root.after(0, lambda q=quick: self._apply_startup_quick_pack(q))
-            # 金目套图仅在当前人格需要时生成；默认人格不阻塞启动
+            # 2) 仅预热画布缓存，不把最小套当作「已加载」上屏/放行
+            try:
+                _build_minimal_walk_pack(self.display_size)
+            except Exception:
+                pass
+            # 3) 全量套图就绪后才 finish；未加载完不进自由、不触发模式
             if _persona_is_jinmu():
-                ensure_nc_outfit_sprites()
+                try:
+                    ensure_nc_outfit_sprites()
+                except Exception:
+                    pass
             pack = _build_sprite_pack(self.display_size)
             self.root.after(0, lambda p=pack: self._finish_startup(p, err=False))
         except Exception:
@@ -12498,9 +13247,19 @@ class DesktopPet:
         except Exception:
             pass
 
+    def _upgrade_startup_full_pack(self, pack: dict | None) -> None:
+        """兼容旧调用：全量立绘热替换。"""
+        if self._closing or pack is None:
+            return
+        self._startup_sprite_pack = pack
+        self._apply_startup_assets()
+
     def _apply_startup_quick_pack(self, pack: dict) -> None:
-        """开场 sleep1 占位 SpriteSet：立刻让入场 ready，全程不用 stand。"""
-        if self._closing or self._startup_sprites_ready:
+        """开场 sleep1 占位：立刻让入场 ready。"""
+        if self._closing:
+            return
+        if _sprite_set_ready_for_free(self._sprite_cache.get(self.display_size)):
+            self._startup_sprites_ready = True
             return
         try:
             photos = _sprite_photos_from_pack(pack)
@@ -12508,6 +13267,7 @@ class DesktopPet:
             ss.display_size = self.display_size
             _bind_sprite_photos(ss, photos, pack)
             ss._vpet_placeholder = True
+            ss._vpet_partial = False
             self.sprites = ss
             self._sprite_cache[self.display_size] = ss
             still = ss.sleep[0]
@@ -12517,6 +13277,10 @@ class DesktopPet:
             self._startup_sprites_ready = True
         except Exception:
             pass
+
+    def _apply_startup_minimal_pack(self, pack: dict) -> None:
+        """保留空实现：最小套不得清 placeholder / 不得提前进自由。"""
+        return
 
     def _apply_startup_vocab(self, vocab: list[dict[str, str]]) -> None:
         if self._closing:
@@ -12554,16 +13318,22 @@ class DesktopPet:
             if self._closing:
                 return
             try:
+                ss._vpet_placeholder = False
+                ss._vpet_partial = False
                 self.sprites = ss
                 self._sprite_cache[self.display_size] = ss
-                # 正式套图换上后丢掉 sleep 占位预热窗，避免起点箱一直是 sleep1
                 self._invalidate_prewarmed_work_props()
-                # 仅开场加载期保持 sleep1；已进入自由模式则不回退画面
-                if not self._startup_ready or self.mode == "loading":
+                # 开场 loading 仍用 sleep 占位；进自由后再换站立/当前姿势
+                if self.mode == "free":
+                    self._refresh_pose_after_sprites()
+                elif not self._startup_ready or self.mode == "loading":
                     still = ss.sleep[0]
                     self.label.configure(image=still)
                     self.label.image = still
+                    self._current_base_photo = still
                     self.state = "sleep"
+                else:
+                    self._refresh_pose_after_sprites()
             except Exception:
                 if upgrading:
                     return
@@ -12577,16 +13347,18 @@ class DesktopPet:
                     self.state = "sleep"
                 except Exception:
                     return
-            # 加载循环与入场同款；资源就绪后由入口循环收束，不再二次 converge
             self._startup_sprites_ready = True
+            self._startup_sprites_full_ready = True
+            if getattr(self, "_startup_warmup_active", False):
+                self.root.after(40, self._try_early_finish_repeat_warmup)
 
-        # 启动转图让出事件循环，避免取名/操作说明刚弹出就卡死
+        # 开场转图：大批量零间隔；仍须等全量套图完成才放行
         self._build_sprite_set_batched(
             self.display_size,
             pack,
             on_sprite_ready,
-            batch_size=SPRITE_BATCH_SIZE,
-            batch_ms=SPRITE_BATCH_MS,
+            batch_size=STARTUP_SPRITE_BATCH_SIZE,
+            batch_ms=STARTUP_SPRITE_BATCH_MS,
         )
 
     def _startup_still_photo(self) -> ImageTk.PhotoImage | None:
@@ -12768,7 +13540,7 @@ class DesktopPet:
             except Exception:
                 pass
             self._startup_anim_job = None
-        # 仍保持 sleep1 与 mode=loading：不走动；进入专用预热段再进自由/取名
+        # 仍保持 sleep1 与 mode=loading：不走动；预热段尽快结束
         self.mode = "loading"
         self.state = "sleep"
         self._show_startup_still()
@@ -12818,7 +13590,7 @@ class DesktopPet:
         return bool(getattr(self, "_pending_free_after_owner", False))
 
     def _start_startup_warmup_phase(self) -> None:
-        """入场后静置：首次且单开做足预热；多开/非首次快速通道。"""
+        """入场后静置：只等当前档能走；其余尺寸进自由后再后台补。"""
         if self._closing:
             return
         siblings = int(getattr(self, "_sibling_pets_at_boot", 0) or _count_sibling_pet_processes())
@@ -12834,57 +13606,67 @@ class DesktopPet:
         self._show_wait_hint(tips[0])
         if first:
             self._show_toast(
-                "第一次启动会初始化大约十几秒，\n把尺寸和设置准备好，之后打开会快很多。",
+                "第一次启动会稍作准备，\n资源就绪后就会起来。",
                 "#88ccff",
-                duration_ms=min(duration, 9000),
+                duration_ms=min(duration + 800, 2800),
             )
             self._mark_hint_seen("startup_warmup")
-            self.root.after(300, self._refresh_drag_handle_idle)
-            self.root.after(350, self._warmup_type_sound_idle)
-            self.root.after(380, self._prewarm_free_walk_priority)
-            self.root.after(400, self._prewarm_settings_bundle)
-            self.root.after(600, self._warmup_type_sound_idle)
-            self.root.after(900, self._prewarm_work_props)
+            self.root.after(160, self._prewarm_free_walk_priority)
+            self.root.after(220, self._refresh_drag_handle_idle)
+            # 设置/道具预热延后到进自由后，先把 sleep 等待压短
+            self.root.after(2600, self._warmup_type_sound_idle)
+            self.root.after(3200, self._prewarm_settings_bundle)
+            self.root.after(4500, self._prewarm_work_props)
             self._rotate_startup_warmup_tip()
         else:
             # 快速通道：只确保当前档能走；多开时更少同步重活
             self.root.after(40, self._prewarm_free_walk_priority)
             if siblings <= 0:
                 self.root.after(80, self._refresh_drag_handle_idle)
-            # 走动帧一齐立刻结束 sleep，不等满定时器
-            self.root.after(60, self._try_early_finish_repeat_warmup)
-            # 硬上限：非首次 sleep 占位不超过预算
-            try:
-                boot = int(getattr(self, "_startup_loading_start_ms", 0) or 0)
-                elapsed = max(0, int(time.time() * 1000) - boot)
-                remain = max(200, int(STARTUP_REPEAT_TO_FREE_CAP_MS) - elapsed)
-            except Exception:
-                remain = int(STARTUP_REPEAT_TO_FREE_CAP_MS)
-            self.root.after(remain, self._force_finish_repeat_warmup_cap)
+        # 当前档正式套图就绪就结束 sleep（首次/非首次都走）
+        self.root.after(60, self._try_early_finish_repeat_warmup)
+        # 硬上限：避免一直停在睡眠占位
+        try:
+            boot = int(getattr(self, "_startup_loading_start_ms", 0) or 0)
+            elapsed = max(0, int(time.time() * 1000) - boot)
+            cap = int(STARTUP_FIRST_TO_FREE_CAP_MS if first else STARTUP_REPEAT_TO_FREE_CAP_MS)
+            remain = max(200, cap - elapsed)
+        except Exception:
+            remain = int(STARTUP_FIRST_TO_FREE_CAP_MS if first else STARTUP_REPEAT_TO_FREE_CAP_MS)
+        self.root.after(remain, self._force_finish_repeat_warmup_cap)
         self._startup_warmup_job = self.root.after(duration, self._finish_startup_warmup)
 
     def _try_early_finish_repeat_warmup(self) -> None:
-        """非首次：当前档正式套图就绪就结束 sleep 占位。"""
-        if self._closing or bool(getattr(self, "_startup_thorough_warmup", False)):
+        """当前档正式套图就绪就结束 sleep 占位（不再空等其它尺寸）。"""
+        if self._closing:
             return
         if not getattr(self, "_startup_warmup_active", False):
             return
         size = int(self.display_size)
         cached = self._sprite_cache.get(size)
-        if cached is None or _sprite_set_is_placeholder(cached):
+        if not _sprite_set_ready_for_free(cached):
             try:
                 self._sprite_urgent_sizes.add(size)
             except Exception:
                 pass
-            self.root.after(80, self._try_early_finish_repeat_warmup)
+            self.root.after(100, self._try_early_finish_repeat_warmup)
             return
         self._finish_startup_warmup()
 
     def _force_finish_repeat_warmup_cap(self) -> None:
-        """非首次预算到点：强制离开 sleep，功能不砍只是不再空等。"""
-        if self._closing or bool(getattr(self, "_startup_thorough_warmup", False)):
+        """预算到点：若全量仍未好则继续短等，避免 stand 半成品进自由乱触发。"""
+        if self._closing:
             return
         if not getattr(self, "_startup_warmup_active", False):
+            return
+        cached = self._sprite_cache.get(int(self.display_size))
+        if not _sprite_set_ready_for_free(cached):
+            try:
+                self._sprite_urgent_sizes.add(int(self.display_size))
+            except Exception:
+                pass
+            self._show_wait_hint("还在加载资源…")
+            self.root.after(400, self._force_finish_repeat_warmup_cap)
             return
         self._finish_startup_warmup()
 
@@ -12894,9 +13676,9 @@ class DesktopPet:
             return
         size = int(self.display_size)
         cached = self._sprite_cache.get(size)
-        if cached is not None and not _sprite_set_is_placeholder(cached):
-            # 多开时不做逐帧贴图预热（易卡/闪）
-            if int(getattr(self, "_sibling_pets_at_boot", 0) or 0) <= 0:
+        if _sprite_set_ready_for_free(cached):
+            # 仅已进自由才贴 stand；loading 期保持 sleep 占位
+            if self.mode == "free" and int(getattr(self, "_sibling_pets_at_boot", 0) or 0) <= 0:
                 try:
                     stand = cached.stand
                     self.label.configure(image=stand)
@@ -13099,20 +13881,25 @@ class DesktopPet:
     def _finish_startup_warmup(self) -> None:
         if self._closing:
             return
+        if getattr(self, "_startup_warmup_finishing", False):
+            return
         thorough = bool(getattr(self, "_startup_thorough_warmup", False))
-        # 首次：尽量等各档尺寸就绪，最多再多等几拍
-        if thorough and getattr(self, "_startup_warmup_active", False):
-            pending = [
-                s
-                for s in SIZE_PRESETS.values()
-                if s not in self._sprite_cache or _sprite_set_is_placeholder(self._sprite_cache.get(s))
-            ]
+        # 只等当前档正式套图；其它尺寸进自由后再补，避免黑框外扩后空等错键
+        if getattr(self, "_startup_warmup_active", False):
+            cur = int(self.display_size)
+            cached = self._sprite_cache.get(cur)
+            pending_cur = not _sprite_set_ready_for_free(cached)
             extends = int(getattr(self, "_startup_warmup_extend_count", 0) or 0)
-            if pending and extends < STARTUP_WARMUP_EXTEND_MAX:
+            if pending_cur and extends < STARTUP_WARMUP_EXTEND_MAX:
                 self._startup_warmup_extend_count = extends + 1
-                self._show_wait_hint("还在准备尺寸，马上好…")
-                self._startup_warmup_job = self.root.after(800, self._finish_startup_warmup)
+                try:
+                    self._sprite_urgent_sizes.add(cur)
+                except Exception:
+                    pass
+                self._show_wait_hint("还在加载资源…")
+                self._startup_warmup_job = self.root.after(250, self._finish_startup_warmup)
                 return
+        self._startup_warmup_finishing = True
         self._startup_warmup_job = None
         self._cancel_startup_warmup_jobs()
         self._startup_warmup_active = False
@@ -13123,7 +13910,7 @@ class DesktopPet:
         self._hide_wait_hint()
         self._hide_toast()
         self._sync_wait_hint()
-        # 仍保持 loading、不走动：先取名，填完再进自由与重预热
+        # 仍保持 loading + sleep 占位；有所属人则立刻进自由换站立
         self.mode = "loading"
         self.state = "sleep"
         self._show_startup_still()
@@ -13140,14 +13927,16 @@ class DesktopPet:
             self.root.after(1600, self._office_start_background_jobs)
             if PET_ID_FEATURE:
                 self.root.after(1400, lambda: self._schedule_cloud_pet_id_sync(force=False, toast=False))
-            # 已有所属人：首次稍后补重活；之后更晚再补，少抢主线程
-            heavies_ms = 6000 if thorough else 16000
+            # 已有所属人：稍后补其它档；走路优先
+            heavies_ms = 4000 if thorough else 12000
             self.root.after(heavies_ms, self._schedule_post_owner_heavies)
+            self._startup_warmup_finishing = False
             return
         self._pending_free_after_owner = True
         self._startup_input_lock = True
         # 再空一拍再弹取名，让上一段 after 队列先清空
         self.root.after(600, self._maybe_prompt_owner_name)
+        self._startup_warmup_finishing = False
 
     def _schedule_post_owner_heavies(self) -> None:
         """取名/说明之后再慢慢预热，避免抢输入与文本框。"""
@@ -13162,7 +13951,8 @@ class DesktopPet:
         self.root.after(base + 3200, self._prewarm_work_props)
         self.root.after(base + 5500, lambda: self._prewarm_game_drop_photos(0))
         if not getattr(self, "_preload_assets_started", False) or any(
-            s not in self._sprite_cache or _sprite_set_is_placeholder(self._sprite_cache.get(s))
+            pack_render_size(s) not in self._sprite_cache
+            or _sprite_set_is_placeholder(self._sprite_cache.get(pack_render_size(s)))
             for s in SIZE_PRESETS.values()
         ):
             self.root.after(base + 2500, lambda: self._preload_assets_idle(early=False))
@@ -13192,33 +13982,47 @@ class DesktopPet:
             return
         if self.mode not in ("loading", "free"):
             return
-        # 走动帧未就绪时再等一拍，避免 sleep1 占位开走卡顿
+        # 必须全量套图就绪才进自由；半成品/占位一律继续等
         cached = self._sprite_cache.get(int(self.display_size))
-        if cached is None or _sprite_set_is_placeholder(cached):
+        if not _sprite_set_ready_for_free(cached):
             tries = int(getattr(self, "_free_walk_wait_tries", 0) or 0)
-            # 非首次更少空等；首次允许多等几拍
-            max_tries = 20 if bool(getattr(self, "_startup_thorough_warmup", False)) else 10
+            max_tries = 80 if bool(getattr(self, "_startup_thorough_warmup", False)) else 60
             if tries < max_tries:
                 self._free_walk_wait_tries = tries + 1
                 try:
                     self._sprite_urgent_sizes.add(int(self.display_size))
                 except Exception:
                     pass
-                self.root.after(100, self._begin_free_after_startup)
+                self.root.after(120, self._begin_free_after_startup)
                 return
+            # 极端超时仍不放行半成品：保持 sleep，提示一下
+            try:
+                self._show_toast("资源仍在加载，请稍候…", "#ffcc66", duration_ms=2200)
+            except Exception:
+                pass
+            self._free_walk_wait_tries = max_tries - 10
+            self.root.after(400, self._begin_free_after_startup)
+            return
         self._free_walk_wait_tries = 0
+        self._startup_sprites_full_ready = True
         self.mode = "free"
         self.state = "stand"
-        # 刚进自由：先让走路流畅；首次可稍长，之后尽快不挡走动
+        try:
+            self._set_image(self._current_stand_sprite())
+            self._place_window(light=True)
+        except Exception:
+            pass
         thorough = bool(getattr(self, "_startup_thorough_warmup", False))
-        self._free_settle_until_ms = int(time.time() * 1000) + (12000 if thorough else 3500)
+        self._free_settle_until_ms = int(time.time() * 1000) + (5000 if thorough else 3000)
         self._preload_assets_running = False
         try:
             self._prewarm_free_walk_priority()
         except Exception:
             pass
         self._resume_idle()
-        self._start_app_scene_watch()
+        # 模式检测延后到立绘完全可用之后
+        self.root.after(400, self._start_app_scene_watch)
+        self.root.after(600, self._start_typing_pose_watch)
         self._start_mode_time_tracking()
         # 轻量后台轮询错开；多开更晚，少抢 CPU
         siblings = int(getattr(self, "_sibling_pets_at_boot", 0) or 0)
@@ -13338,9 +14142,10 @@ class DesktopPet:
         if getattr(self, "_preload_assets_running", False):
             return
         pending = [
-            s
+            pack_render_size(s)
             for s in SIZE_PRESETS.values()
-            if s not in self._sprite_cache or _sprite_set_is_placeholder(self._sprite_cache.get(s))
+            if pack_render_size(s) not in self._sprite_cache
+            or _sprite_set_is_placeholder(self._sprite_cache.get(pack_render_size(s)))
         ]
         if not pending:
             self._preload_assets_started = True
@@ -13355,10 +14160,9 @@ class DesktopPet:
             else bool(thorough)
         )
         if early:
-            # 首次：静置期把全部档位尽量做完；之后：只急加载当前档
-            if not do_thorough:
-                only_cur = [s for s in pending if int(s) == cur]
-                pending = only_cur or pending[:1]
+            # 开场静置：只急加载当前档，其它档进自由后再补
+            only_cur = [s for s in pending if int(s) == cur]
+            pending = only_cur or pending[:1]
         self._preload_assets_started = True
         self._preload_assets_running = True
         chain_ms = PRELOAD_EARLY_CHAIN_MS if early else PRELOAD_CHAIN_MS
@@ -13453,6 +14257,7 @@ class DesktopPet:
             ss = SpriteSet.__new__(SpriteSet)
             ss.display_size = size
             ss._vpet_placeholder = False
+            ss._vpet_partial = False
             _bind_sprite_photos(ss, photos, pack)
             on_done(ss)
 
@@ -13492,6 +14297,7 @@ class DesktopPet:
 
         def finish(ss: SpriteSet) -> None:
             ss._vpet_placeholder = False
+            ss._vpet_partial = False
             self._sprite_cache[size] = ss
             try:
                 self._persona_sprite_cache[(size, get_active_persona())] = ss
@@ -13505,7 +14311,10 @@ class DesktopPet:
             try:
                 if int(getattr(self, "display_size", 0) or 0) == int(size):
                     self.sprites = ss
-                    self._apply_current_sprite()
+                    if self._startup_ready and self.mode != "loading":
+                        self._refresh_pose_after_sprites()
+                    else:
+                        self._apply_current_sprite()
             except Exception:
                 pass
             cbs = list(self._sprite_build_callbacks.pop(size, []))
@@ -15155,6 +15964,16 @@ class DesktopPet:
         set_active_sprite_pack(want)
         self.app_config["sprite_pack"] = want
         self._defer_save_app_config()
+        logical = int(
+            getattr(self, "_logical_display_size", 0)
+            or _snap_display_size(int(self.app_config.get("display_size", DEFAULT_SIZE)))
+        )
+        self._logical_display_size = _snap_display_size(logical)
+        self.display_size = pack_render_size(self._logical_display_size)
+        try:
+            self._place_window()
+        except Exception:
+            pass
         try:
             self._sprite_cache.clear()
             self._persona_sprite_cache.clear()
@@ -15168,6 +15987,12 @@ class DesktopPet:
         self._show_toast(f"立绘图组：{label}", PIXEL_COLOR)
         self._sync_panel_settings_ui()
         self._reload_persona_sprites()
+        try:
+            self._invalidate_video_compose_cache()
+            if self.app_scene in ("game", "video"):
+                self._restore_app_scene_pose_if_active()
+        except Exception:
+            pass
 
     def _open_strip_black_stub(self) -> None:
         """兼容旧菜单：打开普通图组。"""
@@ -15886,6 +16711,7 @@ class DesktopPet:
             self._show_toast("音乐已关闭 · 回到自由", PIXEL_COLOR)
 
     def _apply_music_on(self) -> None:
+        self._clear_scene_side_fx()
         if self._mode_switch_take_pre_cleaned():
             self._mode_switch_light_prepare()
         else:
@@ -15984,7 +16810,7 @@ class DesktopPet:
             self._sync_auto_desk_clocks()
         except Exception:
             pass
-        msg = tip if tip is not None else "检测到音乐软件 · 已切跟听外部"
+        msg = tip if tip is not None else "音乐"
         if msg:
             try:
                 self._show_toast(msg, "#88ccff", duration_ms=2200)
@@ -16033,16 +16859,83 @@ class DesktopPet:
         return False
 
     def _app_scene_blocks_actions(self) -> bool:
-        """听音乐 / 玩游戏 / 看视频 期间禁止其它模式随机动作。"""
+        """听音乐 / 玩游戏 / 看视频 / 打字姿势 / 聊天代码工作姿 期间禁止其它模式随机动作。"""
         if getattr(self, "music_sprite_mode", False):
             return True
         if self.app_scene in ("game", "video"):
+            return True
+        if self.app_scene in WORK_LIGHT_POSE_KINDS and getattr(self, "_work_light_active", False):
+            return True
+        if self.app_scene in DRAW_SCENE_KINDS and getattr(self, "_draw_scene_active", False):
+            return True
+        if getattr(self, "_typing_pose", None):
             return True
         return False
 
     def _app_scene_pose_active(self) -> bool:
         """检测到音乐/游戏/视频姿势进行中（跨宠轮询用）。"""
-        return self._app_scene_blocks_actions()
+        return (not self._closing) and (
+            self._app_scene_blocks_actions() or self.app_scene in ("game", "video")
+        )
+
+    def _restore_app_scene_pose_if_active(self) -> bool:
+        """游戏/视频姿势被 stand/walk 盖掉后恢复合成帧与滚动。"""
+        if self.app_scene not in ("game", "video"):
+            return False
+        if getattr(self, "_holding_allmate", False) or self.dragging:
+            return False
+        self.state = "scene_rest"
+        if not getattr(self, "rest_base_y", None):
+            self.rest_base_y = self.y
+        try:
+            self._orient_video_strip_away_from_peer()
+        except Exception:
+            pass
+        self._refresh_app_scene_frame()
+        self._schedule_rest_bobble()
+        if self.app_scene == "video" and getattr(self, "app_scene_fx_on", False):
+            self._schedule_app_scene_frame_tick()
+        return True
+
+    def _set_motion_image(self, img) -> None:
+        """走动/并排换图；视频/游戏姿势期间保持侧条合成帧。"""
+        if self.app_scene in ("game", "video") and self._restore_app_scene_pose_if_active():
+            return
+        self._set_image(img)
+
+    def _orient_video_strip_away_from_peer(self) -> None:
+        """双开时把视频条放到背对对方的一侧。"""
+        if self.app_scene != "video":
+            return
+        peer = self._nearest_live_other_kind_peer()
+        if not peer:
+            return
+        try:
+            my_cx = int(self.x) + int(self.display_size) // 2
+            peer_x = int(peer.get("x") or 0)
+            peer_w = int(peer.get("size") or peer.get("w") or peer.get("display_size") or self.display_size)
+            peer_cx = peer_x + max(1, peer_w) // 2
+            self.app_scene_video_on_left = peer_cx >= my_cx
+        except Exception:
+            pass
+
+    def _nearest_live_other_kind_peer(self) -> dict | None:
+        """最近的在线异作品桌宠。"""
+        best = None
+        best_d = 10**18
+        ax = int(self.x) + int(self.display_size) // 2
+        ay = int(self.y) + int(self.display_size) // 2 + int(getattr(self, "click_bounce_offset", 0) or 0)
+        for data in self._list_live_peers():
+            kind = str(data.get("kind") or "").strip().lower()
+            if kind in ("", PEER_KIND):
+                continue
+            bx = int(data.get("x") or 0) + max(16, int(data.get("size") or 64)) // 2
+            by = int(data.get("y") or 0) + max(16, int(data.get("size") or 64)) // 2
+            d = (ax - bx) ** 2 + (ay - by) ** 2
+            if d < best_d:
+                best_d = d
+                best = data
+        return best
 
     def _yield_to_app_scene(self, *, keep_menu_music: bool = False) -> None:
         """让位给音乐/游戏/视频检测：打断工作、安静、跟随与互动动作。"""
@@ -16197,12 +17090,22 @@ class DesktopPet:
         self.app_scene_job = None
         if self._closing:
             return
+        # 全量立绘未就绪：不触发视频/游戏/音乐姿势
+        if not bool(getattr(self, "_startup_sprites_full_ready", False)) or self.mode == "loading":
+            if not self._closing:
+                self.app_scene_job = self.root.after(APP_SCENE_POLL_MS, self._app_scene_poll_tick)
+            return
         try:
             scene, sig = app_scene_desktop.classify_foreground()
         except Exception:
             scene, sig = "none", ""
         try:
             self._on_desktop_app_scene(scene, sig)
+        except Exception:
+            pass
+        try:
+            tick_scene = scene if scene != "hold" else str(getattr(self, "app_scene", "") or "none")
+            self._tick_desktop_surprise(tick_scene, now_ms=int(time.time() * 1000))
         except Exception:
             pass
         if not self._closing:
@@ -16243,6 +17146,16 @@ class DesktopPet:
                 self.app_scene_fx_on = False
                 self._clear_app_scene_sticky()
         else:
+            if prev in WORK_LIGHT_POSE_KINDS:
+                try:
+                    self._end_app_work_light_scene(silent=True)
+                except Exception:
+                    pass
+            if prev in DRAW_SCENE_KINDS:
+                try:
+                    self._end_app_draw_scene(silent=True)
+                except Exception:
+                    pass
             if not self.music_sprite_mode:
                 self.app_scene = "none"
             self.app_scene_fx_on = False
@@ -16254,10 +17167,39 @@ class DesktopPet:
                 pass
 
     def _on_desktop_app_scene(self, scene: str, signature: str) -> None:
+        # 拖动中不进不退：松手瞬间前台会在桌宠和背后软件之间跳
+        if getattr(self, "dragging", False):
+            return
+        # 桌宠自己的日记/画板：前台是自己或无场景时，优先记事/绘画姿
+        self_kind = self._self_draw_kind()
+        if self_kind and scene in ("hold", "none"):
+            self._apply_self_draw_scene(self_kind)
+            return
+        if (
+            not self_kind
+            and getattr(self, "_draw_scene_from_self", False)
+            and scene in ("hold", "none")
+        ):
+            self._apply_self_draw_scene("")
         # 点宠/菜单抢前台：保持当前场景与特效
         if scene == "hold":
             return
+        if scene in SCENE_DETECT_KEYS and not self._scene_detect_enabled(scene):
+            # 关闭自动识别：不进入；菜单里手动打开的同一种情景先保持
+            if getattr(self, "_scene_hold_manual", "") == scene and self.app_scene == scene:
+                return
+            scene = "none"
+        elif scene in SCENE_DETECT_KEYS and getattr(self, "_scene_hold_manual", "") not in ("", scene):
+            self._scene_hold_manual = ""
         now_ms = int(time.time() * 1000)
+        quiet_until = int(getattr(self, "_drag_scene_quiet_until_ms", 0) or 0)
+        if (
+            quiet_until
+            and now_ms < quiet_until
+            and scene == "none"
+            and self.app_scene not in ("", "none")
+        ):
+            return
         fg_exe = self._app_scene_sig_exe(signature)
         sticky = str(getattr(self, "_app_scene_sticky_exe", "") or "").strip().lower()
         music_ambient = self.app_scene == "music" and getattr(self, "music_ambient_only", False)
@@ -16378,6 +17320,58 @@ class DesktopPet:
             # 视频客户端同窗丢标题：继续粘住
             if video_ambient and sticky_is_video_app and fg_exe == sticky:
                 return
+            # 轻场景（办公/聊天/代码/学习）：同进程短暂丢标题不立刻清掉
+            light_now = self.app_scene in ("code", "study", "office", "chat", "paint", "note")
+            if light_now and sticky and fg_exe == sticky:
+                self._app_scene_soft_miss = int(getattr(self, "_app_scene_soft_miss", 0) or 0) + 1
+                if self._app_scene_soft_miss < APP_SCENE_SOFT_MISS_EXIT:
+                    return
+            if light_now and sticky:
+                if sticky in app_scene_desktop._CHAT_EXES and fg_exe in app_scene_desktop._CHAT_EXES:
+                    self._app_scene_sticky_exe = fg_exe
+                    self._app_scene_miss = 0
+                    self._app_scene_soft_miss = 0
+                    return
+                if sticky in app_scene_desktop._OFFICE_EXES and fg_exe in app_scene_desktop._OFFICE_EXES:
+                    self._app_scene_sticky_exe = fg_exe
+                    self._app_scene_miss = 0
+                    self._app_scene_soft_miss = 0
+                    return
+                if sticky in app_scene_desktop._CODE_EXES and fg_exe in app_scene_desktop._CODE_EXES:
+                    self._app_scene_sticky_exe = fg_exe
+                    self._app_scene_miss = 0
+                    self._app_scene_soft_miss = 0
+                    return
+                if sticky in app_scene_desktop._STUDY_EXES and fg_exe in app_scene_desktop._STUDY_EXES:
+                    self._app_scene_sticky_exe = fg_exe
+                    self._app_scene_miss = 0
+                    self._app_scene_soft_miss = 0
+                    return
+                if sticky in app_scene_desktop._PAINT_EXES and fg_exe in app_scene_desktop._PAINT_EXES:
+                    self._app_scene_sticky_exe = fg_exe
+                    self._app_scene_miss = 0
+                    self._app_scene_soft_miss = 0
+                    return
+                if sticky in app_scene_desktop._NOTE_EXES and fg_exe in app_scene_desktop._NOTE_EXES:
+                    self._app_scene_sticky_exe = fg_exe
+                    self._app_scene_miss = 0
+                    self._app_scene_soft_miss = 0
+                    return
+            if light_now and not in_ambient:
+                if self.app_scene in WORK_LIGHT_POSE_KINDS:
+                    try:
+                        self._end_app_work_light_scene(silent=True)
+                    except Exception:
+                        pass
+                if self.app_scene in DRAW_SCENE_KINDS:
+                    try:
+                        self._end_app_draw_scene(silent=True)
+                    except Exception:
+                        pass
+                self.app_scene = "none"
+                self.app_scene_fx_on = False
+                self._clear_app_scene_sticky()
+                return
             self._force_end_app_scene_ambient()
             return
         self._app_scene_miss = 0
@@ -16385,7 +17379,17 @@ class DesktopPet:
         if fg_exe:
             self._app_scene_sticky_exe = fg_exe
         if scene == self.app_scene and signature == self.app_scene_sig:
-            if scene in ("game", "video") and self.state == "scene_rest":
+            if scene in ("game", "video"):
+                if self.state != "scene_rest":
+                    self._restore_recognized_pose_after_interrupt()
+                return
+            if scene in WORK_LIGHT_POSE_KINDS and getattr(self, "_work_light_active", False):
+                if self.state != "scene_rest":
+                    self._restore_recognized_pose_after_interrupt()
+                return
+            if scene in DRAW_SCENE_KINDS and getattr(self, "_draw_scene_active", False):
+                if self.state != "scene_rest":
+                    self._restore_recognized_pose_after_interrupt()
                 return
             if scene == "music" and self.music_sprite_mode and self.music_ambient_only:
                 return
@@ -16432,8 +17436,67 @@ class DesktopPet:
             else:
                 self._enter_app_video_scene()
         elif scene == "music":
+            if getattr(self, "_work_light_active", False):
+                try:
+                    self._end_app_work_light_scene(silent=True)
+                except Exception:
+                    pass
+            if getattr(self, "_draw_scene_active", False):
+                try:
+                    self._end_app_draw_scene(silent=True)
+                except Exception:
+                    pass
             self._end_app_game_video_scenes(silent=True)
             self._enter_app_music_ambient(signature)
+        elif scene in ("code", "study", "office", "chat", "paint", "note"):
+            # 轻场景：学习只记；聊天/代码/办公 work；绘画/记事 draw
+            if prev in ("game", "video"):
+                self._end_app_game_video_scenes(silent=True)
+            if self.music_sprite_mode and self.music_ambient_only and prev == "music":
+                self._apply_music_off()
+            if scene in WORK_LIGHT_POSE_KINDS:
+                if prev in DRAW_SCENE_KINDS:
+                    try:
+                        self._end_app_draw_scene(silent=True)
+                    except Exception:
+                        pass
+                if prev in WORK_LIGHT_POSE_KINDS and prev != scene:
+                    try:
+                        self._end_app_work_light_scene(silent=True)
+                    except Exception:
+                        pass
+                self._enter_app_work_light_scene(scene)
+            elif scene in DRAW_SCENE_KINDS:
+                if prev in WORK_LIGHT_POSE_KINDS:
+                    try:
+                        self._end_app_work_light_scene(silent=True)
+                    except Exception:
+                        pass
+                if prev in DRAW_SCENE_KINDS and prev != scene:
+                    try:
+                        self._end_app_draw_scene(silent=True)
+                    except Exception:
+                        pass
+                self._enter_app_draw_scene(scene)
+            else:
+                if prev in WORK_LIGHT_POSE_KINDS:
+                    try:
+                        self._end_app_work_light_scene(silent=True)
+                    except Exception:
+                        pass
+                if prev in DRAW_SCENE_KINDS:
+                    try:
+                        self._end_app_draw_scene(silent=True)
+                    except Exception:
+                        pass
+                if self.app_scene != scene:
+                    self.app_scene = scene
+                    self.app_scene_fx_on = False
+                    self._mark_app_scene_entered()
+                    try:
+                        self._show_toast("学习", "#a8d8b4", duration_ms=1600)
+                    except Exception:
+                        pass
 
     def _try_engage_app_scene_fx(self) -> bool:
         """兼容旧调用：特效已在检测时开启，点宠不再当开关。"""
@@ -16467,17 +17530,1015 @@ class DesktopPet:
         self.state = "stand"
         self._music_from_panel = False
         self._resume_idle()
-        self._switch_music_to_ambient_follow(signature, tip="检测到音乐 · 跟听外部")
+        self._switch_music_to_ambient_follow(signature, tip="音乐")
         try:
             self._set_image(self._current_stand_sprite())
         except Exception:
             pass
+
+
+    def _start_typing_pose_watch(self) -> None:
+        self._stop_typing_pose_watch()
+        self._typing_pose_job = self.root.after(TYPING_POSE_POLL_MS, self._typing_pose_poll_tick)
+
+    def _stop_typing_pose_watch(self) -> None:
+        job = getattr(self, "_typing_pose_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+            self._typing_pose_job = None
+
+    def _typing_pose_poll_tick(self) -> None:
+        self._typing_pose_job = None
+        if self._closing:
+            return
+        try:
+            self._update_typing_pose()
+        except Exception:
+            pass
+        if not self._closing:
+            self._typing_pose_job = self.root.after(TYPING_POSE_POLL_MS, self._typing_pose_poll_tick)
+
+    def _typing_ready_scene(self) -> bool:
+        sc = str(getattr(self, "app_scene", "") or "")
+        if sc in typing_pose.TYPING_READY_SCENES:
+            return True
+        sticky = str(getattr(self, "_app_scene_sticky_exe", "") or "").strip().lower()
+        if not sticky:
+            return False
+        try:
+            if sticky in app_scene_desktop._CODE_EXES:
+                return True
+            if sticky in app_scene_desktop._STUDY_EXES:
+                return True
+            if sticky in app_scene_desktop._OFFICE_EXES:
+                return True
+            if sticky in app_scene_desktop._CHAT_EXES:
+                return True
+            if sticky in app_scene_desktop._PAINT_EXES:
+                return True
+            if sticky in app_scene_desktop._NOTE_EXES:
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _update_typing_pose(self) -> None:
+        """根据键盘区位 / 写作场景切换 type_* 立绘。"""
+        if self._closing or self.dragging:
+            return
+        if getattr(self, "_holding_allmate", False):
+            return
+        if getattr(self, "expose_session_active", False) or self.action_name == "expose":
+            return
+        if getattr(self, "rhythm_active", False):
+            return
+        # 游戏 / 视频姿势优先
+        if self.app_scene in ("game", "video") and self.state == "scene_rest":
+            if self._typing_pose:
+                self._end_typing_pose(silent=True)
+            return
+        if typing_pose.foreground_is_our_process():
+            # 在自家窗口输入：退出打字姿，避免和 AI 对话框抢表现
+            if self._typing_pose:
+                self._end_typing_pose(silent=True)
+            return
+
+        left, right, outer, inner, total = typing_pose.sample_pressed_zones()
+        now = int(time.time() * 1000)
+        if total > 0:
+            self._typing_last_key_ms = now
+
+        ready = self._typing_ready_scene()
+        recent = (now - int(getattr(self, "_typing_last_key_ms", 0) or 0)) <= TYPING_POSE_HOLD_MS
+
+        if total > 0:
+            want = typing_pose.classify_typing_pose(
+                ready_scene=ready,
+                left=left,
+                right=right,
+                outer=outer,
+                inner=inner,
+                total=total,
+            )
+        elif recent and self._typing_pose and self._typing_pose != "type_up":
+            # 松键后短暂粘住侧向/俯身姿，避免狂闪
+            want = self._typing_pose
+        elif ready:
+            # 聊天/代码由 work 循环占位，不用 type_up
+            if self.app_scene in WORK_LIGHT_POSE_KINDS or self.app_scene in DRAW_SCENE_KINDS:
+                if self._typing_pose:
+                    want = None
+                else:
+                    return
+            else:
+                want = "type_up"
+        else:
+            want = None
+
+        if want is None:
+            if self._typing_pose:
+                self._end_typing_pose(silent=True)
+            return
+
+        # 最短展示，避免左右狂切
+        since = int(getattr(self, "_typing_pose_since_ms", 0) or 0)
+        if self._typing_pose and want != self._typing_pose and since and (now - since) < 160:
+            want = self._typing_pose
+
+        if want == self._typing_pose:
+            return
+        self._apply_typing_pose(want)
+
+    def _apply_typing_pose(self, pose: str) -> None:
+        fname = typing_pose.TYPING_POSE_FILES.get(pose)
+        if not fname:
+            return
+        if _find_existing_asset(fname) is None and _find_existing_asset(
+            _resolve_sprite_filename(fname, _ACTIVE_PERSONA)
+        ) is None:
+            return
+        try:
+            canvas = _get_processed_canvas(
+                _resolve_sprite_filename(fname, _ACTIVE_PERSONA),
+                self.display_size,
+                _reference_scale(self.display_size),
+            )
+            if canvas.getbbox() is None:
+                canvas = _get_processed_canvas(
+                    fname,
+                    self.display_size,
+                    _reference_scale(self.display_size),
+                )
+        except Exception:
+            return
+        first = not bool(self._typing_pose)
+        self._typing_pose = pose
+        self._typing_pose_since_ms = int(time.time() * 1000)
+        # 打字姿覆盖 work 立绘时暂停切图（像素窗继续）
+        if getattr(self, "_work_light_active", False):
+            self._cancel_work_light_sprite_job()
+        if getattr(self, "_draw_scene_active", False):
+            self._cancel_draw_scene_jobs()
+        if first:
+            try:
+                self._yield_to_app_scene(keep_menu_music=True)
+            except Exception:
+                pass
+            self._stop_idle_jobs_for_scene()
+            self._stop_rest_bobble()
+            if self.mode in ("free",):
+                self.mode = "stroll"
+            self.state = "scene_rest"
+            self.rest_base_y = self.y
+            self._schedule_rest_bobble()
+        photo = ImageTk.PhotoImage(canvas)
+        self._typing_pose_photo = photo
+        self._set_image(photo)
+        self._ensure_scene_fx()
+
+    def _end_typing_pose(self, *, silent: bool = True) -> None:
+        if not getattr(self, "_typing_pose", None):
+            return
+        self._typing_pose = None
+        self._typing_pose_photo = None
+        self._typing_pose_since_ms = 0
+        self._ensure_scene_fx()
+        # 若仍被游戏/视频占用，交给它们刷新
+        if self.app_scene in ("game", "video") and self.state == "scene_rest":
+            try:
+                self._refresh_app_scene_frame()
+            except Exception:
+                pass
+            return
+        # 聊天/代码/办公：回到 work 循环
+        if self.app_scene in WORK_LIGHT_POSE_KINDS and getattr(self, "_work_light_active", False):
+            try:
+                self._work_light_show_frame()
+                self._schedule_work_light_tick()
+            except Exception:
+                pass
+            return
+        # 绘画/记事：回到固定顺序切图
+        if self.app_scene in DRAW_SCENE_KINDS and getattr(self, "_draw_scene_active", False):
+            try:
+                self._draw_scene_refresh_frame(force=True)
+                self._schedule_draw_scene_idle_tick()
+            except Exception:
+                pass
+            return
+        self._stop_rest_bobble()
+        if self.state == "scene_rest" and not getattr(self, "_holding_allmate", False):
+            self.state = "stand"
+            self.y = getattr(self, "rest_base_y", self.y)
+            try:
+                self._place_window(light=True)
+            except Exception:
+                pass
+            try:
+                self._set_image(self._current_stand_sprite())
+            except Exception:
+                pass
+            self._restore_default_free_after_scene()
+            try:
+                self._resume_idle()
+            except Exception:
+                pass
+
+
+    def _ensure_draw_pointer_mirrors(self) -> None:
+        """缺失时用基础 draw 图左右镜像生成更多指针区位姿。"""
+        try:
+            from PIL import Image as _Pil
+        except Exception:
+            return
+        for src_name, dst_name in pointer_draw_pose.DRAW_MIRROR_PAIRS:
+            try:
+                if _find_existing_asset(dst_name) is not None:
+                    continue
+                src = _find_existing_asset(src_name)
+                if src is None:
+                    continue
+                im = _Pil.open(src)
+                out = im.transpose(_Pil.Transpose.FLIP_LEFT_RIGHT)
+                if out.mode not in ("RGB", "L"):
+                    out = out.convert("RGB")
+                # 写到当前精灵目录旁（与 src 同目录）
+                dst = Path(src).with_name(dst_name)
+                out.save(dst, quality=95)
+            except Exception:
+                continue
+
+    def _self_window_open(self, attr: str) -> bool:
+        win = getattr(self, attr, None)
+        try:
+            return bool(win is not None and win.winfo_exists())
+        except Exception:
+            return False
+
+    def _self_draw_kind(self) -> str:
+        """桌宠自己的绘画/记事界面：画板→绘画，日记/待办→记事。"""
+        if (
+            self._self_window_open("home_paint_win")
+            or self._self_window_open("gift_win")
+            or self._self_window_open("diary_studio_win")
+        ):
+            return "paint"
+        if self._self_window_open("diary_win") or self._self_window_open("office_todo_win"):
+            return "note"
+        if getattr(self, "_self_paint_hold", False):
+            return "paint"
+        return ""
+
+    def _apply_self_draw_scene(self, kind: str) -> None:
+        if not kind:
+            if getattr(self, "_draw_scene_from_self", False):
+                self._draw_scene_from_self = False
+                if getattr(self, "_draw_scene_active", False) and self.app_scene in DRAW_SCENE_KINDS:
+                    self._end_app_draw_scene(silent=True)
+            return
+        already = (
+            getattr(self, "_draw_scene_active", False)
+            and getattr(self, "_draw_scene_kind", "") == kind
+            and self.app_scene == kind
+        )
+        self._draw_scene_from_self = True
+        if already:
+            return
+        self._enter_app_draw_scene(kind, quiet=True)
+
+    def _toggle_self_paint(self) -> None:
+        """办公「画画」：进入/退出绘画姿（与页面识别同一套 draw+picture）。"""
+        self._hide_main_menu()
+        self._self_paint_hold = not bool(getattr(self, "_self_paint_hold", False))
+        self._apply_self_draw_scene(self._self_draw_kind())
+
+    def _enter_app_draw_scene(self, kind: str, *, quiet: bool = False) -> None:
+        """记事：draw1–3 固定错位循环，每张 1s。绘画：同一套 draw，同时 picture1–6 各自循环。"""
+        kind = "paint" if kind == "paint" else "note"
+        if self._scene_busy_for_app() and not (
+            self.app_scene in DRAW_SCENE_KINDS and getattr(self, "_draw_scene_active", False)
+        ):
+            return
+        already = (
+            getattr(self, "_draw_scene_active", False)
+            and self.app_scene == kind
+        )
+        if already:
+            if getattr(self, "_typing_pose", None):
+                if self.state != "scene_rest":
+                    self.state = "scene_rest"
+                return
+            if self.state != "scene_rest":
+                self._stop_idle_jobs_for_scene()
+                self.state = "scene_rest"
+                self.rest_base_y = self.y
+                self._draw_scene_refresh_frame(force=True)
+                self._schedule_draw_scene_idle_tick()
+                self._ensure_scene_fx()
+            return
+        self._end_typing_pose(silent=True)
+        if self.app_scene in ("game", "video"):
+            self._end_app_game_video_scenes(silent=True)
+        self._yield_to_app_scene(keep_menu_music=True)
+        self._stop_idle_jobs_for_scene()
+        self.app_scene = kind
+        self.app_scene_fx_on = True
+        self._mark_app_scene_entered()
+        self._draw_scene_active = True
+        self._draw_scene_kind = kind
+        if self.mode in ("free",):
+            self.mode = "stroll"
+        self.state = "scene_rest"
+        self.rest_base_y = self.y
+        draws = _fixed_cycle(OFFICE_DRAW_FILES)
+        self._draw_scene_draw_seq = draws
+        self._draw_scene_draw_idx = 0
+        self._draw_scene_cur_draw = draws[0]
+        self._draw_scene_zone = ""
+        self._draw_scene_last_pointer_ms = 0
+        if kind == "paint":
+            pics = _fixed_cycle(OFFICE_PICTURE_FILES)
+            self._draw_scene_pic_seq = pics
+            self._draw_scene_pic_idx = 0
+            self._draw_scene_cur_pic = pics[0]
+        else:
+            self._draw_scene_pic_seq = []
+            self._draw_scene_pic_idx = 0
+            self._draw_scene_cur_pic = None
+        self._draw_scene_refresh_frame(force=True)
+        self._schedule_draw_scene_idle_tick()
+        self._schedule_rest_bobble()
+        self._ensure_scene_fx()
+        if quiet:
+            return
+        tip = "绘画" if kind == "paint" else "记事"
+        try:
+            self._show_toast(tip, "#a8d8b4", duration_ms=1600)
+        except Exception:
+            pass
+
+    def _end_app_draw_scene(self, *, silent: bool = False) -> None:
+        was = self.app_scene if self.app_scene in DRAW_SCENE_KINDS else getattr(self, "_draw_scene_kind", "")
+        self._cancel_draw_scene_jobs()
+        self._stop_work_light_fx()
+        self._draw_scene_active = False
+        self._draw_scene_kind = ""
+        self._draw_scene_draw_seq = []
+        self._draw_scene_pic_seq = []
+        self._draw_scene_photo = None
+        self._draw_scene_cur_draw = ""
+        self._draw_scene_cur_pic = None
+        self._draw_scene_zone = ""
+        if self.app_scene in DRAW_SCENE_KINDS:
+            self.app_scene = "none"
+        self.app_scene_fx_on = False
+        self._stop_rest_bobble()
+        self._restore_default_free_after_scene()
+        if self.state == "scene_rest" and not getattr(self, "_holding_allmate", False):
+            if not getattr(self, "_typing_pose", None):
+                self.state = "stand"
+                self.y = getattr(self, "rest_base_y", self.y)
+                try:
+                    self._place_window(light=True)
+                except Exception:
+                    pass
+                try:
+                    self._set_image(self._current_stand_sprite())
+                except Exception:
+                    pass
+                try:
+                    self._resume_idle()
+                except Exception:
+                    pass
+        if not silent and was:
+            label = "绘画" if was == "paint" else "记事"
+            try:
+                self._show_toast(f"结束{label}姿势", PIXEL_COLOR)
+            except Exception:
+                pass
+
+    def _cancel_draw_scene_jobs(self) -> None:
+        for attr in ("_draw_scene_job", "_draw_scene_pointer_job"):
+            job = getattr(self, attr, None)
+            if job:
+                try:
+                    self.root.after_cancel(job)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
+    def _schedule_draw_scene_idle_tick(self) -> None:
+        job = getattr(self, "_draw_scene_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+        if not getattr(self, "_draw_scene_active", False):
+            self._draw_scene_job = None
+            return
+        self._draw_scene_job = self.root.after(DRAW_SCENE_FRAME_MS, self._draw_scene_idle_tick)
+
+    def _schedule_draw_scene_pointer_poll(self) -> None:
+        """记事/绘画改为固定切图，不再跟指针换 draw。"""
+        job = getattr(self, "_draw_scene_pointer_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+        self._draw_scene_pointer_job = None
+
+    def _draw_scene_pointer_active(self) -> bool:
+        now = int(time.time() * 1000)
+        last = int(getattr(self, "_draw_scene_last_pointer_ms", 0) or 0)
+        return bool(last and (now - last) <= DRAW_SCENE_POINTER_HOLD_MS)
+
+    def _draw_scene_pointer_tick(self) -> None:
+        self._draw_scene_pointer_job = None
+        if not getattr(self, "_draw_scene_active", False):
+            return
+        if self.app_scene not in DRAW_SCENE_KINDS:
+            return
+        if self._closing or self.dragging:
+            self._schedule_draw_scene_pointer_poll()
+            return
+        if getattr(self, "_typing_pose", None):
+            self._schedule_draw_scene_pointer_poll()
+            return
+        pos = pointer_draw_pose.cursor_screen_norm()
+        btn = pointer_draw_pose.pointer_buttons_down()
+        if pos is not None:
+            nx, _ny = pos
+            zone = pointer_draw_pose.classify_draw_zone(nx)
+            # 落笔或区位变化 → 记为指针活动
+            if btn or zone != getattr(self, "_draw_scene_zone", ""):
+                self._draw_scene_last_pointer_ms = int(time.time() * 1000)
+                self._draw_scene_zone = zone
+                want = pointer_draw_pose.draw_file_for_zone(zone)
+                if want != getattr(self, "_draw_scene_cur_draw", ""):
+                    self._draw_scene_cur_draw = want
+                    self._draw_scene_refresh_frame(force=True)
+            elif btn:
+                self._draw_scene_last_pointer_ms = int(time.time() * 1000)
+        self._schedule_draw_scene_pointer_poll()
+
+    def _draw_scene_idle_tick(self) -> None:
+        self._draw_scene_job = None
+        if not getattr(self, "_draw_scene_active", False):
+            return
+        if self.app_scene not in DRAW_SCENE_KINDS:
+            return
+        if self._closing or self.dragging:
+            return
+        if getattr(self, "_typing_pose", None):
+            self._schedule_draw_scene_idle_tick()
+            return
+        kind = getattr(self, "_draw_scene_kind", "") or self.app_scene
+        # 记事 / 绘画：draw1–3 固定错位循环，每张 1s
+        draws = getattr(self, "_draw_scene_draw_seq", None) or []
+        if not draws:
+            draws = _fixed_cycle(OFFICE_DRAW_FILES)
+            self._draw_scene_draw_seq = draws
+        nxt_d = int(getattr(self, "_draw_scene_draw_idx", 0) or 0) + 1
+        if nxt_d >= len(draws):
+            nxt_d = 0
+        self._draw_scene_draw_idx = nxt_d
+        self._draw_scene_cur_draw = draws[nxt_d]
+        # 绘画：picture1–6 同时按自己的固定顺序切，每张 1s
+        if kind == "paint":
+            pics = getattr(self, "_draw_scene_pic_seq", None) or []
+            if not pics:
+                pics = _fixed_cycle(OFFICE_PICTURE_FILES)
+                self._draw_scene_pic_seq = pics
+            nxt_p = int(getattr(self, "_draw_scene_pic_idx", 0) or 0) + 1
+            if nxt_p >= len(pics):
+                nxt_p = 0
+            self._draw_scene_pic_idx = nxt_p
+            self._draw_scene_cur_pic = pics[nxt_p]
+        self._draw_scene_refresh_frame(force=True)
+        self._schedule_draw_scene_idle_tick()
+
+    def _photo_for_scene(self, key: tuple, rgba: Image.Image) -> ImageTk.PhotoImage:
+        """场景切图复用 PhotoImage，避免每秒重造大图卡顿。"""
+        cache = getattr(self, "_scene_photo_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._scene_photo_cache = cache
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
+        photo = _tk_photo_from_pil(rgba)
+        if len(cache) >= 36:
+            cache.clear()
+        cache[key] = photo
+        return photo
+
+    def _draw_scene_refresh_frame(self, *, force: bool = False) -> None:
+        draw_f = str(getattr(self, "_draw_scene_cur_draw", "") or "draw2.jpg")
+        pic_f = getattr(self, "_draw_scene_cur_pic", None)
+        kind = getattr(self, "_draw_scene_kind", "") or self.app_scene
+        size = int(self.display_size)
+        try:
+            if kind == "paint" and pic_f:
+                rgba = _compose_draw_picture_frame(draw_f, str(pic_f), size)
+                photo = self._photo_for_scene(("paint", draw_f, str(pic_f), size), rgba)
+            else:
+                rgba = _get_processed_canvas(draw_f, size, _reference_scale(size))
+                photo = self._photo_for_scene(("draw", draw_f, size), rgba)
+        except Exception:
+            return
+        self._draw_scene_photo = photo
+        self._set_image(photo)
+
+    def _work_light_files_for(self, kind: str) -> tuple[str, ...]:
+        if kind == "office":
+            return WORK_WRITE_FILES
+        return WORK_LIGHT_FILES
+
+    def _enter_app_work_light_scene(self, kind: str) -> None:
+        """聊天/代码：work1–3 + 像素窗；办公：work_write1–3 随机切图。"""
+        if kind not in WORK_LIGHT_POSE_KINDS:
+            kind = "code"
+        if self._scene_busy_for_app() and not (
+            self.app_scene in WORK_LIGHT_POSE_KINDS and getattr(self, "_work_light_active", False)
+        ):
+            return
+        already = (
+            getattr(self, "_work_light_active", False)
+            and self.app_scene == kind
+        )
+        if already:
+            if getattr(self, "_typing_pose", None):
+                if self.state != "scene_rest":
+                    self.state = "scene_rest"
+                return
+            if self.state != "scene_rest":
+                self._stop_idle_jobs_for_scene()
+                self.state = "scene_rest"
+                self.rest_base_y = self.y
+                self._work_light_show_frame()
+                self._schedule_work_light_tick()
+                self._ensure_scene_fx()
+            return
+        self._end_typing_pose(silent=True)
+        if self.app_scene in ("game", "video"):
+            self._end_app_game_video_scenes(silent=True)
+        self._yield_to_app_scene(keep_menu_music=True)
+        self._stop_idle_jobs_for_scene()
+        self.app_scene = kind
+        self.app_scene_fx_on = True
+        self._mark_app_scene_entered()
+        self._work_light_active = True
+        self._work_light_kind = kind
+        if self.mode in ("free",):
+            self.mode = "stroll"
+        self.state = "scene_rest"
+        self.rest_base_y = self.y
+        seq = _fixed_cycle(self._work_light_files_for(kind))
+        self._work_light_seq = seq
+        self._work_light_idx = 0
+        self._work_light_show_frame()
+        self._schedule_work_light_tick()
+        self._ensure_scene_fx()
+        self._schedule_rest_bobble()
+        tips = {
+            "chat": "聊天",
+            "code": "代码",
+            "office": "办公",
+        }
+        try:
+            self._show_toast(tips.get(kind, kind), "#a8d8b4", duration_ms=1600)
+        except Exception:
+            pass
+
+    def _end_app_work_light_scene(self, *, silent: bool = False) -> None:
+        was = self.app_scene if self.app_scene in WORK_LIGHT_POSE_KINDS else getattr(self, "_work_light_kind", "")
+        self._cancel_work_light_sprite_job()
+        self._stop_work_light_fx()
+        self._work_light_active = False
+        self._work_light_kind = ""
+        self._work_light_seq = []
+        self._work_light_idx = 0
+        self._work_light_photo = None
+        if self.app_scene in WORK_LIGHT_POSE_KINDS:
+            self.app_scene = "none"
+        self.app_scene_fx_on = False
+        self._stop_rest_bobble()
+        self._restore_default_free_after_scene()
+        if self.state == "scene_rest" and not getattr(self, "_holding_allmate", False):
+            if not getattr(self, "_typing_pose", None):
+                self.state = "stand"
+                self.y = getattr(self, "rest_base_y", self.y)
+                try:
+                    self._place_window(light=True)
+                except Exception:
+                    pass
+                try:
+                    self._set_image(self._current_stand_sprite())
+                except Exception:
+                    pass
+                try:
+                    self._resume_idle()
+                except Exception:
+                    pass
+        if not silent and was:
+            labels = {"chat": "聊天", "code": "写代码", "office": "办公"}
+            try:
+                self._show_toast(f"结束{labels.get(was, was)}姿势", PIXEL_COLOR)
+            except Exception:
+                pass
+
+    def _cancel_work_light_sprite_job(self) -> None:
+        job = getattr(self, "_work_light_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+            self._work_light_job = None
+
+    def _schedule_work_light_tick(self) -> None:
+        self._cancel_work_light_sprite_job()
+        if not getattr(self, "_work_light_active", False):
+            return
+        if getattr(self, "_typing_pose", None):
+            return
+        self._work_light_job = self.root.after(WORK_LIGHT_FRAME_MS, self._work_light_tick)
+
+    def _work_light_tick(self) -> None:
+        self._work_light_job = None
+        if not getattr(self, "_work_light_active", False):
+            return
+        if self.app_scene not in WORK_LIGHT_POSE_KINDS:
+            return
+        if getattr(self, "_typing_pose", None):
+            return
+        if self._closing or self.dragging:
+            return
+        seq = getattr(self, "_work_light_seq", None) or []
+        if not seq:
+            kind = getattr(self, "_work_light_kind", "") or self.app_scene
+            seq = _fixed_cycle(self._work_light_files_for(str(kind)))
+            self._work_light_seq = seq
+        nxt = int(getattr(self, "_work_light_idx", 0) or 0) + 1
+        if nxt >= len(seq):
+            nxt = 0
+        self._work_light_idx = nxt
+        self._work_light_show_frame()
+        self._schedule_work_light_tick()
+
+    def _work_light_show_frame(self) -> None:
+        kind = getattr(self, "_work_light_kind", "") or self.app_scene
+        seq = getattr(self, "_work_light_seq", None) or list(self._work_light_files_for(str(kind)))
+        if not seq:
+            return
+        idx = int(getattr(self, "_work_light_idx", 0) or 0) % len(seq)
+        fname = seq[idx]
+        size = int(self.display_size)
+        try:
+            canvas = _get_processed_canvas(fname, size, _reference_scale(size))
+            photo = self._photo_for_scene(("work", fname, size), canvas)
+        except Exception:
+            return
+        self._work_light_photo = photo
+        self._set_image(photo)
+
+    def _scene_fx_kind(self) -> str:
+        """侧边像素小窗：聊天/代码/办公/记事/绘画，以及单独打字。"""
+        if getattr(self, "_typing_pose", None) and not (
+            getattr(self, "_work_light_active", False) or getattr(self, "_draw_scene_active", False)
+        ):
+            return "type"
+        if getattr(self, "_work_light_active", False):
+            kind = str(getattr(self, "_work_light_kind", "") or self.app_scene or "")
+            if kind in ("chat", "code", "office"):
+                return kind
+        if getattr(self, "_draw_scene_active", False):
+            kind = str(getattr(self, "_draw_scene_kind", "") or self.app_scene or "")
+            if kind in ("note", "paint"):
+                return kind
+        return ""
+
+    def _ensure_scene_fx(self) -> None:
+        kind = self._scene_fx_kind()
+        if not kind:
+            self._stop_work_light_fx()
+            return
+        win = getattr(self, "_work_light_fx_win", None)
+        alive = False
+        try:
+            alive = win is not None and win.winfo_exists()
+        except Exception:
+            alive = False
+        if not alive or getattr(self, "_work_light_fx_kind", "") != kind:
+            self._start_work_light_fx(kind)
+            return
+        if not getattr(self, "_work_light_fx_job", None):
+            self._animate_work_light_fx()
+
+    def _start_work_light_fx(self, kind: str) -> None:
+        self._stop_work_light_fx()
+        self._work_light_fx_kind = kind
+        self._work_light_fx_phase = 0
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        try:
+            setattr(win, "_vpet_no_glass", True)
+        except Exception:
+            pass
+        win.configure(bg="magenta")
+        try:
+            win.wm_attributes("-transparentcolor", "magenta")
+        except Exception:
+            pass
+        self._apply_window_layer(win)
+        cv = tk.Canvas(
+            win,
+            width=WORK_LIGHT_FX_W,
+            height=WORK_LIGHT_FX_H,
+            bg="magenta",
+            highlightthickness=0,
+        )
+        cv.pack()
+        cv.bind("<Button-1>", self._on_scene_fx_click)
+        cv.bind("<Double-Button-1>", self._on_scene_fx_double)
+        self._work_light_fx_win = win
+        self._work_light_fx_canvas = cv
+        self._work_light_fx_place_sig = None
+        self._place_work_light_fx(force=True)
+        self._animate_work_light_fx()
+
+    def _stop_work_light_fx(self) -> None:
+        self._close_scene_fx_popups()
+        job = getattr(self, "_work_light_fx_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+            self._work_light_fx_job = None
+        win = getattr(self, "_work_light_fx_win", None)
+        if win is not None:
+            try:
+                if win.winfo_exists():
+                    win.destroy()
+            except Exception:
+                pass
+        self._work_light_fx_win = None
+        self._work_light_fx_canvas = None
+        self._work_light_fx_place_sig = None
+        self._work_light_fx_kind = ""
+
+    def _place_work_light_fx(self, *, force: bool = False) -> None:
+        win = getattr(self, "_work_light_fx_win", None)
+        if win is None:
+            return
+        try:
+            if not win.winfo_exists():
+                return
+        except Exception:
+            return
+        display_y = self.y + self.click_bounce_offset
+        left_x = int(self.x) - WORK_LIGHT_FX_W - WORK_LIGHT_FX_GAP
+        if left_x < 0:
+            left_x = int(self.x) + int(self.display_size) + WORK_LIGHT_FX_GAP
+        top_y = int(display_y) + max(0, (int(self.display_size) - WORK_LIGHT_FX_H) // 4)
+        sig = (left_x, top_y)
+        if not force and sig == getattr(self, "_work_light_fx_place_sig", None):
+            return
+        self._work_light_fx_place_sig = sig
+        try:
+            win.geometry(f"+{sig[0]}+{sig[1]}")
+        except Exception:
+            pass
+        try:
+            win.lower(self.root)
+        except Exception:
+            pass
+        try:
+            self.root.lift()
+        except Exception:
+            pass
+
+    def _animate_work_light_fx(self) -> None:
+        self._work_light_fx_job = None
+        kind = self._scene_fx_kind()
+        if not kind:
+            self._stop_work_light_fx()
+            return
+        cv = getattr(self, "_work_light_fx_canvas", None)
+        if cv is None:
+            return
+        phase = int(getattr(self, "_work_light_fx_phase", 0) or 0)
+        drawers = {
+            "chat": _draw_work_light_chat_fx,
+            "code": _draw_work_light_code_fx,
+            "office": _draw_work_light_office_fx,
+            "note": _draw_work_light_note_fx,
+            "paint": _draw_work_light_paint_fx,
+            "type": _draw_work_light_type_fx,
+        }
+        draw = drawers.get(kind, _draw_work_light_code_fx)
+        kwargs = {}
+        if kind == "chat":
+            kwargs["lines"] = list(getattr(self, "_chat_fx_lines", None) or WORK_LIGHT_CHAT_LINES)
+        elif kind == "office":
+            kwargs["lines"] = list(getattr(self, "_office_fx_lines", None) or WORK_LIGHT_OFFICE_LINES)
+        elif kind == "note":
+            kwargs["lines"] = list(getattr(self, "_note_fx_lines", None) or WORK_LIGHT_NOTE_LINES)
+        try:
+            draw(cv, WORK_LIGHT_FX_W, WORK_LIGHT_FX_H, phase, **kwargs)
+        except Exception:
+            pass
+        self._work_light_fx_kind = kind
+        self._work_light_fx_phase = phase + 1
+        self._place_work_light_fx()
+        self._work_light_fx_job = self.root.after(WORK_LIGHT_FX_MS, self._animate_work_light_fx)
+
+    def _close_scene_fx_popups(self) -> None:
+        for attr in ("_chat_fx_input_win", "_fx_lines_editor_win"):
+            win = getattr(self, attr, None)
+            if win is None:
+                continue
+            try:
+                if win.winfo_exists():
+                    win.destroy()
+            except Exception:
+                pass
+            setattr(self, attr, None)
+
+    def _clear_scene_side_fx(self) -> None:
+        """切到睡眠/自由/跟随等时收起侧边小窗，避免还停在上一个情景。"""
+        self._scene_hold_manual = ""
+        try:
+            if getattr(self, "_work_light_active", False) or self.app_scene in WORK_LIGHT_POSE_KINDS:
+                self._end_app_work_light_scene(silent=True)
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_draw_scene_active", False) or self.app_scene in DRAW_SCENE_KINDS:
+                self._end_app_draw_scene(silent=True)
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_typing_pose", None):
+                self._end_typing_pose(silent=True)
+        except Exception:
+            pass
+        self._stop_work_light_fx()
+
+    def _on_scene_fx_click(self, _event=None) -> None:
+        if self._scene_fx_kind() == "chat":
+            self._open_chat_fx_input()
+
+    def _on_scene_fx_double(self, _event=None) -> None:
+        kind = self._scene_fx_kind()
+        if kind in ("office", "note"):
+            self._open_fx_lines_editor(kind)
+
+    def _place_near_scene_fx(self, win: tk.Toplevel) -> None:
+        try:
+            win.update_idletasks()
+            ww = max(1, int(win.winfo_width()))
+            wh = max(1, int(win.winfo_height()))
+        except Exception:
+            ww, wh = 160, 40
+        x = int(self.x) - ww - WORK_LIGHT_FX_GAP
+        y = int(self.y) + int(self.display_size) + 6
+        if x < 0:
+            x = int(self.x) + int(self.display_size) + WORK_LIGHT_FX_GAP
+        try:
+            win.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+
+    def _open_chat_fx_input(self) -> None:
+        if self._scene_fx_kind() != "chat":
+            return
+        old = getattr(self, "_chat_fx_input_win", None)
+        try:
+            if old is not None and old.winfo_exists():
+                old.lift()
+                return
+        except Exception:
+            pass
+        win = tk.Toplevel(self.root)
+        win.title("聊天")
+        win.resizable(False, False)
+        try:
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        win.configure(bg="#1a2433")
+        entry = tk.Entry(win, width=16, bg="#1e2a38", fg="#f0f6fa", insertbackground="#f0f6fa", relief="flat")
+        entry.pack(padx=8, pady=8)
+        self._chat_fx_input_win = win
+
+        def send(_event=None) -> None:
+            self._send_chat_fx_line(entry.get())
+            self._close_scene_fx_popups()
+
+        entry.bind("<Return>", send)
+        entry.bind("<Escape>", lambda _e: self._close_scene_fx_popups())
+        win.protocol("WM_DELETE_WINDOW", self._close_scene_fx_popups)
+        self._place_near_scene_fx(win)
+        try:
+            entry.focus_set()
+        except Exception:
+            pass
+
+    def _send_chat_fx_line(self, text: str) -> None:
+        text = " ".join(str(text or "").split())
+        if not text:
+            return
+        text = text[:10]
+        lines = list(getattr(self, "_chat_fx_lines", None) or list(WORK_LIGHT_CHAT_LINES))
+        n = max(1, len(lines))
+        phase = int(getattr(self, "_work_light_fx_phase", 0) or 0)
+        start = (phase // 4) % n
+        lines.insert(start, (text, None))
+        if len(lines) > 18:
+            lines = lines[:18]
+        self._chat_fx_lines = lines
+
+    def _open_fx_lines_editor(self, kind: str) -> None:
+        if kind == "office":
+            src = list(getattr(self, "_office_fx_lines", None) or WORK_LIGHT_OFFICE_LINES)
+            title = "办公"
+        elif kind == "note":
+            src = list(getattr(self, "_note_fx_lines", None) or WORK_LIGHT_NOTE_LINES)
+            title = "记事"
+        else:
+            return
+        n = len(WORK_LIGHT_OFFICE_LINES if kind == "office" else WORK_LIGHT_NOTE_LINES)
+        while len(src) < n:
+            src.append("")
+        src = src[:n]
+        old = getattr(self, "_fx_lines_editor_win", None)
+        try:
+            if old is not None and old.winfo_exists():
+                old.destroy()
+        except Exception:
+            pass
+        win = tk.Toplevel(self.root)
+        win.title(title)
+        win.resizable(False, False)
+        try:
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        win.configure(bg="#f4f7fb")
+        entries: list[tk.Entry] = []
+        for i, text in enumerate(src):
+            row = tk.Frame(win, bg="#f4f7fb")
+            row.pack(fill=tk.X, padx=8, pady=2)
+            tk.Label(row, text=str(i + 1), width=2, bg="#f4f7fb", fg="#1e3a5c").pack(side=tk.LEFT)
+            ent = tk.Entry(row, width=16)
+            ent.insert(0, str(text))
+            ent.pack(side=tk.LEFT, padx=4)
+            entries.append(ent)
+
+        def save() -> None:
+            new_lines = [ent.get().strip()[:12] for ent in entries]
+            while len(new_lines) < n:
+                new_lines.append("")
+            new_lines = new_lines[:n]
+            if kind == "office":
+                self._office_fx_lines = new_lines
+            else:
+                self._note_fx_lines = new_lines
+            self._close_scene_fx_popups()
+
+        tk.Button(win, text="保存", command=save).pack(pady=8)
+        self._fx_lines_editor_win = win
+        win.protocol("WM_DELETE_WINDOW", self._close_scene_fx_popups)
+        self._place_near_scene_fx(win)
+        if entries:
+            try:
+                entries[0].focus_set()
+            except Exception:
+                pass
 
     def _enter_app_game_scene(self) -> None:
         if self._scene_busy_for_app() and self.app_scene != "game":
             return
         if self.app_scene == "game" and self.state == "scene_rest":
             return
+        if getattr(self, "_work_light_active", False):
+            try:
+                self._end_app_work_light_scene(silent=True)
+            except Exception:
+                pass
+        if getattr(self, "_draw_scene_active", False):
+            try:
+                self._end_app_draw_scene(silent=True)
+            except Exception:
+                pass
+        self._end_typing_pose(silent=True)
         self._yield_to_app_scene(keep_menu_music=False)
         self._stop_idle_jobs_for_scene()
         self.app_scene = "game"
@@ -16490,7 +18551,7 @@ class DesktopPet:
         self._refresh_app_scene_frame()
         self._schedule_rest_bobble()
         # 独占全屏游戏可能盖不住桌宠；无边框/窗口化通常可见
-        self._show_toast("检测到游戏 · 开玩姿势", "#88ffaa", duration_ms=1600)
+        self._show_toast("游戏", "#88ffaa", duration_ms=1600)
 
     def _enter_app_video_scene(self) -> None:
         if self._scene_busy_for_app() and self.app_scene != "video":
@@ -16501,6 +18562,17 @@ class DesktopPet:
             if not getattr(self, "rest_bobble_job", None):
                 self._schedule_rest_bobble()
             return
+        if getattr(self, "_work_light_active", False):
+            try:
+                self._end_app_work_light_scene(silent=True)
+            except Exception:
+                pass
+        if getattr(self, "_draw_scene_active", False):
+            try:
+                self._end_app_draw_scene(silent=True)
+            except Exception:
+                pass
+        self._end_typing_pose(silent=True)
         self._yield_to_app_scene(keep_menu_music=False)
         self._stop_idle_jobs_for_scene()
         self.app_scene = "video"
@@ -16513,6 +18585,10 @@ class DesktopPet:
         self.app_scene_slide = 0
         self.app_scene_scroll_px = 0.0
         self.app_scene_video_on_left = True
+        try:
+            self._orient_video_strip_away_from_peer()
+        except Exception:
+            pass
         # 保留已建色条缓存；仅缺省时异步补齐，避免每次进视频主线程卡死
         if not getattr(self, "_video_variant_pil", None):
             self._ensure_video_variants()
@@ -16520,7 +18596,7 @@ class DesktopPet:
         self._refresh_app_scene_frame()
         self._schedule_rest_bobble()
         self._schedule_app_scene_frame_tick()
-        self._show_toast("检测到视频 · 滚动特效开 · 换片换色", "#ddaaff", duration_ms=1800)
+        self._show_toast("视频", "#ddaaff", duration_ms=1800)
 
     def _restore_default_free_after_scene(self) -> None:
         """场景/音乐占用结束后回到默认自由模式（未手动开音乐时）。"""
@@ -16577,7 +18653,7 @@ class DesktopPet:
             self._set_image(self._current_stand_sprite())
 
     def _stop_idle_jobs_for_scene(self) -> None:
-        for attr in ("idle_job", "walk_job", "stand_job", "move_job"):
+        for attr in ("idle_job", "walk_move_job", "walk_anim_job", "move_land_job"):
             job = getattr(self, attr, None)
             if job:
                 try:
@@ -16586,6 +18662,63 @@ class DesktopPet:
                     pass
                 setattr(self, attr, None)
         self.follow_animating = False
+
+    def _recognized_pose_active(self) -> bool:
+        """页面识别姿势占用中：自由闲逛不能把它拉走。"""
+        if self.app_scene in ("game", "video"):
+            return True
+        if self.app_scene in WORK_LIGHT_POSE_KINDS and getattr(self, "_work_light_active", False):
+            return True
+        if self.app_scene in DRAW_SCENE_KINDS and getattr(self, "_draw_scene_active", False):
+            return True
+        if getattr(self, "_typing_pose", None):
+            return True
+        return False
+
+    def _restore_recognized_pose_after_interrupt(self) -> bool:
+        """拖动/落地把姿势打成站立或走路后，拉回当前识别姿，不重新进场。"""
+        if not self._recognized_pose_active():
+            return False
+        self._stop_idle_jobs_for_scene()
+        pose = str(getattr(self, "_typing_pose", "") or "")
+        if pose and self.app_scene not in ("game", "video"):
+            self.state = "scene_rest"
+            try:
+                self._apply_typing_pose(pose)
+            except Exception:
+                pass
+            return True
+        if self.app_scene in ("game", "video"):
+            self.state = "scene_rest"
+            try:
+                self._refresh_app_scene_frame()
+                self._schedule_rest_bobble()
+                if self.app_scene == "video" and getattr(self, "app_scene_fx_on", False):
+                    self._schedule_app_scene_frame_tick()
+            except Exception:
+                pass
+            return True
+        if self.app_scene in WORK_LIGHT_POSE_KINDS and getattr(self, "_work_light_active", False):
+            self.state = "scene_rest"
+            self.rest_base_y = self.y
+            try:
+                self._work_light_show_frame()
+                self._schedule_work_light_tick()
+                self._ensure_scene_fx()
+            except Exception:
+                pass
+            return True
+        if self.app_scene in DRAW_SCENE_KINDS and getattr(self, "_draw_scene_active", False):
+            self.state = "scene_rest"
+            self.rest_base_y = self.y
+            try:
+                self._draw_scene_refresh_frame(force=True)
+                self._schedule_draw_scene_idle_tick()
+                self._ensure_scene_fx()
+            except Exception:
+                pass
+            return True
+        return False
 
     def _refresh_app_scene_frame(self) -> None:
         if getattr(self, "_holding_allmate", False):
@@ -16633,6 +18766,11 @@ class DesktopPet:
             )
             if self.app_scene_slide % 160 == 0:
                 self.app_scene_video_on_left = not self.app_scene_video_on_left
+            try:
+                if self._nearest_live_other_kind_peer():
+                    self._orient_video_strip_away_from_peer()
+            except Exception:
+                pass
             self._refresh_app_scene_frame()
             self.app_scene_frame_job = self.root.after(APP_SCENE_VIDEO_SLIDE_MS, tick)
 
@@ -18357,6 +20495,10 @@ class DesktopPet:
         self._place_crossover_bar(light=light)
         try:
             self._office_place_todo_hud()
+        except Exception:
+            pass
+        try:
+            self._place_work_light_fx()
         except Exception:
             pass
         if light:
@@ -20187,8 +22329,9 @@ class DesktopPet:
             pass
         self._cancel_idle_chain()
         try:
-            self.state = "stand"
-            self._set_image(self._current_stand_sprite())
+            if self.app_scene not in ("game", "video"):
+                self.state = "stand"
+            self._set_motion_image(self._current_stand_sprite())
             self._place_window(light=True)
         except Exception:
             pass
@@ -20543,8 +22686,9 @@ class DesktopPet:
             if abs(dy) > abs(dx):
                 face = "front" if dy > 0 else "back"
             self._apply_walk_direction(face)
-            self.state = "stand"
-            self._set_image(self._current_stand_sprite())
+            if self.app_scene not in ("game", "video"):
+                self.state = "stand"
+            self._set_motion_image(self._current_stand_sprite())
             self._place_window(light=True)
             return True
         if abs(dx) >= abs(dy):
@@ -20552,13 +22696,14 @@ class DesktopPet:
         else:
             direction = "front" if dy > 0 else "back"
         self._apply_walk_direction(direction)
-        self.state = "walk"
+        if self.app_scene not in ("game", "video"):
+            self.state = "walk"
         step_x, step_y = self.DELTAS[direction]
         self.x += step_x
         self.y += step_y
         frames = self._walk_sprites[direction]
         wf = int(getattr(self, "_crossover_walk_frame", 0) or 0)
-        self._set_image(frames[wf % 2])
+        self._set_motion_image(frames[wf % 2])
         self._crossover_walk_frame = wf + 1
         self._place_window(light=True)
         return False
@@ -20592,10 +22737,11 @@ class DesktopPet:
                         peer_friendship.clear_session(PEER_PRESENCE_DIR)
             except Exception:
                 pass
-        self.state = "stand"
+        if self.app_scene not in ("game", "video"):
+            self.state = "stand"
         self.action_name = ""
         try:
-            self._set_image(self._current_stand_sprite())
+            self._set_motion_image(self._current_stand_sprite())
             self._place_window(light=True)
         except Exception:
             pass
@@ -20761,10 +22907,11 @@ class DesktopPet:
             pass
         face = "right" if self._peer_instance_id == str(session.get("left_id") or "") else "left"
         self._apply_walk_direction(face)
-        self.state = "stand"
+        if self.app_scene not in ("game", "video"):
+            self.state = "stand"
         self.action_name = ""
         try:
-            self._set_image(self._current_stand_sprite())
+            self._set_motion_image(self._current_stand_sprite())
             self._place_window(light=True)
         except Exception:
             pass
@@ -22625,8 +24772,9 @@ class DesktopPet:
             else:
                 face = "right" if my_id == str(session.get("left_id") or "") else "left"
                 self._apply_walk_direction(face)
-                self.state = "stand"
-                self._set_image(self._current_stand_sprite())
+                if self.app_scene not in ("game", "video"):
+                    self.state = "stand"
+                self._set_motion_image(self._current_stand_sprite())
                 self._place_window(light=True)
             if self._crossover_can_advance_session(session):
                 session = self._maybe_advance_crossover_session(session, now_ms)
@@ -22676,8 +24824,9 @@ class DesktopPet:
             else:
                 face = "right" if my_id == str(session.get("left_id") or "") else "left"
                 self._apply_walk_direction(face)
-                self.state = "stand"
-                self._set_image(self._current_stand_sprite())
+                if self.app_scene not in ("game", "video"):
+                    self.state = "stand"
+                self._set_motion_image(self._current_stand_sprite())
                 self._place_window(light=True)
                 try:
                     self._publish_peer_presence(force=True)
@@ -22687,9 +24836,10 @@ class DesktopPet:
             # 并排后站定：掐断自由闲逛，保持 stand（兼容苍叶 phase=dialog）
             face = "right" if my_id == str(session.get("left_id") or "") else "left"
             self._apply_walk_direction(face)
-            self.state = "stand"
+            if self.app_scene not in ("game", "video"):
+                self.state = "stand"
             try:
-                self._set_image(self._current_stand_sprite())
+                self._set_motion_image(self._current_stand_sprite())
                 self._place_window(light=True)
             except Exception:
                 pass
@@ -22700,9 +24850,10 @@ class DesktopPet:
         elif phase in ("long_mid", "long_choose", "long_reveal"):
             face = "right" if my_id == str(session.get("left_id") or "") else "left"
             self._apply_walk_direction(face)
-            self.state = "stand"
+            if self.app_scene not in ("game", "video"):
+                self.state = "stand"
             try:
-                self._set_image(self._current_stand_sprite())
+                self._set_motion_image(self._current_stand_sprite())
                 self._place_window(light=True)
             except Exception:
                 pass
@@ -22723,8 +24874,9 @@ class DesktopPet:
         elif phase == "act_ready":
             face = "right" if my_id == str(session.get("left_id") or "") else "left"
             self._apply_walk_direction(face)
-            self.state = "stand"
-            self._set_image(self._current_stand_sprite())
+            if self.app_scene not in ("game", "video"):
+                self.state = "stand"
+            self._set_motion_image(self._current_stand_sprite())
             if not self._crossover_at_slot(tx, ty, tol=12):
                 self.x, self.y = tx, ty
             self._place_window(light=True)
@@ -22739,7 +24891,8 @@ class DesktopPet:
         elif phase == "stroll":
             direction = str(session.get("stroll_dir") or "right")
             self._apply_walk_direction(direction)
-            self.state = "walk"
+            if self.app_scene not in ("game", "video"):
+                self.state = "walk"
             dx, dy = self.DELTAS[direction]
             nx, ny = self.x + dx, self.y + dy
             screen_w, screen_h = self._screen_wh()
@@ -22753,7 +24906,7 @@ class DesktopPet:
                 self.x, self.y = nx, ny
             wf = int(getattr(self, "_crossover_walk_frame", 0) or 0)
             frames = self._walk_sprites[direction]
-            self._set_image(frames[wf % 2])
+            self._set_motion_image(frames[wf % 2])
             self._crossover_walk_frame = wf + 1
             self._place_window(light=True)
             # 散步中保持聊天轮次（丢了就重启）
@@ -23077,7 +25230,13 @@ class DesktopPet:
         if not self.sprites:
             return
         sleep_sprites = (self.sprites.sleep[0], self.sprites.sleep[1])
-        if photo in sleep_sprites:
+        # 开场占位把 stand 也做成 sleep1；只有真正在睡才出 ZZZ
+        in_sleep_pose = (
+            self.state == "sleep"
+            or (self.mode == "quiet" and self.state in ("rest", "sleep"))
+            or (getattr(self, "sleep_interact_active", False) and self.state == "rest")
+        )
+        if photo in sleep_sprites and in_sleep_pose:
             if not self.sleep_zzz_win or not self.sleep_zzz_win.winfo_exists():
                 self._show_sleep_zzz()
             else:
@@ -23304,21 +25463,123 @@ class DesktopPet:
         else:
             free_label = "自由"
         stroll_label = "漫步 ✓" if self.mode == "stroll" else "漫步"
-        quiet_label = "睡眠 ✓" if self.mode == "quiet" else "睡眠"
-        game_label = "采集 ✓" if self.mode == "game" else "采集"
-        music_label = "音乐 ✓" if self.music_sprite_mode else "音乐"
+        scene_on = self._any_scene_column_on()
+        scene_label = "情景 ✓ ▶" if scene_on else "情景 ▶"
         self._show_sub_menu(
             [
                 (free_label, self._enable_free),
                 (follow_label, self._enable_follow),
                 (stroll_label, self._enable_stroll),
-                (quiet_label, self._enable_quiet),
-                (music_label, self._toggle_music_mode, "music"),
-                ("工作 ▶", self._open_work_mode_menu),
+                (scene_label, self._open_scene_mode_menu),
                 ("游戏 ▶", self._open_mode_game_menu),
             ],
             offset_x=0,
         )
+
+    def _scene_column_items(self) -> tuple[tuple[str, str], ...]:
+        """自动识别 + 工作 + 睡眠，开法和睡眠一样：点一次进入，再点不退出。"""
+        return (
+            ("sleep", "睡眠"),
+            ("work", "工作"),
+            ("music", "音乐"),
+            ("chat", "聊天"),
+            ("code", "代码"),
+            ("study", "学习"),
+            ("office", "办公"),
+            ("paint", "绘画"),
+            ("note", "记事"),
+            ("game", "游戏"),
+            ("video", "视频"),
+        )
+
+    def _recognized_mode_on(self, kind: str) -> bool:
+        if kind == "sleep":
+            return self.mode == "quiet"
+        if kind == "work":
+            return self.mode == "work" or self.state == "work"
+        if kind == "music":
+            return bool(self.music_sprite_mode)
+        if kind in ("chat", "code", "office"):
+            return self.app_scene == kind and bool(getattr(self, "_work_light_active", False))
+        if kind in ("paint", "note"):
+            return self.app_scene == kind and bool(getattr(self, "_draw_scene_active", False))
+        if kind in ("game", "video"):
+            return self.app_scene == kind and self.state == "scene_rest"
+        if kind == "study":
+            return self.app_scene == "study"
+        return False
+
+    def _any_scene_column_on(self) -> bool:
+        return any(self._recognized_mode_on(kind) for kind, _label in self._scene_column_items())
+
+    def _open_scene_mode_menu(self) -> None:
+        rows: list[tuple] = []
+        for kind, label in self._scene_column_items():
+            if kind == "work":
+                mark = " ✓" if self._recognized_mode_on("work") else ""
+                rows.append((f"送货{mark} ▶", self._open_delivery_menu))
+                continue
+            mark = " ✓" if self._recognized_mode_on(kind) else ""
+            rows.append((f"{label}{mark}", lambda k=kind: self._enable_recognized_mode(k)))
+        self._show_sub_menu(rows, offset_x=120)
+
+    def _open_delivery_menu(self) -> None:
+        """送货：自由＝原工作；定义＝原自定义工作。"""
+        mark = " ✓" if self._recognized_mode_on("work") else ""
+        self._show_sub_menu(
+            [
+                (f"自由{mark}", self._enable_work),
+                ("定义 ▶", self._open_work_custom_dialog),
+            ],
+            offset_x=180,
+        )
+
+    def _enable_recognized_mode(self, kind: str) -> None:
+        """与睡眠相同：请求切换后进入；已在该模式则只收起菜单。"""
+        if kind == "sleep":
+            self._enable_quiet()
+            return
+        if kind == "work":
+            self._enable_work()
+            return
+        if kind == "music":
+            self._scene_hold_manual = "music"
+            if self.music_sprite_mode:
+                self._hide_main_menu()
+                return
+            self._toggle_music_mode()
+            return
+        if self._recognized_mode_on(kind):
+            self._hide_main_menu()
+            return
+        if kind in SCENE_DETECT_KEYS:
+            self._scene_hold_manual = kind
+        self._request_mode_switch(lambda k=kind: self._apply_recognized_scene(k), show_busy=False)
+
+    def _apply_recognized_scene(self, kind: str) -> None:
+        if kind in ("chat", "code", "office"):
+            self._enter_app_work_light_scene(kind)
+        elif kind in ("paint", "note"):
+            self._enter_app_draw_scene(kind)
+        elif kind == "game":
+            self._enter_app_game_scene()
+        elif kind == "video":
+            self._enter_app_video_scene()
+        elif kind == "study":
+            self._end_typing_pose(silent=True)
+            if getattr(self, "_work_light_active", False):
+                self._end_app_work_light_scene(silent=True)
+            if getattr(self, "_draw_scene_active", False):
+                self._end_app_draw_scene(silent=True)
+            self._yield_to_app_scene(keep_menu_music=True)
+            self.app_scene = "study"
+            self.app_scene_fx_on = False
+            self._mark_app_scene_entered()
+            try:
+                self._show_toast("学习", "#a8d8b4", duration_ms=1600)
+            except Exception:
+                pass
+
 
     def _work_mode_config(self) -> dict:
         default = {"show_props": True, "show_stack": True}
@@ -24887,6 +27148,10 @@ class DesktopPet:
             "move_land_job",
             "food_fx_job",
             "happy_job",
+            "office_draw_job",
+            "_work_light_job",
+            "_draw_scene_job",
+            "_draw_scene_pointer_job",
             "expression_bounce_job",
             "sleep_interact_end_job",
         ):
@@ -24986,6 +27251,8 @@ class DesktopPet:
                 elif self.action_name == "happy":
                     # 开心弹动用 offset，打断时清零（勿改 self.y）
                     self.happy_bounce_offset = 0
+                elif self.action_name == "cheer":
+                    self.happy_bounce_offset = 0
             self.angry_walk_phase = False
             self.state = "stand"
             self.action_name = ""
@@ -25057,6 +27324,7 @@ class DesktopPet:
         self._hide_sleep_zzz()
 
     def _apply_work_mode(self) -> None:
+        self._clear_scene_side_fx()
         # via-free 已清场，或本来就在自由：只停走动，避免再整段 interrupt
         if self._mode_switch_take_pre_cleaned() or self.mode == "free":
             self._mode_switch_light_prepare()
@@ -25134,6 +27402,7 @@ class DesktopPet:
 
     def _apply_free_transition(self, *, resume: bool = True) -> None:
         """切回自由模式（清理当前非自由状态）。via-free 进其它模式时 resume=False，避免先走两步又打断。"""
+        self._clear_scene_side_fx()
         self._cancel_pending_mode_switch()
         self._interrupt_for_mode_switch()
         self._leave_quiet_mode()
@@ -25219,6 +27488,7 @@ class DesktopPet:
             run_target()
 
     def _apply_follow_mode(self) -> None:
+        self._clear_scene_side_fx()
         if self._mode_switch_take_pre_cleaned():
             self._mode_switch_light_prepare()
         else:
@@ -25234,6 +27504,7 @@ class DesktopPet:
         self._note_mode_for_achievement("follow")
 
     def _apply_stroll_mode(self) -> None:
+        self._clear_scene_side_fx()
         if self._mode_switch_take_pre_cleaned():
             self._mode_switch_light_prepare()
         else:
@@ -25248,6 +27519,7 @@ class DesktopPet:
         self._note_mode_for_achievement("stroll")
 
     def _apply_quiet_mode(self) -> None:
+        self._clear_scene_side_fx()
         if self._mode_switch_take_pre_cleaned():
             self._mode_switch_light_prepare()
         else:
@@ -25326,6 +27598,7 @@ class DesktopPet:
         def begin() -> None:
             if self.mode in ("work",) or self.state == "work":
                 return
+            self._clear_scene_side_fx()
             self._ensure_mode_exclusive_cleanup("game")
             if self._mode_switch_take_pre_cleaned():
                 self._mode_switch_light_prepare()
@@ -25425,6 +27698,33 @@ class DesktopPet:
         except Exception:
             pass
         self._show_toast(f"开机自启：{'开' if on else '关'}", PIXEL_COLOR)
+
+    def _scene_detect_enabled(self, kind: str) -> bool:
+        raw = self.app_config.get("scene_detect")
+        if not isinstance(raw, dict) or kind not in raw:
+            return True
+        return bool(raw.get(kind))
+
+    def _toggle_scene_detect(self, kind: str) -> None:
+        label = dict(SCENE_DETECT_ITEMS).get(kind, kind)
+        nxt = not self._scene_detect_enabled(kind)
+        raw = self.app_config.get("scene_detect")
+        data = {k: True for k, _name in SCENE_DETECT_ITEMS}
+        if isinstance(raw, dict):
+            for k in data:
+                if k in raw:
+                    data[k] = bool(raw[k])
+        data[kind] = nxt
+        self.app_config["scene_detect"] = data
+        self._defer_save_app_config()
+        if not nxt and self.app_scene == kind:
+            self._scene_hold_manual = ""
+            try:
+                self._force_end_app_scene_ambient(reason="")
+            except Exception:
+                pass
+        self._show_toast(f"{label}识别：{'开' if nxt else '关'}", PIXEL_COLOR)
+        self._sync_panel_settings_ui()
 
     def _desk_clock_active(self, slot: str) -> bool:
         info = self._desk_clocks.get(slot)
@@ -29266,6 +31566,595 @@ class DesktopPet:
         except Exception:
             pass
 
+
+    def _foreground_drop_anchor(self) -> tuple[int, int]:
+        """尽量落在前台窗口右下角旁；失败则落在桌宠右侧。"""
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetForegroundWindow()
+            rect = wintypes.RECT()
+            if hwnd and user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                pet_hwnd = int(self.root.winfo_id())
+                if int(hwnd) != pet_hwnd:
+                    ax = int(rect.right) - 36
+                    ay = int(rect.bottom) - 48
+                    sw, sh = self._screen_wh()
+                    ax = max(8, min(sw - 40, ax))
+                    ay = max(8, min(sh - 40, ay))
+                    if (rect.right - rect.left) > sw * 0.85 and (rect.bottom - rect.top) > sh * 0.85:
+                        ax = int(rect.left + (rect.right - rect.left) * 0.72)
+                        ay = int(rect.top + (rect.bottom - rect.top) * 0.78)
+                    return ax, ay
+        except Exception:
+            pass
+        return self.x + self.display_size + 12, self.y + self.display_size // 3
+
+    def _spawn_reward_coin_drop(
+        self,
+        amount: int = 1,
+        *,
+        reason: str = "",
+        near: str = "fg",
+    ) -> None:
+        """完成某事后在图标/窗口旁掉落金币，桌宠会走过去拾取。"""
+        if self._closing:
+            return
+        amount = max(1, min(5, int(amount)))
+        while len(self._world_coins) >= 6:
+            old = self._world_coins.pop(0)
+            self._destroy_world_coin(old, collect=False)
+        if near == "pet":
+            ax = self.x + self.display_size + 10 + random.randint(0, 24)
+            ay = self.y + max(8, self.display_size // 4) + random.randint(-10, 20)
+        else:
+            ax, ay = self._foreground_drop_anchor()
+            ax += random.randint(-18, 18)
+            ay += random.randint(-12, 12)
+        sw, sh = self._screen_wh()
+        size = 32
+        ax = max(4, min(sw - size - 4, ax))
+        ay = max(4, min(sh - size - 4, ay))
+        land_y = ay
+        start_y = max(4, land_y - 70 - random.randint(0, 30))
+
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        self._apply_window_layer(win)
+        win.configure(bg="magenta")
+        try:
+            win.wm_attributes("-transparentcolor", "magenta")
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
+        canvas.pack()
+        canvas.create_oval(4, 4, 28, 28, fill="#f0c040", outline="#c89020", width=2)
+        canvas.create_oval(8, 8, 24, 24, fill="#ffe066", outline="#e8b030", width=1)
+        canvas.create_text(16, 16, text="金", fill="#8a5010", font=("Microsoft YaHei UI", 8, "bold"))
+        win.geometry(f"+{ax}+{start_y}")
+        try:
+            win.lift()
+        except Exception:
+            pass
+
+        cid = f"c{int(time.time() * 1000)}_{random.randint(100, 999)}"
+        entry = {
+            "id": cid,
+            "win": win,
+            "canvas": canvas,
+            "x": ax,
+            "y": start_y,
+            "land_y": land_y,
+            "amount": amount,
+            "reason": reason or "完成奖励",
+            "phase": "fall",
+            "born_ms": int(time.time() * 1000),
+            "bob": 0.0,
+        }
+        self._world_coins.append(entry)
+        try:
+            _play_ui_sfx("money", volume=0.35)
+        except Exception:
+            pass
+        self._ensure_world_coin_tick()
+        self._begin_coin_seek_if_idle()
+
+    def _destroy_world_coin(self, entry: dict, *, collect: bool) -> None:
+        win = entry.get("win")
+        try:
+            if win is not None and win.winfo_exists():
+                win.destroy()
+        except Exception:
+            pass
+        if not collect:
+            return
+        reveal = entry.get("reveal_win")
+        try:
+            if reveal is not None and reveal.winfo_exists():
+                reveal.destroy()
+        except Exception:
+            pass
+        amt = int(entry.get("amount") or 1)
+        reason = str(entry.get("reason") or "拾取金币")
+        kind = str(entry.get("kind") or "coin")
+        if kind == "chest":
+            halved = bool(entry.get("halved"))
+            if halved:
+                self.grant_coins(amt, reason=f"{reason} · 超时收回 +{amt}（减半）", toast=True)
+            else:
+                self.grant_coins(amt, reason=f"{reason} · 开箱 +{amt}", toast=True)
+            if self.mode in ("free", "stroll") and self.state in ("stand", "walk") and not self.dragging:
+                try:
+                    self._trigger_mood_action("happy")
+                except Exception:
+                    pass
+            return
+        self.grant_coins(amt, reason=f"{reason} · 拾取 +{amt}", toast=True)
+        if self.mode in ("free", "stroll") and self.state in ("stand", "walk") and not self.dragging:
+            try:
+                self._trigger_mood_action("happy")
+            except Exception:
+                pass
+
+    def _ensure_world_coin_tick(self) -> None:
+        if self._world_coin_job or self._closing:
+            return
+        self._world_coin_job = self.root.after(40, self._world_coin_tick)
+
+    def _world_coin_tick(self) -> None:
+        self._world_coin_job = None
+        if self._closing:
+            return
+        now = int(time.time() * 1000)
+        alive: list[dict] = []
+        pet_cx = self.x + self.display_size // 2
+        pet_cy = self.y + self.display_size // 2
+        for entry in list(self._world_coins):
+            win = entry.get("win")
+            try:
+                if win is None or not win.winfo_exists():
+                    continue
+            except Exception:
+                continue
+            phase = str(entry.get("phase") or "idle")
+            age = now - int(entry.get("born_ms") or now)
+            if phase == "fall":
+                t = min(1.0, age / 520.0)
+                ease = 1.0 - (1.0 - t) ** 3
+                bounce = abs(math.sin(t * math.pi * 2.2)) * (1.0 - t) * 10
+                start_y = int(entry["land_y"]) - 70
+                y = int(start_y + (entry["land_y"] - start_y) * ease - bounce)
+                entry["y"] = y
+                try:
+                    win.geometry(f"+{int(entry['x'])}+{y}")
+                except Exception:
+                    pass
+                if t >= 1.0:
+                    entry["phase"] = "idle"
+                    entry["y"] = int(entry["land_y"])
+                    if str(entry.get("kind") or "") == "chest":
+                        entry["idle_since_ms"] = now
+            elif phase == "idle":
+                entry["bob"] = float(entry.get("bob") or 0) + 0.18
+                bob = int(math.sin(entry["bob"]) * 3)
+                try:
+                    win.geometry(f"+{int(entry['x'])}+{int(entry['land_y']) + bob}")
+                except Exception:
+                    pass
+                if str(entry.get("kind") or "") == "chest":
+                    idle_since = int(entry.get("idle_since_ms") or now)
+                    if not entry.get("opened") and (now - idle_since) >= 8000:
+                        self._begin_chest_absorb(entry, halved=True)
+                elif age > 55_000:
+                    entry["phase"] = "suck"
+                    entry["suck_ms"] = now
+            elif phase == "suck":
+                sx = int(entry.get("suck_x") if entry.get("suck_x") is not None else entry.get("x") or 0)
+                sy = int(entry.get("suck_y") if entry.get("suck_y") is not None else entry.get("land_y") or entry.get("y") or 0)
+                t0 = int(entry.get("suck_ms") or now)
+                is_chest = str(entry.get("kind") or "") == "chest"
+                dur = 720.0 if is_chest else 380.0
+                t = min(1.0, (now - t0) / dur)
+                # smoothstep：先慢后快收进
+                ease = t * t * (3.0 - 2.0 * t)
+                arc = float(entry.get("suck_arc") or 0.0) if is_chest else 0.0
+                lift = math.sin(math.pi * t) * arc
+                nx = int(sx + (pet_cx - 16 - sx) * ease + lift)
+                ny = int(sy + (pet_cy - 16 - sy) * ease - abs(lift) * 0.35)
+                try:
+                    win.geometry(f"+{nx}+{ny}")
+                except Exception:
+                    pass
+                if is_chest:
+                    self._paint_chest_as_light(entry, progress=ease)
+                if t >= 1.0:
+                    self._destroy_world_coin(entry, collect=True)
+                    continue
+
+            if (
+                str(entry.get("kind") or "") != "chest"
+                and phase in ("idle", "fall")
+                and self._can_seek_world_coins()
+            ):
+                half = int(entry.get("size") or 32) // 2
+                cx = int(entry["x"]) + half
+                cy = int(entry.get("land_y") if phase == "idle" else entry.get("y") or entry["land_y"]) + half
+                reach = max(40, self.display_size * 0.45)
+                if math.hypot(pet_cx - cx, pet_cy - cy) <= reach:
+                    self._destroy_world_coin(entry, collect=True)
+                    if self._world_coin_seek_id == entry.get("id"):
+                        self._world_coin_seek_id = None
+                    continue
+            alive.append(entry)
+
+        self._world_coins = alive
+        if self._world_coins:
+            self._nudge_walk_toward_coins()
+            self._world_coin_job = self.root.after(40, self._world_coin_tick)
+        else:
+            self._world_coin_seek_id = None
+
+    def _can_seek_world_coins(self) -> bool:
+        if self.dragging or self._closing:
+            return False
+        if self.mode not in ("free", "stroll"):
+            return False
+        if self.state in ("action", "work", "scene_rest", "rest", "drag", "game"):
+            return False
+        if getattr(self, "_holding_allmate", False):
+            return False
+        if getattr(self, "_crossover_stroll_active", False):
+            return False
+        if self._app_scene_blocks_actions():
+            return False
+        return True
+
+    def _nearest_world_coin(self) -> dict | None:
+        if not self._world_coins:
+            return None
+        pet_cx = self.x + self.display_size // 2
+        pet_cy = self.y + self.display_size // 2
+        best = None
+        best_d = 1e18
+        for e in self._world_coins:
+            if str(e.get("phase")) == "suck" or str(e.get("kind") or "") == "chest":
+                continue
+            half = int(e.get("size") or 32) // 2
+            cx = int(e.get("x") or 0) + half
+            cy = int(e.get("land_y") or e.get("y") or 0) + half
+            d = math.hypot(pet_cx - cx, pet_cy - cy)
+            if d < best_d:
+                best_d = d
+                best = e
+        return best
+
+    def _begin_coin_seek_if_idle(self) -> None:
+        if not self._can_seek_world_coins():
+            return
+        coin = self._nearest_world_coin()
+        if not coin:
+            return
+        self._world_coin_seek_id = str(coin.get("id") or "")
+        if self.state == "stand":
+            try:
+                self.state = "walk"
+                self.walk_steps_left = max(int(getattr(self, "walk_steps_left", 0) or 0), 80)
+                self._set_image(self._walk_sprites[self.direction][0])
+                self._walk_animate()
+                self._walk_move()
+            except Exception:
+                pass
+
+    def _nudge_walk_toward_coins(self) -> None:
+        if not self._can_seek_world_coins():
+            return
+        coin = self._nearest_world_coin()
+        if not coin:
+            return
+        self._world_coin_seek_id = str(coin.get("id") or "")
+        half = int(coin.get("size") or 32) // 2
+        cx = int(coin.get("x") or 0) + half
+        cy = int(coin.get("land_y") or coin.get("y") or 0) + half
+        pet_cx = self.x + self.display_size // 2
+        pet_cy = self.y + self.display_size // 2
+        dx = cx - pet_cx
+        dy = cy - pet_cy
+        if abs(dx) < 8 and abs(dy) < 8:
+            return
+        if abs(dx) >= abs(dy):
+            want = "right" if dx > 0 else "left"
+        else:
+            want = "front" if dy > 0 else "back"
+        if want in getattr(self, "DIRECTIONS", ()):
+            try:
+                self._apply_walk_direction(want)
+            except Exception:
+                self.direction = want
+        if self.state != "walk":
+            self._begin_coin_seek_if_idle()
+        else:
+            self.walk_steps_left = max(int(getattr(self, "walk_steps_left", 0) or 0), 24)
+
+    def _tick_desktop_surprise(self, scene: str, *, now_ms: int) -> None:
+        """陪伴一段时间后，在桌面随机刷宝箱（低概率、有冷却）。"""
+        if scene in ("", "none", "hold", "idle"):
+            return
+        poll = float(globals().get("APP_SCENE_POLL_MS", 1200) or 1200) / 1000.0
+        self._surprise_session_sec = float(getattr(self, "_surprise_session_sec", 0) or 0) + poll
+        if self._surprise_session_sec < 8 * 60:
+            return
+        last = int(getattr(self, "_surprise_last_spawn_ms", 0) or 0)
+        if last and (now_ms - last) < 6 * 60 * 1000:
+            return
+        if any(str(e.get("kind") or "") == "chest" for e in (self._world_coins or [])):
+            return
+        if random.random() > 0.0035:
+            return
+        self._surprise_last_spawn_ms = now_ms
+        self._spawn_surprise_chest()
+
+    def _random_desktop_drop_xy(self, size: int = 40) -> tuple[int, int]:
+        sw, sh = self._screen_wh()
+        margin = 48
+        pet_pad = max(80, self.display_size)
+        for _ in range(12):
+            ax = random.randint(margin, max(margin + 1, sw - size - margin))
+            ay = random.randint(margin + 40, max(margin + 41, sh - size - margin - 40))
+            if abs(ax - self.x) < pet_pad and abs(ay - self.y) < pet_pad:
+                continue
+            return ax, ay
+        return max(margin, sw // 2), max(margin, sh // 2)
+
+    def _spawn_surprise_chest(self) -> None:
+        """桌面随机宝箱：捡到后给金币 + 抽象生活语录。"""
+        if self._closing:
+            return
+        while len(self._world_coins) >= 6:
+            old = self._world_coins.pop(0)
+            self._destroy_world_coin(old, collect=False)
+        size = 40
+        ax, ay = self._random_desktop_drop_xy(size)
+        land_y = ay
+        start_y = max(4, land_y - 90)
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        self._apply_window_layer(win)
+        win.configure(bg="magenta")
+        try:
+            win.wm_attributes("-transparentcolor", "magenta")
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        canvas = tk.Canvas(win, width=size, height=size, bg="magenta", highlightthickness=0)
+        canvas.pack()
+        canvas.create_rectangle(6, 16, 34, 36, fill="#c87828", outline="#8a4a10", width=2)
+        canvas.create_rectangle(6, 10, 34, 20, fill="#e09840", outline="#8a4a10", width=2)
+        canvas.create_rectangle(17, 20, 23, 28, fill="#ffd060", outline="#b08020", width=1)
+        canvas.create_oval(18, 18, 22, 22, fill="#fff0a0", outline="")
+        win.geometry(f"+{ax}+{start_y}")
+        try:
+            win.lift()
+        except Exception:
+            pass
+        quote = companion_quotes.pick_surprise_quote(avoid=str(getattr(self, "_surprise_last_quote", "") or ""))
+        self._surprise_last_quote = quote
+        # 始终给语录；小图标只作点缀，不再单独占满奖励面板
+        art = random.choice(("heart", "star", "gift", "spark"))
+        cid = f"chest{int(time.time() * 1000)}_{random.randint(100, 999)}"
+        entry = {
+            "id": cid,
+            "kind": "chest",
+            "win": win,
+            "canvas": canvas,
+            "x": ax,
+            "y": start_y,
+            "land_y": land_y,
+            "amount": random.randint(2, 5),
+            "reason": "桌面小惊喜",
+            "quote": quote,
+            "reward_kind": "text",
+            "art": art,
+            "phase": "fall",
+            "born_ms": int(time.time() * 1000),
+            "bob": 0.0,
+            "size": size,
+            "opened": False,
+        }
+        def _click(_event, ent=entry) -> None:
+            self._on_chest_click(ent)
+
+        win.bind("<Button-1>", _click)
+        canvas.bind("<Button-1>", _click)
+        try:
+            canvas.configure(cursor="hand2")
+        except Exception:
+            pass
+        self._world_coins.append(entry)
+        self._show_toast("桌面出现了一只小宝箱…", "#ffcc88", duration_ms=2200)
+        try:
+            _play_ui_sfx("money", volume=0.3)
+        except Exception:
+            pass
+        self._ensure_world_coin_tick()
+
+    def _on_chest_click(self, entry: dict) -> None:
+        """点开宝箱：先展示文字或图像，再化作光收入桌宠。"""
+        if self._closing or entry.get("opened") or str(entry.get("phase") or "") == "suck":
+            return
+        if entry not in self._world_coins:
+            return
+        entry["opened"] = True
+        self._show_chest_reveal(entry)
+        try:
+            # 语录稍多停一会儿再飞回
+            self.root.after(1800, lambda ent=entry: self._begin_chest_absorb(ent, halved=False))
+        except Exception:
+            self._begin_chest_absorb(entry, halved=False)
+
+    def _show_chest_reveal(self, entry: dict) -> None:
+        """轻量奖励条：暖色小卡，始终显示语录，不要深蓝大框。"""
+        x = int(entry.get("x") or self.x)
+        y = int(entry.get("y") or entry.get("land_y") or self.y)
+        quote = str(entry.get("quote") or "").strip() or companion_quotes.pick_surprise_quote()
+        entry["quote"] = quote
+        win = tk.Toplevel(self.root)
+        entry["reveal_win"] = win
+        win.overrideredirect(True)
+        try:
+            setattr(win, "_vpet_no_glass", True)
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        bg = "#fff8ec"
+        edge = "#e8c888"
+        win.configure(bg=bg)
+        self._apply_window_layer(win)
+        frame = tk.Frame(win, bg=bg, highlightbackground=edge, highlightthickness=1, padx=6, pady=4)
+        frame.pack()
+        head = tk.Frame(frame, bg=bg)
+        head.pack(fill=tk.X)
+        art_cv = tk.Canvas(head, width=22, height=22, bg=bg, highlightthickness=0)
+        art_cv.pack(side=tk.LEFT, padx=(0, 4))
+        self._paint_chest_reward_art(art_cv, str(entry.get("art") or "spark"), size=22)
+        tk.Label(head, text="小惊喜", font=("Microsoft YaHei UI", 8, "bold"), fg="#8a6040", bg=bg).pack(
+            side=tk.LEFT, anchor=tk.W
+        )
+        tk.Label(
+            head,
+            text=f"+{int(entry.get('amount') or 1)}",
+            font=("Microsoft YaHei UI", 8, "bold"),
+            fg="#c89020",
+            bg=bg,
+        ).pack(side=tk.RIGHT)
+        tk.Label(
+            frame,
+            text=quote,
+            font=("Microsoft YaHei UI", 9),
+            fg="#3a3228",
+            bg=bg,
+            wraplength=168,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(2, 0))
+        sw, sh = self._screen_wh()
+        win.update_idletasks()
+        ww = max(72, win.winfo_reqwidth())
+        wh = max(36, win.winfo_reqheight())
+        rx = max(4, min(sw - ww - 4, x - 16))
+        ry = max(4, y - wh - 6)
+        win.geometry(f"+{rx}+{ry}")
+        try:
+            win.lift()
+        except Exception:
+            pass
+
+    def _paint_chest_reward_art(self, canvas: tk.Canvas, art: str, size: int = 64) -> None:
+        canvas.delete("all")
+        s = max(16, int(size))
+        scale = s / 64.0
+
+        def _xy(x: float, y: float) -> tuple[int, int]:
+            return int(x * scale), int(y * scale)
+
+        if art == "heart":
+            x1, y1 = _xy(10, 16)
+            x2, y2 = _xy(32, 38)
+            x3, y3 = _xy(30, 16)
+            x4, y4 = _xy(52, 38)
+            canvas.create_oval(x1, y1, x2, y2, fill="#ff6a8a", outline="")
+            canvas.create_oval(x3, y3, x4, y4, fill="#ff6a8a", outline="")
+            canvas.create_polygon(
+                *_xy(12, 30), *_xy(52, 30), *_xy(32, 54), fill="#ff6a8a", outline=""
+            )
+        elif art == "star":
+            pts = (32, 6, 38, 24, 58, 24, 42, 36, 48, 56, 32, 44, 16, 56, 22, 36, 6, 24, 26, 24)
+            flat = []
+            for i in range(0, len(pts), 2):
+                flat.extend(_xy(pts[i], pts[i + 1]))
+            canvas.create_polygon(*flat, fill="#ffe08a", outline="#fff6c8")
+        elif art == "spark":
+            cx, cy = _xy(32, 32)
+            for a in (0, 45, 90, 135):
+                rad = math.radians(a)
+                x0 = cx + int(math.cos(rad) * 4 * scale)
+                y0 = cy + int(math.sin(rad) * 4 * scale)
+                x1 = cx + int(math.cos(rad) * 18 * scale)
+                y1 = cy + int(math.sin(rad) * 18 * scale)
+                canvas.create_line(x0, y0, x1, y1, fill="#ffd060", width=max(1, int(2 * scale)))
+            r = max(2, int(5 * scale))
+            canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="#fff6c8", outline="")
+        else:
+            canvas.create_rectangle(*_xy(14, 28), *_xy(50, 54), fill="#e09840", outline="#8a4a10", width=1)
+            canvas.create_rectangle(*_xy(14, 18), *_xy(50, 30), fill="#ffd060", outline="#8a4a10", width=1)
+            canvas.create_polygon(*_xy(14, 18), *_xy(32, 8), *_xy(50, 18), fill="#fff0a0", outline="#8a4a10")
+            canvas.create_oval(*_xy(28, 34), *_xy(36, 42), fill="#fff6c8", outline="")
+
+    def _paint_chest_as_light(self, entry: dict, *, progress: float = 0.0) -> None:
+        """回收途中：柔光小球 + 淡拖尾，避免生硬十字星。"""
+        canvas = entry.get("canvas")
+        if canvas is None:
+            return
+        try:
+            size = int(entry.get("size") or 40)
+            canvas.config(width=size, height=size)
+            canvas.delete("all")
+            t = max(0.0, min(1.0, float(progress)))
+            # 越飞越小、越亮
+            core = max(4, int((14 - 8 * t)))
+            glow = max(core + 4, int((28 - 16 * t)))
+            cx = cy = size // 2
+            # 外圈淡光
+            canvas.create_oval(
+                cx - glow, cy - glow, cx + glow, cy + glow, fill="#fff6c8", outline=""
+            )
+            canvas.create_oval(
+                cx - core - 2,
+                cy - core - 2,
+                cx + core + 2,
+                cy + core + 2,
+                fill="#ffe08a",
+                outline="",
+            )
+            canvas.create_oval(cx - core, cy - core, cx + core, cy + core, fill="#ffffff", outline="")
+            # 稀疏小星点，绕一圈
+            for i in range(4):
+                ang = math.radians(i * 90 + t * 180)
+                rr = glow + 2
+                px = cx + int(math.cos(ang) * rr)
+                py = cy + int(math.sin(ang) * rr)
+                canvas.create_oval(px - 1, py - 1, px + 1, py + 1, fill="#fff0a0", outline="")
+        except Exception:
+            pass
+
+    def _begin_chest_absorb(self, entry: dict, *, halved: bool) -> None:
+        """宝箱化作光，弧线飞回桌宠。超时未点则奖励减半。"""
+        if self._closing or entry not in self._world_coins:
+            return
+        if str(entry.get("phase") or "") == "suck":
+            return
+        entry["opened"] = True
+        if halved and not entry.get("halved"):
+            entry["halved"] = True
+            entry["amount"] = max(1, int(entry.get("amount") or 1) // 2)
+            try:
+                self._show_toast("宝箱飞回来了 · 奖励减半", "#ffcc88", duration_ms=1800)
+            except Exception:
+                pass
+        reveal = entry.get("reveal_win")
+        try:
+            if reveal is not None and reveal.winfo_exists():
+                reveal.destroy()
+        except Exception:
+            pass
+        entry["reveal_win"] = None
+        entry["suck_x"] = int(entry.get("x") or 0)
+        entry["suck_y"] = int(entry.get("y") or entry.get("land_y") or 0)
+        # 轻微侧弧，避免直线硬飞
+        side = 1 if random.random() < 0.5 else -1
+        entry["suck_arc"] = side * random.randint(28, 56)
+        entry["phase"] = "suck"
+        entry["suck_ms"] = int(time.time() * 1000)
+        self._paint_chest_as_light(entry, progress=0.0)
+
     def grant_coins(self, n: int, *, reason: str = "", toast: bool = True) -> int:
         """统一钱包加币。"""
         add = max(0, int(n))
@@ -32109,6 +34998,10 @@ class DesktopPet:
             except Exception:
                 pass
             self.home_paint_win = None
+            try:
+                self._apply_self_draw_scene(self._self_draw_kind())
+            except Exception:
+                pass
 
         btn_row = tk.Frame(frame, bg=MENU_BG)
         btn_row.pack(fill=tk.X, pady=(10, 0))
@@ -32127,6 +35020,7 @@ class DesktopPet:
         self._chrome_icon_btn(btn_row, "close", close, font=PIXEL_FONT).pack(side=tk.RIGHT)
         win.protocol("WM_DELETE_WINDOW", close)
         self._place_panel_popup(win)
+        self._apply_self_draw_scene("paint")
 
     def _home_rebuild_bg_panel(self) -> None:
         """背景区：室外显示草地/土地/水面/岩石（各一行选笔刷+独立改色）。"""
@@ -34275,6 +37169,10 @@ class DesktopPet:
             self._check_achievements(source="gift")
             win.destroy()
             self.gift_win = None
+            try:
+                self._apply_self_draw_scene(self._self_draw_kind())
+            except Exception:
+                pass
             extra = "（还有像素画）" if _gift_pixels_has_paint(painted) else ""
             self._show_toast(
                 f"已赠送「{gift}」{extra}{art_msg}",
@@ -34293,9 +37191,14 @@ class DesktopPet:
         self._chrome_icon_btn(
             btn_row2,
             "close",
-            lambda: (win.destroy(), setattr(self, "gift_win", None)),
+            lambda: (
+                win.destroy(),
+                setattr(self, "gift_win", None),
+                self._apply_self_draw_scene(self._self_draw_kind()),
+            ),
         ).pack(side=tk.LEFT)
         self._place_panel_popup(win)
+        self._apply_self_draw_scene("paint")
 
     def _hide_gift_pixel_fx(self) -> None:
         if self.gift_pixel_fx_job:
@@ -35198,6 +38101,7 @@ class DesktopPet:
 
         refresh_list()
         self._place_panel_popup(self.diary_win)
+        self._apply_self_draw_scene("note")
 
     def _close_diary_manager(self) -> None:
         self._close_diary_page_studio()
@@ -35208,6 +38112,7 @@ class DesktopPet:
                 pass
         self.diary_win = None
         self.diary_photos = []
+        self._apply_self_draw_scene(self._self_draw_kind())
 
     def _close_diary_page_studio(self) -> None:
         if self.diary_studio_win and self.diary_studio_win.winfo_exists():
@@ -35217,6 +38122,10 @@ class DesktopPet:
                 pass
         self.diary_studio_win = None
         self.diary_studio_photos = []
+        try:
+            self._apply_self_draw_scene(self._self_draw_kind())
+        except Exception:
+            pass
 
     def _open_diary_page_studio(
         self,
@@ -35264,6 +38173,7 @@ class DesktopPet:
         win.configure(bg=paper)
         win.protocol("WM_DELETE_WINDOW", self._close_diary_page_studio)
         _, frame = _pack_fixed_scroll_panel(win, width=420, height=620, bg=paper)
+        self._apply_self_draw_scene("paint")
 
         tk.Label(frame, text="这一页纸", font=PIXEL_FONT, fg=ink, bg=paper).pack(anchor=tk.W)
         tk.Label(
@@ -36724,6 +39634,34 @@ class DesktopPet:
             wraplength=320,
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 6))
+
+        tk.Label(frame, text="自动识别", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W, pady=(8, 2))
+        tk.Label(
+            frame,
+            text="前台是对应软件时自动进入。关掉后不会自动进入；情景菜单里仍可手动打开。",
+            font=("Courier New", 8),
+            fg="#8899aa",
+            bg=MENU_BG,
+            wraplength=320,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 4))
+        detect_btns: dict = {}
+        for kind, label in SCENE_DETECT_ITEMS:
+            row = tk.Frame(frame, bg=MENU_BG)
+            row.pack(fill=tk.X, pady=1)
+            tk.Label(row, text=label, font=PIXEL_FONT, fg=MENU_FG, bg=MENU_BG).pack(side=tk.LEFT)
+            on = self._scene_detect_enabled(kind)
+            btn = tk.Button(
+                row,
+                text=f"{'开 ✓' if on else '关'}",
+                command=lambda k=kind: self._toggle_scene_detect(k),
+                font=PIXEL_FONT,
+                bg=MENU_ACTIVE if on else "#445566",
+                fg=MENU_FG,
+            )
+            btn.pack(side=tk.RIGHT)
+            detect_btns[kind] = btn
+        ui["scene_detect_btns"] = detect_btns
 
         tk.Label(frame, text="声音设置", font=PIXEL_FONT, fg=PIXEL_COLOR, bg=MENU_BG).pack(anchor=tk.W, pady=(4, 0))
         tk.Button(
@@ -39677,6 +42615,10 @@ class DesktopPet:
                 ("睡眠", self._play_sleep_interact),
                 ("下蹲", lambda: self._play_action("squat")),
                 ("侧踢", self._play_kick),
+                ("打call", self._play_cheer),
+                ("送花", self._play_flower_gift),
+                ("摊手", self._play_shrug),
+                ("介绍", self._play_introduce),
                 ("判断", self._play_yesno_judge),
                 ("是", lambda: self._play_expression_sprite("yes", self.sprites.yes)),
                 ("否", lambda: self._play_expression_sprite("no", self.sprites.no)),
@@ -39693,6 +42635,7 @@ class DesktopPet:
                 (f"番茄钟{' ✓' if pomo_on else ''} ▶", self._open_pomodoro_dialog),
                 (f"今日待办{' ·' + str(n_todo) if n_todo else ''}", self._open_office_todos),
                 ("桌面整理", self._open_office_tidy),
+                ("画画", self._toggle_self_paint),
                 (f"待办展开{' ✓' if self._office_todo_hud_visible() else ''}", self._toggle_office_todo_hud),
                 ("更多 ▶", self._open_office_more_menu),
             ],
@@ -40139,10 +43082,15 @@ class DesktopPet:
         refresh()
         self._place_panel_popup(win)
         entry.focus_set()
+        self._apply_self_draw_scene("note")
 
         def on_close() -> None:
             self.office_todo_win = None
             win.destroy()
+            try:
+                self._apply_self_draw_scene(self._self_draw_kind())
+            except Exception:
+                pass
 
         win.protocol("WM_DELETE_WINDOW", on_close)
 
@@ -44139,6 +47087,8 @@ class DesktopPet:
             [
                 ("有主意", self._play_expression_idea),
                 ("开心", self._play_happy),
+                ("害怕", self._play_expression_afraid),
+                ("自豪", self._play_expression_proud),
                 ("生气", self._play_expression_angry),
                 ("疑惑", lambda: self._play_expression("question")),
                 ("无语", lambda: self._play_expression("speechless")),
@@ -45503,52 +48453,57 @@ class DesktopPet:
             self._size_switch_poll_job = None
 
     def _set_display_size(self, new_size: int, *, refresh_settings: bool = False, preset_label: str | None = None) -> None:
-        new_size = _snap_display_size(new_size)
+        logical = _snap_display_size(new_size)
+        render = pack_render_size(logical)
         self._hide_main_menu()
-        label = preset_label or _size_preset_label(new_size)
+        label = preset_label or _size_preset_label(logical)
         busy = bool(self.size_loading_active or getattr(self, "_size_switch_busy", False))
         # 同一尺寸：一点就够，忽略连点
-        if busy and int(getattr(self, "size_loading_target", 0) or 0) == new_size:
+        if busy and int(getattr(self, "size_loading_target", 0) or 0) == render:
             if refresh_settings:
                 self._preview_settings_size_selection(
-                    label if label in SIZE_PRESETS else preset_label or label, new_size
+                    label if label in SIZE_PRESETS else preset_label or label, logical
                 )
             return
-        if new_size == self.display_size and not busy:
+        cur_logical = int(
+            getattr(self, "_logical_display_size", 0)
+            or _snap_display_size(int(self.app_config.get("display_size", DEFAULT_SIZE)))
+        )
+        if logical == cur_logical and render == self.display_size and not busy:
             self._show_toast(f"当前已是「{label}」尺寸", PIXEL_COLOR)
             if refresh_settings:
                 self._refresh_panel_settings_if_open()
             return
         self.size_refresh_settings = bool(refresh_settings)
-        self.size_loading_target = new_size
+        self.size_loading_target = render
         self.size_loading_preset = label
         # 先停自由模式，立刻切窗体；绝不在主线程同步整包转图
         self._freeze_for_size_switch()
-        cached = self._sprite_cache.get(new_size)
+        cached = self._sprite_cache.get(render)
         full_ready = cached is not None and not _sprite_set_is_placeholder(cached)
         if not full_ready:
             try:
-                self._install_size_placeholder(new_size)
+                self._install_size_placeholder(render)
             except Exception:
                 # 占位失败才走异步；仍不卡死同步整包
                 self.size_loading_active = True
                 self._show_wait_hint("切换尺寸中")
                 self._ensure_sprite_cached(
-                    new_size,
+                    render,
                     quiet=True,
                     urgent=True,
-                    on_done=lambda p=label, s=new_size: self._apply_size_preset(
+                    on_done=lambda p=label, s=logical: self._apply_size_preset(
                         p if p in SIZE_PRESETS else "中", s
                     ),
                 )
                 return
             # 后台补完整立绘（小批量，不卡 UI）
-            self._ensure_sprite_cached(new_size, quiet=True, urgent=True)
+            self._ensure_sprite_cached(render, quiet=True, urgent=True)
         # 有占位/完整缓存：马上换尺寸，不再等加载动画
         self.size_loading_active = False
         self._cancel_size_switch_poll()
         self._sync_wait_hint()
-        self._apply_size_preset(label if label in SIZE_PRESETS else preset_label or "中", new_size)
+        self._apply_size_preset(label if label in SIZE_PRESETS else preset_label or "中", logical)
 
     def _install_size_placeholder(self, size: int):
         """只转一张 stand PhotoImage，立刻可改桌宠大小。"""
@@ -45714,6 +48669,16 @@ class DesktopPet:
                 )
         except Exception:
             pass
+        for kind, btn in (ui.get("scene_detect_btns") or {}).items():
+            on = self._scene_detect_enabled(kind)
+            try:
+                if btn and btn.winfo_exists():
+                    btn.configure(
+                        text=f"{'开 ✓' if on else '关'}",
+                        bg=MENU_ACTIVE if on else "#445566",
+                    )
+            except Exception:
+                pass
 
         # 语音模式 + 间隔档位
         voice_on = bool(self.app_config.get("voice_mode"))
@@ -45799,33 +48764,39 @@ class DesktopPet:
             self._style_settings_choice_btn(btn, selected=selected, label=level)
 
     def _apply_size_preset(self, preset: str, new_size: int) -> None:
-        new_size = _snap_display_size(new_size)
-        if new_size not in self._sprite_cache:
+        logical = _snap_display_size(new_size)
+        render = pack_render_size(logical)
+        if render not in self._sprite_cache:
             # 先装瞬时占位，避免空等/同步整包
             try:
-                self._install_size_placeholder(new_size)
+                self._install_size_placeholder(render)
             except Exception:
                 self._ensure_sprite_cached(
-                    new_size,
-                    on_done=lambda: self._apply_size_preset(preset, new_size),
+                    render,
+                    on_done=lambda: self._apply_size_preset(preset, logical),
                     quiet=True,
                     urgent=True,
                 )
                 return
-            self._ensure_sprite_cached(new_size, quiet=True, urgent=True)
-        self.display_size = new_size
-        self.sprites = self._sprite_cache[new_size]
+            self._ensure_sprite_cached(render, quiet=True, urgent=True)
+        self._logical_display_size = logical
+        self.display_size = render
+        self.sprites = self._sprite_cache[render]
         self._expr_sticker_cache = {}
         # 热点扫描很重：有缓存用缓存，否则暂用整窗并后台补算，避免切换卡死
-        if new_size in self._drag_handle_cache:
-            self.drag_handle = self._drag_handle_cache[new_size]
+        if render in self._drag_handle_cache:
+            self.drag_handle = self._drag_handle_cache[render]
         else:
-            self.drag_handle = (0, 0, new_size, new_size)
+            self.drag_handle = (0, 0, render, render)
             self._refresh_drag_handle_idle()
-        preset_key = preset if preset in SIZE_PRESETS else _size_preset_label(new_size)
-        self.app_config["display_size"] = new_size
+        preset_key = preset if preset in SIZE_PRESETS else _size_preset_label(logical)
+        self.app_config["display_size"] = logical
         self.app_config["display_preset"] = preset_key
         self._defer_save_app_config()
+        try:
+            self._invalidate_video_compose_cache()
+        except Exception:
+            pass
         self._apply_current_sprite()
         self._place_window()
         self._reposition_panel(force=True)
@@ -45876,7 +48847,54 @@ class DesktopPet:
         except Exception:
             pass
 
+    def _refresh_pose_after_sprites(self) -> None:
+        """正式套图替换开场 sleep 占位后重绘。自由模式不要继续停在睡眠图。"""
+        scene_on = (
+            self.state == "scene_rest"
+            or self._app_scene_blocks_actions()
+            or getattr(self, "_work_light_active", False)
+            or getattr(self, "_draw_scene_active", False)
+        )
+        if (
+            not scene_on
+            and self.mode in ("free", "stroll")
+            and self.state == "sleep"
+            and not self.sleep_forced
+            and not self.sleep_from_interact
+            and not getattr(self, "sleep_interact_active", False)
+        ):
+            self.sleep_in_deep = False
+            self.state = "stand"
+        try:
+            if self.state != "sleep" and self.mode != "quiet":
+                self._hide_sleep_zzz()
+        except Exception:
+            pass
+        try:
+            self._apply_current_sprite()
+        except Exception:
+            pass
+        if scene_on:
+            return
+        if self.mode in ("free", "stroll") and self.state in ("stand", "walk"):
+            try:
+                self._resume_idle()
+            except Exception:
+                pass
+
     def _apply_current_sprite(self) -> None:
+        if getattr(self, "_typing_pose", None) and getattr(self, "_typing_pose_photo", None):
+            self._set_image(self._typing_pose_photo)
+            return
+        if getattr(self, "_work_light_active", False) and self.state == "scene_rest":
+            self._work_light_show_frame()
+            return
+        if getattr(self, "_draw_scene_active", False) and self.state == "scene_rest":
+            self._draw_scene_refresh_frame(force=True)
+            return
+        if self.state == "scene_rest" and self.app_scene in ("game", "video"):
+            self._refresh_app_scene_frame()
+            return
         if self.state == "walk":
             self._set_image(self._walk_sprites[self.direction][self.walk_frame % 2])
         elif self.state == "action" and self.action_name in self.sprites.actions:
@@ -45920,6 +48938,20 @@ class DesktopPet:
             # 1=happy 上移；0=stand 原位
             up = int(getattr(self, "_happy_frame", 0)) % 2 == 1
             self._set_image(self.sprites.happy[0] if up else self.sprites.stand)
+        elif self.state == "action" and self.action_name == "cheer":
+            up = int(getattr(self, "_cheer_frame", 0)) % 2 == 1
+            self._set_image(self.sprites.cheer[0] if up else self.sprites.cheer[1])
+        elif self.state == "action" and self.action_name == "flower":
+            # 默认第二帧；若仍在第一段则第一帧（由 phase 定时推进）
+            self._set_image(self.sprites.flower[1])
+        elif self.state == "action" and self.action_name == "afraid":
+            self._set_image(self.sprites.afraid[1])
+        elif self.state == "action" and self.action_name == "proud":
+            self._set_image(self.sprites.proud[0])
+        elif self.state == "action" and self.action_name == "shrug":
+            self._set_image(self.sprites.shrug2)
+        elif self.state == "action" and self.action_name == "introduce":
+            self._set_image(self.sprites.shrug1)
         elif self.mode == "quiet" and self.state == "rest":
             self._set_image(self.sprites.sleep[1])
         elif self.dragging:
@@ -46238,6 +49270,7 @@ class DesktopPet:
         had_move_anim = self.state == "drag"
         edge_hit = bool(getattr(self, "_meta_edge_during_drag", False)) and self._is_at_screen_edge()
         self.dragging = False
+        self._drag_scene_quiet_until_ms = int(time.time() * 1000) + 1800
         self._meta_edge_during_drag = False
         self._note_user_activity()
         self._stop_drag_move()
@@ -46267,6 +49300,8 @@ class DesktopPet:
             self._set_image(self.sprites.sleep[1])
             self._show_sleep_zzz()
             self._schedule_rest_bobble()
+            self._place_window()
+        elif self._restore_recognized_pose_after_interrupt():
             self._place_window()
         elif had_move_anim:
             self._play_move_land()
@@ -48424,6 +51459,292 @@ class DesktopPet:
 
         self.root.after(60, after_interrupt_voice)
 
+
+    def _play_cheer(self) -> None:
+        """打call：cheer1 上移 ↔ cheer2 原位，节奏与开心相同。"""
+        if self.dragging or self.state == "work":
+            return
+        if self._app_scene_blocks_actions():
+            return
+        self._interrupt_current_interaction()
+        self._interact_flair("cheer", banter=True, show_fx=False)
+        self.state = "action"
+        self.action_name = "cheer"
+        self.happy_step_idx = 0
+        self._cheer_frame = 1
+        self.happy_bounce_offset = 0
+        try:
+            self._show_happy_fx()
+        except Exception:
+            pass
+        self._cheer_bounce_up()
+        self._schedule_action_end(action="cheer", callback=self._finish_cheer)
+
+    def _finish_cheer(self) -> None:
+        if self.dragging or self.state != "action" or self.action_name != "cheer":
+            return
+        if self.happy_job:
+            try:
+                self.root.after_cancel(self.happy_job)
+            except Exception:
+                pass
+            self.happy_job = None
+        self.happy_bounce_offset = 0
+        try:
+            self._hide_happy_fx()
+        except Exception:
+            pass
+        self._place_window()
+        self._add_interact_mood()
+        if self.mode == "quiet":
+            self.state = "rest"
+            self._set_image(self.sprites.sleep[1])
+            self._show_sleep_zzz()
+            self._schedule_rest_bobble()
+        else:
+            self.state = "stand"
+            self._set_image(self.sprites.stand)
+        if not self._check_mood_happy():
+            self._resume_idle(quick=True)
+
+    def _cheer_bounce_up(self) -> None:
+        if self.dragging or self.state != "action" or self.action_name != "cheer":
+            return
+        if int(getattr(self, "happy_step_idx", 0) or 0) >= HAPPY_CYCLES:
+            return
+        self._cheer_frame = 1
+        self._set_image(self.sprites.cheer[0])
+        self.happy_bounce_offset = -HAPPY_BOUNCE_PX
+        self._place_window(light=True)
+        tok = self.interaction_token
+        self.happy_job = self.root.after(
+            HAPPY_HALF_MS, lambda t=tok: self._cheer_bounce_down_guarded(t)
+        )
+
+    def _cheer_bounce_down_guarded(self, tok: int) -> None:
+        if tok != self.interaction_token:
+            return
+        self.happy_job = None
+        self._cheer_bounce_down()
+
+    def _cheer_bounce_down(self) -> None:
+        if self.dragging or self.state != "action" or self.action_name != "cheer":
+            return
+        self._cheer_frame = 0
+        self._set_image(self.sprites.cheer[1])
+        self.happy_bounce_offset = 0
+        self._place_window(light=True)
+        self.happy_step_idx = int(getattr(self, "happy_step_idx", 0) or 0) + 1
+        if self.happy_step_idx >= HAPPY_CYCLES:
+            return
+        tok = self.interaction_token
+        self.happy_job = self.root.after(
+            HAPPY_HALF_MS, lambda t=tok: self._cheer_bounce_up_guarded(t)
+        )
+
+    def _cheer_bounce_up_guarded(self, tok: int) -> None:
+        if tok != self.interaction_token:
+            return
+        self.happy_job = None
+        self._cheer_bounce_up()
+
+    def _play_flower_gift(self) -> None:
+        """送花：flower1 1s → flower2 1s。"""
+        if self.dragging or self.state == "work":
+            return
+        if self._app_scene_blocks_actions():
+            return
+        self._interrupt_current_interaction()
+        self.state = "action"
+        self.action_name = "flower"
+        self._interact_flair("flower", banter=True)
+        self._set_image(self.sprites.flower[0])
+        tok = self.interaction_token
+        self.root.after(FLOWER_FRAME1_MS, lambda t=tok: self._flower_phase2(t))
+        self._schedule_action_end(
+            duration_ms=FLOWER_FRAME1_MS + FLOWER_FRAME2_MS,
+            action="flower",
+            callback=self._after_simple_action,
+        )
+
+    def _flower_phase2(self, tok: int) -> None:
+        if tok != self.interaction_token or self.action_name != "flower":
+            return
+        self._set_image(self.sprites.flower[1])
+
+    def _play_office_draw(self) -> None:
+        """办公画画：draw1–3 与 picture1–6 各自随机顺序，每帧 1s，picture 抠绿叠在 draw 上。"""
+        if self.dragging or self.state == "work":
+            return
+        if self._app_scene_blocks_actions():
+            return
+        self._interrupt_current_interaction()
+        self.state = "action"
+        self.action_name = "office_draw"
+        draws = _fixed_cycle(OFFICE_DRAW_FILES)
+        pics = _fixed_cycle(OFFICE_PICTURE_FILES)
+        # picture 共 6 帧定总时长；draw 仅 3 张，按随机序循环铺满
+        self._office_draw_frames = [
+            (draws[i % len(draws)], pics[i]) for i in range(len(pics))
+        ]
+        self._office_draw_idx = 0
+        self._interact_flair("office_draw", banter=True)
+        self._office_draw_show_frame(0)
+        tok = self.interaction_token
+        total_ms = OFFICE_DRAW_FRAME_MS * len(pics)
+        self._schedule_action_end(
+            duration_ms=total_ms,
+            action="office_draw",
+            callback=self._after_office_draw,
+        )
+        self.office_draw_job = self.root.after(
+            OFFICE_DRAW_FRAME_MS, lambda t=tok: self._office_draw_tick(t)
+        )
+
+    def _office_draw_show_frame(self, idx: int) -> None:
+        frames = getattr(self, "_office_draw_frames", None) or []
+        if idx < 0 or idx >= len(frames):
+            return
+        draw_f, pic_f = frames[idx]
+        size = int(self.display_size)
+        rgba = _compose_draw_picture_frame(draw_f, pic_f, size)
+        photo = self._photo_for_scene(("office_draw", draw_f, pic_f, size), rgba)
+        self._office_draw_photo = photo
+        self._set_image(photo)
+
+    def _office_draw_tick(self, tok: int) -> None:
+        if tok != self.interaction_token or self.action_name != "office_draw":
+            return
+        self.office_draw_job = None
+        nxt = int(getattr(self, "_office_draw_idx", 0) or 0) + 1
+        frames = getattr(self, "_office_draw_frames", None) or []
+        if nxt >= len(frames):
+            return
+        self._office_draw_idx = nxt
+        self._office_draw_show_frame(nxt)
+        self.office_draw_job = self.root.after(
+            OFFICE_DRAW_FRAME_MS, lambda t=tok: self._office_draw_tick(t)
+        )
+
+    def _after_office_draw(self) -> None:
+        if self.dragging or self.state != "action" or self.action_name != "office_draw":
+            return
+        self._cancel_action_end()
+        job = getattr(self, "office_draw_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+            self.office_draw_job = None
+        self._office_draw_photo = None
+        self._office_draw_frames = None
+        self._add_interact_mood()
+        self._finish_expression()
+
+    def _play_shrug(self) -> None:
+        """摊手：shrug2 定格 1.5s。"""
+        self._play_hold_sprite_action("shrug", self.sprites.shrug2, SHRUG_HOLD_MS)
+
+    def _play_introduce(self) -> None:
+        """介绍：shrug1 定格 1.5s。"""
+        self._play_hold_sprite_action("introduce", self.sprites.shrug1, SHRUG_HOLD_MS)
+
+    def _play_hold_sprite_action(self, name: str, sprite: ImageTk.PhotoImage, hold_ms: int) -> None:
+        if self.dragging or self.state == "work":
+            return
+        if self._app_scene_blocks_actions():
+            return
+        self._interrupt_current_interaction()
+        self.state = "action"
+        self.action_name = name
+        self._interact_flair(name, banter=True)
+        self._set_image(sprite)
+        self._schedule_action_end(
+            duration_ms=hold_ms,
+            action=name,
+            callback=self._after_simple_action,
+        )
+
+    def _after_simple_action(self) -> None:
+        if self.dragging or self.state != "action":
+            return
+        self._cancel_action_end()
+        self._add_interact_mood()
+        self._finish_expression()
+
+    def _play_expression_afraid(self) -> None:
+        """害怕：afraid1 1s → afraid2 1s。"""
+        if self.dragging or self.state == "work":
+            return
+        self._interrupt_current_interaction()
+        self.state = "action"
+        self.action_name = "afraid"
+        self._interact_flair("afraid", banter=True)
+        self._set_image(self.sprites.afraid[0])
+        self._schedule_expression_bounce("afraid")
+        tok = self.interaction_token
+        self.root.after(AFRAID_FRAME_MS, lambda t=tok: self._afraid_phase2(t))
+        self._schedule_action_end(
+            duration_ms=AFRAID_FRAME_MS * 2,
+            action="afraid",
+            callback=self._after_expression_afraid,
+        )
+
+    def _afraid_phase2(self, tok: int) -> None:
+        if tok != self.interaction_token or self.action_name != "afraid":
+            return
+        self._set_image(self.sprites.afraid[1])
+
+    def _after_expression_afraid(self) -> None:
+        if self.dragging or self.state != "action" or self.action_name != "afraid":
+            return
+        self._cancel_action_end()
+        self._finish_expression()
+
+    def _play_expression_proud(self) -> None:
+        """自豪：pround1 1s → (pround2 0.5s + pround3 0.5s)×3。"""
+        if self.dragging or self.state == "work":
+            return
+        self._interrupt_current_interaction()
+        self.state = "action"
+        self.action_name = "proud"
+        self._proud_loop_idx = 0
+        self._interact_flair("proud", banter=True)
+        self._set_image(self.sprites.proud[0])
+        self._schedule_expression_bounce("proud")
+        total = PROUD_HOLD1_MS + PROUD_LOOPS * (PROUD_LOOP_HALF_MS * 2)
+        tok = self.interaction_token
+        self.root.after(PROUD_HOLD1_MS, lambda t=tok: self._proud_loop_a(t))
+        self._schedule_action_end(
+            duration_ms=total,
+            action="proud",
+            callback=self._after_expression_proud,
+        )
+
+    def _proud_loop_a(self, tok: int) -> None:
+        if tok != self.interaction_token or self.action_name != "proud":
+            return
+        if int(getattr(self, "_proud_loop_idx", 0) or 0) >= PROUD_LOOPS:
+            return
+        self._set_image(self.sprites.proud[1])
+        self.root.after(PROUD_LOOP_HALF_MS, lambda t=tok: self._proud_loop_b(t))
+
+    def _proud_loop_b(self, tok: int) -> None:
+        if tok != self.interaction_token or self.action_name != "proud":
+            return
+        self._set_image(self.sprites.proud[2])
+        self._proud_loop_idx = int(getattr(self, "_proud_loop_idx", 0) or 0) + 1
+        if self._proud_loop_idx >= PROUD_LOOPS:
+            return
+        self.root.after(PROUD_LOOP_HALF_MS, lambda t=tok: self._proud_loop_a(t))
+
+    def _after_expression_proud(self) -> None:
+        if self.dragging or self.state != "action" or self.action_name != "proud":
+            return
+        self._cancel_action_end()
+        self._finish_expression()
+
     def _play_happy(self) -> None:
         # happy 上移 ↔ stand 原位，各 0.28s，交替 3 轮（只移立绘，无额外弹动动画）
         if self.dragging or self.state == "work":
@@ -48716,6 +52037,8 @@ class DesktopPet:
 
     def _resume_idle(self, *, quick: bool = False) -> None:
         if self.dragging:
+            return
+        if self._restore_recognized_pose_after_interrupt():
             return
         if getattr(self, "_size_switch_busy", False) or self.size_loading_active:
             return
@@ -49038,15 +52361,18 @@ class DesktopPet:
                 pass
 
     def _should_show_zzz(self) -> bool:
-        # 须查烘焙前底图：装扮叠层后 label.image 不再是 sleep Photo，会误关 ZZZ
+        # 须查烘焙前底图：装扮叠层后 label.image 不再是 sleep Photo，会误关 ZZZ。
+        # 开场占位的 stand 也是 sleep1，不能单凭底图就一直显示睡眠。
         if not self.sprites:
             return False
-        base = getattr(self, "_current_base_photo", None)
-        if base in (self.sprites.sleep[0], self.sprites.sleep[1]):
-            return True
         if self.mode == "quiet" and self.state in ("rest", "sleep"):
             return True
-        return False
+        if getattr(self, "sleep_interact_active", False) and self.state == "rest":
+            return True
+        if self.state != "sleep":
+            return False
+        base = getattr(self, "_current_base_photo", None)
+        return base in (self.sprites.sleep[0], self.sprites.sleep[1])
 
     def _animate_sleep_zzz(self) -> None:
         if not self.sleep_zzz_canvas or not self._should_show_zzz():
@@ -49076,6 +52402,9 @@ class DesktopPet:
             "happy": self._play_happy,
             "like": self._play_expression_like,
             "wink": self._play_expression_wink,
+            "cheer": self._play_cheer,
+            "afraid": self._play_expression_afraid,
+            "proud": self._play_expression_proud,
             "hi": lambda: self._play_action("hi"),
             "squat": lambda: self._play_action("squat"),
             "idea": self._play_expression_idea,
@@ -49181,6 +52510,9 @@ class DesktopPet:
     def _start_walk(self) -> None:
         if self.dragging or not self._supports_walk_idle() or self.state != "stand":
             return
+        if self._recognized_pose_active():
+            self._restore_recognized_pose_after_interrupt()
+            return
         if self._menus_are_open():
             self._stand_tick()
             return
@@ -49252,6 +52584,25 @@ class DesktopPet:
         """走一步；成功 True，需结束本段走路 False。"""
         if self.walk_steps_left <= 0:
             return False
+        # 有可拾取金币/宝箱时优先朝它走
+        if self._can_seek_world_coins() and self._world_coins:
+            coin = self._nearest_world_coin()
+            if coin is not None:
+                cx = int(coin.get("x") or 0) + 16
+                cy = int(coin.get("land_y") or coin.get("y") or 0) + 16
+                pet_cx = self.x + self.display_size // 2
+                pet_cy = self.y + self.display_size // 2
+                dx0 = cx - pet_cx
+                dy0 = cy - pet_cy
+                if abs(dx0) >= abs(dy0):
+                    want = "right" if dx0 > 0 else "left"
+                else:
+                    want = "front" if dy0 > 0 else "back"
+                if want in self.DIRECTIONS and want != self.direction:
+                    try:
+                        self._apply_walk_direction(want)
+                    except Exception:
+                        self.direction = want
         dx, dy = self.DELTAS[self.direction]
         next_x = self.x + dx
         next_y = self.y + dy

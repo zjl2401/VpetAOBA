@@ -4,6 +4,13 @@ dist/
 __pycache__/
 *.pyc
 
+# 调试 / 一次性补丁 / 损坏备份（勿入库）
+_dbg_*
+_fix_*.py
+_patch_*.py
+_broken_backup_*/
+1.0/
+
 # 重复/暂存发布
 release/Vpet_old/
 release/Vpet_new/
